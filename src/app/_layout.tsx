@@ -1,18 +1,25 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Stack } from 'expo-router';
+import { RoleProvider } from '../context/RoleContext';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <RoleProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="profile" />
+        <Stack.Screen name="profile/[id]" />
+        <Stack.Screen name="register" />
+        <Stack.Screen name="notifications" />
+        <Stack.Screen name="home" />
+        <Stack.Screen name="search" />
+        <Stack.Screen name="entregas" />
+        <Stack.Screen name="publicar-produto" />
+        <Stack.Screen name="fichas-recebimento" />
+        <Stack.Screen name="mapa" />
+        <Stack.Screen name="conversations" />
+        <Stack.Screen name="messages" />
+        <Stack.Screen name="onboarding" />
+      </Stack>
+    </RoleProvider>
   );
 }
