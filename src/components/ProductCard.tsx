@@ -1,44 +1,43 @@
-import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Dimensions,
-  FlatList,
-  Image,
-  Linking,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
+  Animated,
+  Easing,
+  KeyboardAvoidingView,
+  Modal,
+  PanResponder,
+  Platform,
+  Pressable,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
-
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { supabase } from "../lib/supabase";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-const CARD_WIDTH = SCREEN_WIDTH - 36;
-const IMAGE_HEIGHT = CARD_WIDTH * 0.75;
-
-/* =========================================================
-   CORES
-========================================================= */
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  PAYMENT_PROVIDERS,
+  STATUS_MESSAGES,
+  createOrderPayment,
+  effectiveStatus,
+  formatDateTime,
+  formatKz,
+  loadProviderAvailability,
+  newIdempotencyKey,
+  normalizeAoPhone,
+  previewPayment,
+  watchPayment,
+} from "../lib/payments";
 
 const COLORS = {
   primary: "#1F6B3A",
+  primaryDark: "#154D29",
   primarySoft: "#EAF3EA",
-  primaryLight: "#D9EEDD",
   accent: "#E2932F",
+  accentSoft: "#FBF1E1",
   text: "#16231C",
   muted: "#78877D",
   faint: "#AEB8AC",
@@ -46,2811 +45,865 @@ const COLORS = {
   surface: "#FFFFFF",
   border: "#EAE4D6",
   red: "#DD5138",
+  redSoft: "#FBECE9",
 };
 
-const RADIUS = {
-  sm: 10,
-  md: 14,
-  lg: 19,
-  xl: 22,
+const MAX_SHEET_WIDTH = 560;
+const STEP_LABELS = ["Dados", "Pagar", "Pronto"];
+
+/**
+ * Props:
+ * - product: linha de public.products (id, product_type, price, quantity, farmer_name)
+ * - visible: controla se o sheet está aberto (sobe/desce como um elevador)
+ * - onClose(): pedido para fechar (botão, fundo escuro ou arrastar para baixo)
+ * - onPaid({ payment, order }): pagamento confirmado
+ * - onViewHistory({ intentId, orderId }): abre o ecrã de Histórico
+ */
+type Props = {
+  product: any;
+  visible: boolean;
+  onClose?: () => void;
+  onPaid?: (data: { payment: any; order: any }) => void;
+  onViewHistory?: (data: { intentId?: string; orderId?: string }) => void;
 };
 
-/* =========================================================
-   MOCKUPS
-   Só aparecem quando não existem publicações reais.
-========================================================= */
-
-export const MOCK_PRODUCTS = [
-  {
-    id: "mock-1",
-
-    product_type: "Tomate",
-
-    description:
-      "Tomate fresco produzido localmente. Disponível para fornecimento em quantidade para empresas, restaurantes e distribuidores.",
-
-    quantity: 850,
-
-    harvest_date: "2026-10-05",
-
-    price: 850,
-
-    province_id: "Luanda",
-
-    municipality_id: "Viana",
-
-    farmer_name: "Fazenda Esperança",
-
-    contact: "900000000",
-
-    photos: [
-      "https://images.unsplash.com/photo-1546094096-0df4bcaaa337?w=1200",
-      "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=1200",
-      "https://images.unsplash.com/photo-1561136594-7f68413baa99?w=1200",
-    ],
-
-    status: "active",
-
-    created_at: new Date().toISOString(),
-
-    user_id: "mock-user-1",
-
-    location_lat: -8.9167,
-
-    location_lng: 13.4833,
-
-    likes_count: 24,
-
-    is_liked: false,
-
-    comments: [],
-
-    commentsLoaded: true,
-
-    user_verified: true,
-  },
-
-  {
-    id: "mock-2",
-
-    product_type: "Cebola",
-
-    description:
-      "Cebola de produção nacional, selecionada para fornecimento em grandes quantidades para compradores B2B.",
-
-    quantity: 1200,
-
-    harvest_date: "2026-10-18",
-
-    price: 700,
-
-    province_id: "Huambo",
-
-    municipality_id: "Huambo",
-
-    farmer_name: "Cooperativa Agrícola do Huambo",
-
-    contact: "900000001",
-
-    photos: [
-      "https://images.unsplash.com/photo-1508747703725-719777637510?w=1200",
-      "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=1200",
-      "https://images.unsplash.com/photo-1580201092675-a0a6a6cafbb0?w=1200",
-    ],
-
-    status: "active",
-
-    created_at: new Date(
-      Date.now() - 86400000
-    ).toISOString(),
-
-    user_id: "mock-user-2",
-
-    location_lat: -12.7761,
-
-    location_lng: 15.7392,
-
-    likes_count: 18,
-
-    is_liked: false,
-
-    comments: [],
-
-    commentsLoaded: true,
-
-    user_verified: true,
-  },
-
-  {
-    id: "mock-3",
-
-    product_type: "Milho",
-
-    description:
-      "Milho nacional disponível para compradores B2B. Ideal para transformação, distribuição e comercialização.",
-
-    quantity: 3500,
-
-    harvest_date: "2026-11-02",
-
-    price: 420,
-
-    province_id: "Kwanza Norte",
-
-    municipality_id: "Cazengo",
-
-    farmer_name: "Agro Kwanza",
-
-    contact: "900000002",
-
-    photos: [
-      "https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=1200",
-      "https://images.unsplash.com/photo-1601593768794-9c9c7b8e2f6d?w=1200",
-      "https://images.unsplash.com/photo-1606914469633-bd3921f7c5c4?w=1200",
-    ],
-
-    status: "active",
-
-    created_at: new Date(
-      Date.now() - 2 * 86400000
-    ).toISOString(),
-
-    user_id: "mock-user-3",
-
-    location_lat: -9.4167,
-
-    location_lng: 14.9167,
-
-    likes_count: 31,
-
-    is_liked: false,
-
-    comments: [],
-
-    commentsLoaded: true,
-
-    user_verified: false,
-  },
-];
-
-/* =========================================================
-   FUNÇÕES
-========================================================= */
-
-const formatDate = (date) => {
-  if (!date) return "";
-
-  try {
-    return new Date(date).toLocaleDateString("pt-AO", {
-      day: "2-digit",
-      month: "short",
-    });
-  } catch {
-    return "";
-  }
-};
-
-const formatPrice = (price) => {
-  return `${(price || 0).toLocaleString("pt-AO")} Kz`;
-};
-
-/* =========================================================
-   CARROSSEL DE FOTOS
-========================================================= */
-
-const PhotoCarousel = ({ photos }) => {
-  const [index, setIndex] = useState(0);
-
-  const listRef = useRef(null);
-
-  const validPhotos = Array.isArray(photos)
-    ? photos.filter(
-        (photo) =>
-          typeof photo === "string" &&
-          photo.trim().length > 0
-      )
-    : [];
-
-  const onMomentumEnd = (
-    event
-  ) => {
-    const newIndex = Math.round(
-      event.nativeEvent.contentOffset.x /
-        CARD_WIDTH
-    );
-
-    setIndex(newIndex);
-  };
-
-  if (validPhotos.length === 0) {
-    return (
-      <View
-        style={[
-          styles.imageWrap,
-          styles.noPhoto,
-        ]}
-      >
-        <MaterialCommunityIcons
-          name="sprout-outline"
-          size={40}
-          color={COLORS.primary}
-        />
-
-        <Text style={styles.noPhotoText}>
-          Sem imagem
-        </Text>
-      </View>
-    );
-  }
-
+/* ============================ micro-componentes ============================ */
+
+function PressableScale({ children, style, onPress, disabled, ...rest }: any) {
+  const s = useRef(new Animated.Value(1)).current;
+  const to = (v: number) =>
+    Animated.spring(s, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
   return (
-    <View style={styles.imageWrap}>
-      <FlatList
-        ref={listRef}
-        data={validPhotos}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(uri, i) =>
-          `${uri}-${i}`
-        }
-        onMomentumScrollEnd={
-          onMomentumEnd
-        }
-        renderItem={({ item }) => (
-          <Image
-            source={{ uri: item }}
-            style={styles.image}
-            resizeMode="cover"
-          />
-        )}
-      />
-
-      {/* Contador de fotos */}
-
-      {validPhotos.length > 1 && (
-        <View style={styles.photoCounter}>
-          <Ionicons
-            name="images-outline"
-            size={12}
-            color="#FFFFFF"
-          />
-
-          <Text
-            style={styles.photoCounterText}
-          >
-            {index + 1}/{validPhotos.length}
-          </Text>
-        </View>
-      )}
-
-      {/* Pontos */}
-
-      {validPhotos.length > 1 && (
-        <View style={styles.dotsRow}>
-          {validPhotos.map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.dot,
-                i === index &&
-                  styles.dotActive,
-              ]}
-            />
-          ))}
-        </View>
-      )}
-    </View>
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      onPressIn={() => to(0.97)}
+      onPressOut={() => to(1)}
+      {...rest}
+    >
+      <Animated.View style={[style, { transform: [{ scale: s }] }]}>{children}</Animated.View>
+    </Pressable>
   );
-};
+}
 
-/* =========================================================
-   PRODUCT CARD
-========================================================= */
-
-export const ProductCard = memo(
-  ({
-    product,
-    currentUserId,
-    onProductUpdate,
-    onOpenPreOrder,
-    onRequireLogin,
-  }) => {
-    const [
-      commentVisible,
-      setCommentVisible,
-    ] = useState(false);
-
-    const [
-      commentsLoading,
-      setCommentsLoading,
-    ] = useState(false);
-
-    const [
-      comment,
-      setComment,
-    ] = useState("");
-
-    const [
-      replyingTo,
-      setReplyingTo,
-    ] = useState(null);
-
-    const [
-      replyText,
-      setReplyText,
-    ] = useState("");
-
-    const [
-      likeBusy,
-      setLikeBusy,
-    ] = useState(false);
-
-    /* =====================================================
-       DESCONTO
-    ===================================================== */
-
-    const discount =
-      product.quantity > 100
-        ? 15
-        : product.quantity > 50
-        ? 10
-        : 0;
-
-    const originalPrice =
-      discount > 0
-        ? product.price /
-          (1 - discount / 100)
-        : product.price;
-
-    /* =====================================================
-       NOVO
-    ===================================================== */
-
-    const isNew =
-      (Date.now() -
-        new Date(
-          product.created_at
-        ).getTime()) /
-        86400000 <
-      7;
-
-    /* =====================================================
-       LIKE
-    ===================================================== */
-
-    const toggleLike = async () => {
-      if (!currentUserId) {
-        return onRequireLogin();
-      }
-
-      if (likeBusy) return;
-
-      /*
-       * Mockup
-       * Não tenta gravar likes no Supabase.
-       */
-
-      if (product.id.startsWith("mock-")) {
-        const updated = {
-          ...product,
-
-          is_liked: !product.is_liked,
-
-          likes_count: product.is_liked
-            ? Math.max(
-                0,
-                (product.likes_count ||
-                  1) - 1
-              )
-            : (product.likes_count ||
-                0) + 1,
-        };
-
-        onProductUpdate(updated);
-
-        return;
-      }
-
-      setLikeBusy(true);
-
-      const optimistic = {
-        ...product,
-
-        is_liked: !product.is_liked,
-
-        likes_count: product.is_liked
-          ? Math.max(
-              0,
-              (product.likes_count ||
-                1) - 1
-            )
-          : (product.likes_count ||
-              0) + 1,
-      };
-
-      onProductUpdate(optimistic);
-
-      try {
-        if (product.is_liked) {
-          const { error } =
-            await supabase
-              .from("product_likes")
-              .delete()
-              .eq(
-                "product_id",
-                product.id
-              )
-              .eq(
-                "user_id",
-                currentUserId
-              );
-
-          if (error) throw error;
-        } else {
-          const { error } =
-            await supabase
-              .from("product_likes")
-              .insert({
-                product_id:
-                  product.id,
-                user_id:
-                  currentUserId,
-              });
-
-          if (error) throw error;
-        }
-      } catch (error) {
-        console.log(
-          "Erro ao curtir:",
-          error
-        );
-
-        onProductUpdate(product);
-      } finally {
-        setLikeBusy(false);
-      }
-    };
-
-    /* =====================================================
-       CARREGAR COMENTÁRIOS
-    ===================================================== */
-
-    const loadComments = useCallback(
-      async () => {
-        if (product.commentsLoaded)
-          return;
-
-        /*
-         * Mockups não precisam
-         * consultar comentários.
-         */
-
-        if (
-          product.id.startsWith("mock-")
-        ) {
-          onProductUpdate({
-            ...product,
-            comments: [],
-            commentsLoaded: true,
-          });
-
-          return;
-        }
-
-        setCommentsLoading(true);
-
-        try {
-          const {
-            data,
-            error,
-          } = await supabase
-            .from(
-              "product_comments"
-            )
-            .select(
-              "*, users:user_id (full_name, user_type, avatar_url)"
-            )
-            .eq(
-              "product_id",
-              product.id
-            )
-            .order(
-              "created_at",
-              {
-                ascending: false,
-              }
-            );
-
-          if (error) throw error;
-
-          const comments =
-            (data || []).map(
-              (c) => ({
-                id: c.id,
-
-                user_id:
-                  c.user_id,
-
-                comment_text:
-                  c.comment_text,
-
-                created_at:
-                  c.created_at,
-
-                user_name:
-                  c.users
-                    ?.full_name ||
-                  "Usuário",
-
-                user_type:
-                  c.users
-                    ?.user_type ||
-                  "agricultor",
-
-                user_avatar:
-                  c.users
-                    ?.avatar_url,
-
-                likes_count: 0,
-
-                is_liked: false,
-
-                replies: [],
-              })
-            );
-
-          onProductUpdate({
-            ...product,
-            comments,
-            commentsLoaded: true,
-          });
-        } catch (error) {
-          console.log(
-            "Erro ao carregar comentários:",
-            error
-          );
-        } finally {
-          setCommentsLoading(false);
-        }
-      },
-      [
-        product,
-        onProductUpdate,
-      ]
-    );
-
-    /* =====================================================
-       ABRIR COMENTÁRIOS
-    ===================================================== */
-
-    const toggleComments = () => {
-      const next =
-        !commentVisible;
-
-      setCommentVisible(next);
-
-      if (next) {
-        loadComments();
-      }
-    };
-
-    /* =====================================================
-       ADICIONAR COMENTÁRIO
-    ===================================================== */
-
-    const addComment = async () => {
-      if (!comment.trim())
-        return;
-
-      if (!currentUserId) {
-        return onRequireLogin();
-      }
-
-      /*
-       * Não grava comentários
-       * nos mockups.
-       */
-
-      if (
-        product.id.startsWith("mock-")
-      ) {
-        const newComment = {
-          id: `mock-comment-${Date.now()}`,
-
-          user_id:
-            currentUserId,
-
-          comment_text:
-            comment.trim(),
-
-          created_at:
-            new Date().toISOString(),
-
-          user_name: "Você",
-
-          user_type: "comprador",
-
-          likes_count: 0,
-
-          is_liked: false,
-
-          replies: [],
-        };
-
-        onProductUpdate({
-          ...product,
-
-          comments: [
-            newComment,
-            ...(product.comments ||
-              []),
-          ],
-
-          commentsLoaded: true,
-        });
-
-        setComment("");
-
-        return;
-      }
-
-      try {
-        const {
-          data: newComment,
-          error,
-        } = await supabase
-          .from(
-            "product_comments"
-          )
-          .insert({
-            product_id:
-              product.id,
-
-            user_id:
-              currentUserId,
-
-            comment_text:
-              comment.trim(),
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        const {
-          data: userData,
-        } = await supabase
-          .from("users")
-          .select(
-            "full_name, user_type, avatar_url"
-          )
-          .eq(
-            "id",
-            currentUserId
-          )
-          .single();
-
-        const withUser = {
-          ...newComment,
-
-          user_name:
-            userData
-              ?.full_name ||
-            "Usuário",
-
-          user_type:
-            userData
-              ?.user_type ||
-            "agricultor",
-
-          user_avatar:
-            userData
-              ?.avatar_url,
-
-          likes_count: 0,
-
-          is_liked: false,
-
-          replies: [],
-        };
-
-        onProductUpdate({
-          ...product,
-
-          comments: [
-            withUser,
-            ...(product.comments ||
-              []),
-          ],
-
-          commentsLoaded: true,
-        });
-
-        setComment("");
-      } catch (error) {
-        console.log(
-          "Erro ao comentar:",
-          error
-        );
-      }
-    };
-
-    /* =====================================================
-       LIKE COMENTÁRIO
-    ===================================================== */
-
-    const toggleCommentLike = async (
-      commentId,
-      isLiked
-    ) => {
-      if (!currentUserId) {
-        return onRequireLogin();
-      }
-
-      /*
-       * Mockup
-       */
-
-      if (
-        product.id.startsWith("mock-")
-      ) {
-        const updated =
-          product.comments?.map(
-            (c) =>
-              c.id === commentId
-                ? {
-                    ...c,
-
-                    is_liked:
-                      !isLiked,
-
-                    likes_count:
-                      isLiked
-                        ? Math.max(
-                            0,
-                            (c.likes_count ||
-                              1) -
-                              1
-                          )
-                        : (c.likes_count ||
-                            0) +
-                          1,
-                  }
-                : c
-          );
-
-        onProductUpdate({
-          ...product,
-          comments: updated,
-        });
-
-        return;
-      }
-
-      try {
-        if (isLiked) {
-          const { error } =
-            await supabase
-              .from(
-                "comment_likes"
-              )
-              .delete()
-              .eq(
-                "comment_id",
-                commentId
-              )
-              .eq(
-                "user_id",
-                currentUserId
-              );
-
-          if (error) throw error;
-        } else {
-          const { error } =
-            await supabase
-              .from(
-                "comment_likes"
-              )
-              .insert({
-                comment_id:
-                  commentId,
-
-                user_id:
-                  currentUserId,
-              });
-
-          if (error) throw error;
-        }
-
-        const updated =
-          product.comments?.map(
-            (c) =>
-              c.id === commentId
-                ? {
-                    ...c,
-
-                    is_liked:
-                      !isLiked,
-
-                    likes_count:
-                      isLiked
-                        ? Math.max(
-                            0,
-                            (c.likes_count ||
-                              1) -
-                              1
-                          )
-                        : (c.likes_count ||
-                            0) +
-                          1,
-                  }
-                : c
-          );
-
-        onProductUpdate({
-          ...product,
-          comments: updated,
-        });
-      } catch (error) {
-        console.log(
-          "Erro ao reagir ao comentário:",
-          error
-        );
-      }
-    };
-
-    /* =====================================================
-       RESPONDER
-    ===================================================== */
-
-    const addReply = async (
-      commentId
-    ) => {
-      if (!replyText.trim())
-        return;
-
-      if (!currentUserId) {
-        return onRequireLogin();
-      }
-
-      /*
-       * Mockup
-       */
-
-      if (
-        product.id.startsWith("mock-")
-      ) {
-        const newReply = {
-          id: `mock-reply-${Date.now()}`,
-
-          user_id:
-            currentUserId,
-
-          reply_text:
-            replyText.trim(),
-
-          created_at:
-            new Date().toISOString(),
-
-          user_name: "Você",
-
-          user_type: "comprador",
-        };
-
-        const updated =
-          product.comments?.map(
-            (c) =>
-              c.id === commentId
-                ? {
-                    ...c,
-
-                    replies: [
-                      ...(c.replies ||
-                        []),
-                      newReply,
-                    ],
-                  }
-                : c
-          );
-
-        onProductUpdate({
-          ...product,
-          comments: updated,
-        });
-
-        setReplyText("");
-
-        setReplyingTo(null);
-
-        return;
-      }
-
-      try {
-        const {
-          data: newReply,
-          error,
-        } = await supabase
-          .from(
-            "comment_replies"
-          )
-          .insert({
-            comment_id:
-              commentId,
-
-            user_id:
-              currentUserId,
-
-            reply_text:
-              replyText.trim(),
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        const {
-          data: userData,
-        } = await supabase
-          .from("users")
-          .select(
-            "full_name, user_type"
-          )
-          .eq(
-            "id",
-            currentUserId
-          )
-          .single();
-
-        const withUser = {
-          ...newReply,
-
-          user_name:
-            userData
-              ?.full_name ||
-            "Usuário",
-
-          user_type:
-            userData
-              ?.user_type ||
-            "agricultor",
-        };
-
-        const updated =
-          product.comments?.map(
-            (c) =>
-              c.id === commentId
-                ? {
-                    ...c,
-
-                    replies: [
-                      ...(c.replies ||
-                        []),
-                      withUser,
-                    ],
-                  }
-                : c
-          );
-
-        onProductUpdate({
-          ...product,
-          comments: updated,
-        });
-
-        setReplyText("");
-
-        setReplyingTo(null);
-      } catch (error) {
-        console.log(
-          "Erro ao responder:",
-          error
-        );
-      }
-    };
-
-    /* =====================================================
-       PARTILHAR
-    ===================================================== */
-
-    const handleShare =
-      async () => {
-        try {
-          await Share.share({
-            title:
-              product.product_type,
-
-            message: `Confira ${product.product_type} por ${formatPrice(
-              product.price
-            )} no AgriLink!`,
-          });
-        } catch {
-          // Cancelado
-        }
-      };
-
-    /* =====================================================
-       LOCALIZAÇÃO
-    ===================================================== */
-
-    const openLocation = () => {
-      if (
-        !product.location_lat ||
-        !product.location_lng
-      ) {
-        return;
-      }
-
-      const url =
-        `https://www.google.com/maps/search/?api=1&query=` +
-        `${product.location_lat},${product.location_lng}`;
-
-      Linking.openURL(url).catch(
-        () => {}
-      );
-    };
-
-    /* =====================================================
-       RENDER
-    ===================================================== */
-
-    return (
-      <View style={styles.card}>
-        {/* BADGES */}
-
-        <View
-          style={styles.imageBadgeRow}
-        >
-          {isNew && (
-            <View
-              style={styles.badgeNew}
-            >
-              <Ionicons
-                name="leaf"
-                size={10}
-                color="#FFFFFF"
-              />
-
-              <Text
-                style={
-                  styles.badgeNewText
-                }
-              >
-                NOVO
-              </Text>
-            </View>
-          )}
-
-          {discount > 0 && (
-            <View
-              style={
-                styles.badgeDiscount
-              }
-            >
-              <Text
-                style={
-                  styles.badgeDiscountText
-                }
-              >
-                -{discount}%
-              </Text>
-            </View>
-          )}
-
-          {/* MOCKUP */}
-
-          {product.id.startsWith(
-            "mock-"
-          ) && (
-            <View
-              style={styles.demoBadge}
-            >
-              <Ionicons
-                name="sparkles-outline"
-                size={10}
-                color="#FFFFFF"
-              />
-
-              <Text
-                style={
-                  styles.demoBadgeText
-                }
-              >
-                EXEMPLO
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* PARTILHAR */}
-
-        <TouchableOpacity
-          style={styles.shareBtn}
-          onPress={handleShare}
-          hitSlop={8}
-        >
-          <Ionicons
-            name="share-social-outline"
-            size={16}
-            color={COLORS.text}
-          />
-        </TouchableOpacity>
-
-        {/* FOTOS */}
-
-        <PhotoCarousel
-          photos={product.photos}
-        />
-
-        <View style={styles.content}>
-          {/* AGRICULTOR */}
-
-          <View
-            style={styles.farmerRow}
-          >
-            <View
-              style={styles.avatar}
-            >
-              <Text
-                style={
-                  styles.avatarText
-                }
-              >
-                {product.farmer_name
-                  ?.charAt(0)
-                  ?.toUpperCase() ||
-                  "?"}
-              </Text>
-            </View>
-
-            <View
-              style={{
-                flex: 1,
-                minWidth: 0,
-              }}
-            >
-              <View
-                style={
-                  styles.farmerNameRow
-                }
-              >
-                <Text
-                  style={
-                    styles.farmerName
-                  }
-                  numberOfLines={1}
-                >
-                  {product.farmer_name}
-                </Text>
-
-                {product.user_verified && (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={14}
-                    color={
-                      COLORS.primary
-                    }
-                  />
-                )}
-              </View>
-
-              <View
-                style={
-                  styles.locationRow
-                }
-              >
-                <Ionicons
-                  name="location-outline"
-                  size={12}
-                  color={COLORS.faint}
-                />
-
-                <Text
-                  style={
-                    styles.locationText
-                  }
-                  numberOfLines={1}
-                >
-                  {product.province_id},{" "}
-                  {
-                    product.municipality_id
-                  }
-                </Text>
-              </View>
-            </View>
-
-            <View
-              style={
-                styles.typeBadge
-              }
-            >
-              <Text
-                style={
-                  styles.typeBadgeText
-                }
-                numberOfLines={1}
-              >
-                {product.product_type}
-              </Text>
-            </View>
-          </View>
-
-          {/* PRODUTO */}
-
-          <Text
-            style={styles.title}
-          >
-            {product.product_type}
-          </Text>
-
-          {/* PREÇO */}
-
-          <View
-            style={styles.priceRow}
-          >
-            <Text
-              style={styles.price}
-            >
-              {formatPrice(
-                product.price
-              )}
-            </Text>
-
-            {discount > 0 && (
-              <Text
-                style={styles.priceOld}
-              >
-                {formatPrice(
-                  originalPrice
-                )}
-              </Text>
-            )}
-          </View>
-
-          {/* STOCK */}
-
-          <View
-            style={styles.stockRow}
-          >
-            <Ionicons
-              name="trending-up-outline"
-              size={13}
-              color={COLORS.primary}
-            />
-
-            <Text
-              style={
-                styles.stockText
-              }
-            >
-              {product.quantity.toLocaleString()}{" "}
-              kg em estoque
-            </Text>
-          </View>
-
-          {/* COMPRAR */}
-
-          <TouchableOpacity
-            style={styles.buyBtn}
-            onPress={() =>
-              onOpenPreOrder(
-                product
-              )
-            }
-          >
-            <Ionicons
-              name="cart-outline"
-              size={18}
-              color="#FFFFFF"
-            />
-
-            <Text
-              style={
-                styles.buyBtnText
-              }
-            >
-              Comprar agora
-            </Text>
-          </TouchableOpacity>
-
-          {/* DESCRIÇÃO */}
-
-          {!!product.description && (
-            <Text
-              style={
-                styles.description
-              }
-              numberOfLines={3}
-            >
-              {product.description}
-            </Text>
-          )}
-
-          {/* METADADOS */}
-
-          <View
-            style={styles.metaRow}
-          >
-            <View
-              style={styles.metaItem}
-            >
-              <Ionicons
-                name="calendar-outline"
-                size={13}
-                color={COLORS.faint}
-              />
-
-              <Text
-                style={
-                  styles.metaText
-                }
-              >
-                Colheita:{" "}
-                {formatDate(
-                  product.harvest_date
-                )}
-              </Text>
-            </View>
-
-            {!!product.location_lat &&
-              !!product.location_lng && (
-                <TouchableOpacity
-                  style={
-                    styles.metaItem
-                  }
-                  onPress={
-                    openLocation
-                  }
-                >
-                  <Ionicons
-                    name="location-outline"
-                    size={13}
-                    color={
-                      COLORS.primary
-                    }
-                  />
-
-                  <Text
-                    style={[
-                      styles.metaText,
-                      {
-                        color:
-                          COLORS.primary,
-                        fontWeight:
-                          "600",
-                      },
-                    ]}
-                  >
-                    Ver localização
-                  </Text>
-                </TouchableOpacity>
-              )}
-          </View>
-
-          {/* AÇÕES */}
-
-          <View
-            style={styles.actionsRow}
-          >
-            <View
-              style={{
-                flexDirection:
-                  "row",
-                gap: 6,
-              }}
-            >
-              {/* LIKE */}
-
-              <TouchableOpacity
-                style={[
-                  styles.actionBtn,
-                  product.is_liked &&
-                    styles.actionBtnLiked,
-                ]}
-                onPress={
-                  toggleLike
-                }
-              >
-                <Ionicons
-                  name={
-                    product.is_liked
-                      ? "heart"
-                      : "heart-outline"
-                  }
-                  size={17}
-                  color={
-                    product.is_liked
-                      ? COLORS.red
-                      : COLORS.muted
-                  }
-                />
-
-                {!!product.likes_count && (
-                  <Text
-                    style={[
-                      styles.actionBtnText,
-                      {
-                        color:
-                          product.is_liked
-                            ? COLORS.red
-                            : COLORS.muted,
-                      },
-                    ]}
-                  >
-                    {
-                      product.likes_count
-                    }
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              {/* COMENTÁRIOS */}
-
-              <TouchableOpacity
-                style={[
-                  styles.actionBtn,
-                  commentVisible &&
-                    styles.actionBtnActive,
-                ]}
-                onPress={
-                  toggleComments
-                }
-              >
-                <Ionicons
-                  name="chatbubble-outline"
-                  size={16}
-                  color={
-                    commentVisible
-                      ? COLORS.primary
-                      : COLORS.muted
-                  }
-                />
-
-                {!!product.comments
-                  ?.length && (
-                  <Text
-                    style={[
-                      styles.actionBtnText,
-                      {
-                        color:
-                          commentVisible
-                            ? COLORS.primary
-                            : COLORS.muted,
-                      },
-                    ]}
-                  >
-                    {
-                      product.comments
-                        .length
-                    }
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <View
-              style={styles.timeRow}
-            >
-              <Ionicons
-                name="time-outline"
-                size={12}
-                color={COLORS.faint}
-              />
-
-              <Text
-                style={
-                  styles.timeText
-                }
-              >
-                {formatDate(
-                  product.created_at
-                )}
-              </Text>
-            </View>
-          </View>
-
-          {/* COMENTÁRIOS */}
-
-          {commentVisible && (
-            <View
-              style={
-                styles.commentBox
-              }
-            >
-              <View
-                style={
-                  styles.commentInputRow
-                }
-              >
-                <TextInput
-                  style={
-                    styles.commentInput
-                  }
-                  placeholder="Adicione um comentário..."
-                  placeholderTextColor={
-                    COLORS.faint
-                  }
-                  value={comment}
-                  onChangeText={
-                    setComment
-                  }
-                  onSubmitEditing={
-                    addComment
-                  }
-                  returnKeyType="send"
-                />
-
-                <TouchableOpacity
-                  style={[
-                    styles.sendBtn,
-                    {
-                      opacity:
-                        comment.trim()
-                          ? 1
-                          : 0.5,
-                    },
-                  ]}
-                  onPress={
-                    addComment
-                  }
-                  disabled={
-                    !comment.trim()
-                  }
-                >
-                  <Ionicons
-                    name="send"
-                    size={15}
-                    color="#FFFFFF"
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {commentsLoading ? (
-                <ActivityIndicator
-                  color={
-                    COLORS.primary
-                  }
-                  style={{
-                    marginVertical: 16,
-                  }}
-                />
-              ) : product.comments
-                  ?.length ? (
-                product.comments.map(
-                  (c) => (
-                    <View
-                      key={c.id}
-                      style={
-                        styles.commentItem
-                      }
-                    >
-                      <View
-                        style={{
-                          flexDirection:
-                            "row",
-                          gap: 10,
-                        }}
-                      >
-                        <View
-                          style={
-                            styles.commentAvatar
-                          }
-                        >
-                          <Text
-                            style={
-                              styles.commentAvatarText
-                            }
-                          >
-                            {c.user_name
-                              ?.charAt(
-                                0
-                              )
-                              ?.toUpperCase() ||
-                              "?"}
-                          </Text>
-                        </View>
-
-                        <View
-                          style={{
-                            flex: 1,
-                          }}
-                        >
-                          <View
-                            style={
-                              styles.commentHeaderRow
-                            }
-                          >
-                            <Text
-                              style={
-                                styles.commentUserName
-                              }
-                            >
-                              {
-                                c.user_name
-                              }
-                            </Text>
-
-                            <View
-                              style={
-                                styles.commentTypePill
-                              }
-                            >
-                              <Text
-                                style={
-                                  styles.commentTypeText
-                                }
-                              >
-                                {
-                                  c.user_type
-                                }
-                              </Text>
-                            </View>
-
-                            <Text
-                              style={
-                                styles.commentDate
-                              }
-                            >
-                              {formatDate(
-                                c.created_at
-                              )}
-                            </Text>
-                          </View>
-
-                          <Text
-                            style={
-                              styles.commentText
-                            }
-                          >
-                            {
-                              c.comment_text
-                            }
-                          </Text>
-
-                          {/* AÇÕES DO COMENTÁRIO */}
-
-                          <View
-                            style={
-                              styles.commentActionsRow
-                            }
-                          >
-                            <TouchableOpacity
-                              style={
-                                styles.commentActionBtn
-                              }
-                              onPress={() =>
-                                toggleCommentLike(
-                                  c.id,
-                                  c.is_liked ||
-                                    false
-                                )
-                              }
-                            >
-                              <Ionicons
-                                name={
-                                  c.is_liked
-                                    ? "thumbs-up"
-                                    : "thumbs-up-outline"
-                                }
-                                size={13}
-                                color={
-                                  c.is_liked
-                                    ? COLORS.red
-                                    : COLORS.faint
-                                }
-                              />
-
-                              <Text
-                                style={[
-                                  styles.commentActionText,
-                                  {
-                                    color:
-                                      c.is_liked
-                                        ? COLORS.red
-                                        : COLORS.faint,
-                                  },
-                                ]}
-                              >
-                                {c.likes_count ||
-                                  "Curtir"}
-                              </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                              style={
-                                styles.commentActionBtn
-                              }
-                              onPress={() =>
-                                setReplyingTo(
-                                  replyingTo ===
-                                    c.id
-                                    ? null
-                                    : c.id
-                                )
-                              }
-                            >
-                              <Ionicons
-                                name="arrow-undo-outline"
-                                size={13}
-                                color={
-                                  COLORS.primary
-                                }
-                              />
-
-                              <Text
-                                style={[
-                                  styles.commentActionText,
-                                  {
-                                    color:
-                                      COLORS.primary,
-                                  },
-                                ]}
-                              >
-                                Responder
-                              </Text>
-                            </TouchableOpacity>
-                          </View>
-
-                          {/* RESPOSTA */}
-
-                          {replyingTo ===
-                            c.id && (
-                            <View
-                              style={[
-                                styles.commentInputRow,
-                                {
-                                  marginTop: 8,
-                                },
-                              ]}
-                            >
-                              <TextInput
-                                style={[
-                                  styles.commentInput,
-                                  styles.replyInput,
-                                ]}
-                                placeholder="Sua resposta..."
-                                placeholderTextColor={
-                                  COLORS.faint
-                                }
-                                value={
-                                  replyText
-                                }
-                                onChangeText={
-                                  setReplyText
-                                }
-                                onSubmitEditing={() =>
-                                  addReply(
-                                    c.id
-                                  )
-                                }
-                                returnKeyType="send"
-                                autoFocus
-                              />
-
-                              <TouchableOpacity
-                                style={[
-                                  styles.sendBtn,
-                                  styles.replySendBtn,
-                                ]}
-                                onPress={() =>
-                                  addReply(
-                                    c.id
-                                  )
-                                }
-                              >
-                                <Ionicons
-                                  name="send"
-                                  size={13}
-                                  color="#FFFFFF"
-                                />
-                              </TouchableOpacity>
-                            </View>
-                          )}
-
-                          {/* RESPOSTAS */}
-
-                          {!!c.replies
-                            ?.length && (
-                            <View
-                              style={
-                                styles.repliesWrap
-                              }
-                            >
-                              {c.replies.map(
-                                (r) => (
-                                  <View
-                                    key={
-                                      r.id
-                                    }
-                                    style={
-                                      styles.replyItem
-                                    }
-                                  >
-                                    <Text
-                                      style={
-                                        styles.replyUserName
-                                      }
-                                    >
-                                      {
-                                        r.user_name
-                                      }
-                                    </Text>
-
-                                    <Text
-                                      style={
-                                        styles.replySeparator
-                                      }
-                                    >
-                                      {" "}
-                                      ·{" "}
-                                    </Text>
-
-                                    <Text
-                                      style={
-                                        styles.replyText
-                                      }
-                                    >
-                                      {
-                                        r.reply_text
-                                      }
-                                    </Text>
-                                  </View>
-                                )
-                              )}
-                            </View>
-                          )}
-                        </View>
-                      </View>
-                    </View>
-                  )
-                )
-              ) : (
-                <View
-                  style={
-                    styles.emptyComments
-                  }
-                >
-                  <Ionicons
-                    name="leaf-outline"
-                    size={28}
-                    color={
-                      COLORS.border
-                    }
-                  />
-
-                  <Text
-                    style={
-                      styles.emptyCommentsText
-                    }
-                  >
-                    Seja o primeiro a
-                    comentar!
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  }
-);
-
-ProductCard.displayName =
-  "ProductCard";
-
-/* =========================================================
-   COMPONENTE DO FEED
-   USE ESTE COMPONENTE NA SUA TELA
-========================================================= */
-
-export const ProductFeed = ({
-  products = [],
-  currentUserId = null,
-  onOpenPreOrder = () => {},
-  onRequireLogin = () => {},
-  refreshing = false,
-  onRefresh = () => {},
-}) => {
-  /*
-   * AQUI ESTÁ A REGRA PRINCIPAL:
-   *
-   * Se existem produtos reais:
-   *     usa products
-   *
-   * Se NÃO existem produtos reais:
-   *     usa MOCK_PRODUCTS
-   */
-
-  const hasRealProducts =
-    Array.isArray(products) &&
-    products.length > 0;
-
-  const displayedProducts =
-    hasRealProducts
-      ? products
-      : MOCK_PRODUCTS;
-
-  const [localProducts, setLocalProducts] =
-    useState(displayedProducts);
-
-  /*
-   * Sempre que o Supabase receber
-   * publicações reais, os mockups
-   * desaparecem.
-   */
-
+function FadeSlide({ children, delay = 0, style }: any) {
+  const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (
-      Array.isArray(products) &&
-      products.length > 0
-    ) {
-      setLocalProducts(products);
-    } else {
-      setLocalProducts(
-        MOCK_PRODUCTS
-      );
-    }
-  }, [products]);
-
-  /* =====================================================
-     ATUALIZAR PRODUTO
-  ===================================================== */
-
-  const handleProductUpdate =
-    useCallback(
-      (updatedProduct) => {
-        setLocalProducts(
-          (current) =>
-            current.map((item) =>
-              item.id ===
-              updatedProduct.id
-                ? updatedProduct
-                : item
-            )
-        );
-      },
-      []
-    );
-
+    Animated.timing(v, {
+      toValue: 1,
+      duration: 340,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, []);
   return (
-    <FlatList
-      data={localProducts}
-      keyExtractor={(item) =>
-        item.id
-      }
-      renderItem={({ item }) => (
-        <ProductCard
-          product={item}
-          currentUserId={
-            currentUserId
-          }
-          onProductUpdate={
-            handleProductUpdate
-          }
-          onOpenPreOrder={
-            onOpenPreOrder
-          }
-          onRequireLogin={
-            onRequireLogin
-          }
-        />
-      )}
-      showsVerticalScrollIndicator={
-        false
-      }
-      refreshing={refreshing}
-      onRefresh={onRefresh}
-      contentContainerStyle={{
-        paddingTop: 10,
-        paddingBottom: 30,
-      }}
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: v,
+          transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+function Field(props: any) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <TextInput
+      {...props}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      placeholderTextColor={COLORS.faint}
+      style={[styles.input, focused && styles.inputFocus]}
     />
   );
-};
-
-/* =========================================================
-   ESTILOS
-========================================================= */
-
-const styles = StyleSheet.create({
-  card: {
-    width: CARD_WIDTH,
-    alignSelf: "center",
-    borderRadius: RADIUS.xl,
-    backgroundColor:
-      COLORS.surface,
-    borderWidth: 1,
-    borderColor:
-      COLORS.border,
-    marginBottom: 18,
-    overflow: "hidden",
-
-    shadowColor: "#16231C",
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    shadowOffset: {
-      width: 0,
-      height: 5,
-    },
-
-    elevation: 2,
-  },
-
-  /* =====================================================
-     IMAGEM
-  ===================================================== */
-
-  imageWrap: {
-    width: CARD_WIDTH,
-    height: IMAGE_HEIGHT,
-    backgroundColor:
-      COLORS.primarySoft,
-  },
-
-  image: {
-    width: CARD_WIDTH,
-    height: IMAGE_HEIGHT,
-  },
-
-  noPhoto: {
-    alignItems: "center",
-    justifyContent:
-      "center",
-    gap: 6,
-  },
-
-  noPhotoText: {
-    fontSize: 12,
-    color: COLORS.faint,
-    fontWeight: "600",
-  },
-
-  /* =====================================================
-     CONTADOR
-  ===================================================== */
-
-  photoCounter: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-
-    backgroundColor:
-      "rgba(22,35,28,0.68)",
-
-    borderRadius: 999,
-
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-
-    flexDirection: "row",
-    alignItems: "center",
-
-    gap: 4,
-  },
-
-  photoCounterText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "800",
-  },
-
-  /* =====================================================
-     DOTS
-  ===================================================== */
-
-  dotsRow: {
-    position: "absolute",
-
-    bottom: 10,
-    left: 0,
-    right: 0,
-
-    flexDirection: "row",
-
-    justifyContent:
-      "center",
-
-    gap: 5,
-  },
-
-  dot: {
-    width: 5,
-    height: 5,
-
-    borderRadius: 3,
-
-    backgroundColor:
-      "rgba(255,255,255,0.6)",
-  },
-
-  dotActive: {
-    width: 14,
-
-    backgroundColor:
-      "#FFFFFF",
-  },
-
-  /* =====================================================
-     BADGES
-  ===================================================== */
-
-  imageBadgeRow: {
-    position: "absolute",
-
-    top: 10,
-    left: 10,
-
-    zIndex: 5,
-
-    flexDirection: "row",
-
-    gap: 6,
-  },
-
-  badgeNew: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 4,
-
-    backgroundColor:
-      "rgba(22,35,28,0.6)",
-
-    borderRadius: 999,
-
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-
-  badgeNewText: {
-    color: "#FFFFFF",
-
-    fontSize: 10,
-
-    fontWeight: "800",
-
-    letterSpacing: 0.3,
-  },
-
-  badgeDiscount: {
-    backgroundColor:
-      "#FFFFFF",
-
-    borderRadius: 999,
-
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-
-    borderWidth: 1,
-
-    borderColor:
-      COLORS.primaryLight,
-  },
-
-  badgeDiscountText: {
-    color: COLORS.primary,
-
-    fontSize: 10,
-
-    fontWeight: "800",
-  },
-
-  demoBadge: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 4,
-
-    backgroundColor:
-      "rgba(226,147,47,0.92)",
-
-    borderRadius: 999,
-
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-
-  demoBadgeText: {
-    color: "#FFFFFF",
-
-    fontSize: 10,
-
-    fontWeight: "800",
-  },
-
-  /* =====================================================
-     SHARE
-  ===================================================== */
-
-  shareBtn: {
-    position: "absolute",
-
-    top: 10,
-    right: 10,
-
-    zIndex: 5,
-
-    width: 30,
-    height: 30,
-
-    borderRadius: 15,
-
-    backgroundColor:
-      "rgba(255,255,255,0.92)",
-
-    alignItems: "center",
-
-    justifyContent:
-      "center",
-  },
-
-  /* =====================================================
-     CONTEÚDO
-  ===================================================== */
-
-  content: {
-    padding: 16,
-  },
-
-  /* =====================================================
-     AGRICULTOR
-  ===================================================== */
-
-  farmerRow: {
-    flexDirection: "row",
-
-    alignItems: "flex-start",
-
-    gap: 10,
-
-    marginBottom: 14,
-  },
-
-  avatar: {
-    width: 40,
-    height: 40,
-
-    borderRadius: 20,
-
-    backgroundColor:
-      COLORS.primary,
-
-    alignItems: "center",
-
-    justifyContent:
-      "center",
-  },
-
-  avatarText: {
-    color: "#FFFFFF",
-
-    fontWeight: "800",
-
-    fontSize: 16,
-  },
-
-  farmerNameRow: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 4,
-  },
-
-  farmerName: {
-    fontSize: 13.5,
-
-    fontWeight: "800",
-
-    color: COLORS.text,
-
-    flexShrink: 1,
-  },
-
-  locationRow: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 3,
-
-    marginTop: 2,
-  },
-
-  locationText: {
-    fontSize: 11,
-
-    color: COLORS.faint,
-
-    flexShrink: 1,
-  },
-
-  typeBadge: {
-    maxWidth: 110,
-
-    backgroundColor:
-      COLORS.canvas,
-
-    borderRadius: 999,
-
-    paddingHorizontal: 9,
-
-    paddingVertical: 4,
-
-    borderWidth: 1,
-
-    borderColor:
-      COLORS.border,
-  },
-
-  typeBadgeText: {
-    fontSize: 10,
-
-    fontWeight: "700",
-
-    color: COLORS.muted,
-  },
-
-  /* =====================================================
-     PRODUTO
-  ===================================================== */
-
-  title: {
-    fontSize: 18,
-
-    fontWeight: "800",
-
-    color: COLORS.text,
-
-    marginBottom: 8,
-  },
-
-  priceRow: {
-    flexDirection: "row",
-
-    alignItems: "baseline",
-
-    gap: 8,
-
-    marginBottom: 4,
-  },
-
-  price: {
-    fontSize: 22,
-
-    fontWeight: "800",
-
-    color: COLORS.text,
-  },
-
-  priceOld: {
-    fontSize: 12,
-
-    color: COLORS.faint,
-
-    textDecorationLine:
-      "line-through",
-  },
-
-  /* =====================================================
-     STOCK
-  ===================================================== */
-
-  stockRow: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 5,
-
-    marginBottom: 14,
-  },
-
-  stockText: {
-    fontSize: 11.5,
-
-    color: COLORS.muted,
-
-    fontWeight: "600",
-  },
-
-  /* =====================================================
-     COMPRAR
-  ===================================================== */
-
-  buyBtn: {
-    height: 48,
-
-    borderRadius:
-      RADIUS.md,
-
-    backgroundColor:
-      COLORS.primary,
-
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    justifyContent:
-      "center",
-
-    gap: 8,
-
-    marginBottom: 12,
-  },
-
-  buyBtnText: {
-    color: "#FFFFFF",
-
-    fontSize: 14,
-
-    fontWeight: "800",
-  },
-
-  /* =====================================================
-     DESCRIÇÃO
-  ===================================================== */
-
-  description: {
-    fontSize: 13,
-
-    color: COLORS.muted,
-
-    lineHeight: 19,
-  },
-
-  /* =====================================================
-     META
-  ===================================================== */
-
-  metaRow: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 16,
-
-    flexWrap: "wrap",
-
-    paddingTop: 12,
-
-    marginTop: 12,
-
-    borderTopWidth: 1,
-
-    borderTopColor:
-      COLORS.border,
-  },
-
-  metaItem: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 5,
-  },
-
-  metaText: {
-    fontSize: 11.5,
-
-    color: COLORS.faint,
-
-    fontWeight: "500",
-  },
-
-  /* =====================================================
-     AÇÕES
-  ===================================================== */
-
-  actionsRow: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    justifyContent:
-      "space-between",
-
-    paddingTop: 12,
-
-    marginTop: 12,
-
-    borderTopWidth: 1,
-
-    borderTopColor:
-      COLORS.border,
-  },
-
-  actionBtn: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 5,
-
-    paddingHorizontal: 10,
-
-    paddingVertical: 6,
-
-    borderRadius: 999,
-  },
-
-  actionBtnLiked: {
-    backgroundColor:
-      "rgba(221,81,56,0.08)",
-  },
-
-  actionBtnActive: {
-    backgroundColor:
-      COLORS.primarySoft,
-  },
-
-  actionBtnText: {
-    fontSize: 12.5,
-
-    fontWeight: "700",
-  },
-
-  timeRow: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 4,
-  },
-
-  timeText: {
-    fontSize: 11,
-
-    color: COLORS.faint,
-  },
-
-  /* =====================================================
-     COMENTÁRIOS
-  ===================================================== */
-
-  commentBox: {
-    paddingTop: 14,
-
-    marginTop: 12,
-
-    borderTopWidth: 1,
-
-    borderTopColor:
-      COLORS.border,
-  },
-
-  commentInputRow: {
-    flexDirection: "row",
-
-    gap: 8,
-
-    marginBottom: 14,
-  },
-
-  commentInput: {
-    flex: 1,
-
-    height: 42,
-
-    borderRadius: 999,
-
-    borderWidth: 1,
-
-    borderColor:
-      COLORS.border,
-
-    paddingHorizontal: 15,
-
-    fontSize: 13,
-
-    color: COLORS.text,
-
-    backgroundColor:
-      COLORS.surface,
-  },
-
-  replyInput: {
-    height: 36,
-
-    fontSize: 12,
-  },
-
-  sendBtn: {
-    width: 42,
-    height: 42,
-
-    borderRadius: 21,
-
-    backgroundColor:
-      COLORS.primary,
-
-    alignItems: "center",
-
-    justifyContent:
-      "center",
-  },
-
-  replySendBtn: {
-    width: 36,
-    height: 36,
-
-    borderRadius: 18,
-  },
-
-  commentItem: {
-    backgroundColor:
-      COLORS.canvas,
-
-    borderRadius:
-      RADIUS.md,
-
-    padding: 12,
-
-    borderWidth: 1,
-
-    borderColor:
-      COLORS.border,
-
-    marginBottom: 10,
-  },
-
-  commentAvatar: {
-    width: 30,
-    height: 30,
-
-    borderRadius: 15,
-
-    backgroundColor:
-      COLORS.primary,
-
-    alignItems: "center",
-
-    justifyContent:
-      "center",
-  },
-
-  commentAvatarText: {
-    color: "#FFFFFF",
-
-    fontWeight: "800",
-
-    fontSize: 12,
-  },
-
-  commentHeaderRow: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 6,
-
-    flexWrap: "wrap",
-
-    marginBottom: 3,
-  },
-
-  commentUserName: {
-    fontSize: 12.5,
-
-    fontWeight: "800",
-
-    color: COLORS.text,
-  },
-
-  commentTypePill: {
-    backgroundColor:
-      COLORS.surface,
-
-    borderWidth: 1,
-
-    borderColor:
-      COLORS.border,
-
-    borderRadius: 999,
-
-    paddingHorizontal: 7,
-
-    paddingVertical: 1,
-  },
-
-  commentTypeText: {
-    fontSize: 9,
-
-    color: COLORS.faint,
-
-    fontWeight: "600",
-  },
-
-  commentDate: {
-    fontSize: 10,
-
-    color: COLORS.faint,
-  },
-
-  commentText: {
-    fontSize: 12.5,
-
-    color: COLORS.text,
-
-    lineHeight: 18,
-  },
-
-  commentActionsRow: {
-    flexDirection: "row",
-
-    gap: 14,
-
-    marginTop: 8,
-  },
-
-  commentActionBtn: {
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    gap: 4,
-  },
-
-  commentActionText: {
-    fontSize: 11.5,
-
-    fontWeight: "600",
-  },
-
-  repliesWrap: {
-    marginTop: 8,
-
-    paddingLeft: 10,
-
-    borderLeftWidth: 2,
-
-    borderLeftColor:
-      COLORS.border,
-  },
-
-  replyItem: {
-    flexDirection: "row",
-
-    flexWrap: "wrap",
-
-    marginBottom: 4,
-  },
-
-  replyUserName: {
-    fontSize: 11.5,
-
-    fontWeight: "800",
-
-    color: COLORS.text,
-  },
-
-  replySeparator: {
-    fontSize: 11.5,
-
-    color: COLORS.faint,
-  },
-
-  replyText: {
-    fontSize: 11.5,
-
-    color: COLORS.muted,
-  },
-
-  emptyComments: {
-    alignItems: "center",
-
-    paddingVertical: 22,
-
-    gap: 6,
-  },
-
-  emptyCommentsText: {
-    fontSize: 12.5,
-
-    color: COLORS.faint,
-  },
+}
+
+function Segment({ active }: { active: boolean }) {
+  const v = useRef(new Animated.Value(active ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(v, { toValue: active ? 1 : 0, duration: 350, useNativeDriver: false }).start();
+  }, [active]);
+  return (
+    <Animated.View
+      style={[
+        styles.segment,
+        { backgroundColor: v.interpolate({ inputRange: [0, 1], outputRange: [COLORS.border, COLORS.primary] }) },
+      ]}
+    />
+  );
+}
+
+function StepIndicator({ index }: { index: number }) {
+  return (
+    <View style={styles.stepWrap}>
+      <View style={styles.segRow}>
+        {STEP_LABELS.map((_, i) => (
+          <Segment key={i} active={i <= index} />
+        ))}
+      </View>
+      <View style={styles.segRow}>
+        {STEP_LABELS.map((label, i) => (
+          <Text key={label} style={[styles.stepLabel, i === index && styles.stepLabelActive]}>
+            {label}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function MethodCard({ p, active, available, onPress }: any) {
+  const check = useRef(new Animated.Value(active ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.spring(check, { toValue: active ? 1 : 0, friction: 5, useNativeDriver: true }).start();
+  }, [active]);
+  return (
+    <PressableScale
+      disabled={!available}
+      onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: active, disabled: !available }}
+      style={[styles.method, active && styles.methodActive, !available && styles.methodOff]}
+    >
+      <View style={[styles.methodIcon, active && { backgroundColor: COLORS.primary }]}>
+        <Ionicons name={p.icon} size={19} color={active ? "#FFFFFF" : COLORS.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.methodTitle}>{p.label}</Text>
+        <Text style={styles.methodSub}>{available ? p.description : "Em breve"}</Text>
+      </View>
+      <Animated.View style={{ transform: [{ scale: check }], opacity: check }}>
+        <Ionicons name="checkmark-circle" size={22} color={COLORS.primary} />
+      </Animated.View>
+    </PressableScale>
+  );
+}
+
+function PulseRing({ delay = 0, color = COLORS.primary }: { delay?: number; color?: string }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(v, { toValue: 1, duration: 1900, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+  return (
+    <Animated.View
+      style={[
+        styles.ring,
+        {
+          borderColor: color,
+          opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),
+          transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] }) }],
+        },
+      ]}
+    />
+  );
+}
+
+function PulseBadge({ children }: any) {
+  return (
+    <View style={styles.pulseWrap}>
+      <PulseRing />
+      <PulseRing delay={900} />
+      <View style={styles.pulseCore}>{children}</View>
+    </View>
+  );
+}
+
+const PARTICLES = Array.from({ length: 12 }, (_, i) => {
+  const a = (i / 12) * Math.PI * 2;
+  return { dx: Math.cos(a) * 66, dy: Math.sin(a) * 66, color: i % 2 ? COLORS.accent : COLORS.primary };
 });
 
-export default ProductCard;
+function SuccessBurst() {
+  const pop = useRef(new Animated.Value(0)).current;
+  const burst = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(pop, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }),
+      Animated.timing(burst, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, []);
+  return (
+    <View style={styles.burstWrap}>
+      {PARTICLES.map((p, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            styles.particle,
+            {
+              backgroundColor: p.color,
+              opacity: burst.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0, 1, 0] }),
+              transform: [
+                { translateX: burst.interpolate({ inputRange: [0, 1], outputRange: [0, p.dx] }) },
+                { translateY: burst.interpolate({ inputRange: [0, 1], outputRange: [0, p.dy] }) },
+                { scale: burst.interpolate({ inputRange: [0, 1], outputRange: [1, 0.4] }) },
+              ],
+            },
+          ]}
+        />
+      ))}
+      <Animated.View style={[styles.resultIcon, { backgroundColor: COLORS.primary, transform: [{ scale: pop }] }]}>
+        <Ionicons name="checkmark" size={40} color="#FFFFFF" />
+      </Animated.View>
+    </View>
+  );
+}
+
+function FailIcon() {
+  const pop = useRef(new Animated.Value(0)).current;
+  const x = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(pop, { toValue: 1, friction: 5, useNativeDriver: true }).start(() => {
+      Animated.sequence(
+        [10, -10, 8, -8, 0].map((toValue) =>
+          Animated.timing(x, { toValue, duration: 60, useNativeDriver: true }),
+        ),
+      ).start();
+    });
+  }, []);
+  return (
+    <Animated.View
+      style={[
+        styles.resultIcon,
+        { backgroundColor: COLORS.redSoft, transform: [{ scale: pop }, { translateX: x }] },
+      ]}
+    >
+      <Ionicons name="close" size={40} color={COLORS.red} />
+    </Animated.View>
+  );
+}
+
+function Countdown({ expiresAt }: { expiresAt: string }) {
+  const calc = () => Math.max(0, new Date(expiresAt).getTime() - Date.now());
+  const [left, setLeft] = useState(calc);
+  useEffect(() => {
+    const t = setInterval(() => setLeft(calc()), 1000);
+    return () => clearInterval(t);
+  }, [expiresAt]);
+  const m = String(Math.floor(left / 60000)).padStart(2, "0");
+  const s = String(Math.floor((left % 60000) / 1000)).padStart(2, "0");
+  return (
+    <View style={styles.countdown}>
+      <Ionicons name="time-outline" size={14} color={COLORS.accent} />
+      <Text style={styles.countdownText}>Expira em {m}:{s}</Text>
+    </View>
+  );
+}
+
+function hasAnyAvailable(availability: any, hasData: boolean) {
+  if (!hasData) return true;
+  return PAYMENT_PROVIDERS.some((p) => availability[p.id]?.enabled === true);
+}
+
+/* ================================ componente ================================ */
+
+export default function PaymentSheet({ product, visible, onClose, onPaid, onViewHistory }: Props) {
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const compact = width < 360;
+  const sheetWidth = Math.min(width, MAX_SHEET_WIDTH);
+  const pad = compact ? 16 : 20;
+
+  const maxQty = Math.max(1, Math.floor(Number(product?.quantity) || 1));
+  const unitPrice = Number(product?.price) || 0;
+
+  const [mounted, setMounted] = useState(visible);
+  const [step, setStep] = useState("form"); // form | creating | awaiting | success | failed
+  const [quantity, setQuantity] = useState(1);
+  const [location, setLocation] = useState("");
+  const [providerId, setProviderId] = useState<string | null>(null);
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState("");
+  const [availability, setAvailability] = useState<any>({});
+  const [payment, setPayment] = useState<any>(null);
+  const [order, setOrder] = useState<any>(null);
+  const [isPreview, setIsPreview] = useState(false);
+
+  const translateY = useRef(new Animated.Value(height)).current;
+  const backdrop = useRef(new Animated.Value(0)).current;
+  const bump = useRef(new Animated.Value(1)).current;
+
+  const stopWatch = useRef<null | (() => void)>(null);
+  const idemKey = useRef(newIdempotencyKey());
+  const orderRef = useRef<any>(null);
+  const closeRef = useRef<() => void>(() => {});
+
+  const provider = PAYMENT_PROVIDERS.find((p) => p.id === providerId) ?? null;
+  const estimate = useMemo(() => quantity * unitPrice, [quantity, unitPrice]);
+  const hasAvailabilityData = Object.keys(availability).length > 0;
+  const anyAvailable = hasAnyAvailable(availability, hasAvailabilityData);
+  const isAvailable = (id: string) => (hasAvailabilityData ? availability[id]?.enabled === true : true);
+  const stepIndex = step === "awaiting" ? 1 : step === "success" || step === "failed" ? 2 : 0;
+
+  /* ---------- abrir / fechar (elevador) ---------- */
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      setStep("form");
+      setQuantity(1);
+      setLocation("");
+      setProviderId(null);
+      setPhone("");
+      setError("");
+      setPayment(null);
+      setOrder(null);
+      setIsPreview(false);
+      orderRef.current = null;
+      idemKey.current = newIdempotencyKey();
+
+      translateY.setValue(height);
+      backdrop.setValue(0);
+      Animated.parallel([
+        Animated.spring(translateY, { toValue: 0, bounciness: 5, speed: 12, useNativeDriver: true }),
+        Animated.timing(backdrop, { toValue: 1, duration: 260, useNativeDriver: true }),
+      ]).start();
+
+      let alive = true;
+      loadProviderAvailability().then((map: any) => alive && setAvailability(map));
+      return () => {
+        alive = false;
+      };
+    }
+    stopWatch.current?.();
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: height,
+        duration: 260,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(backdrop, { toValue: 0, duration: 220, useNativeDriver: true }),
+    ]).start(({ finished }) => finished && setMounted(false));
+  }, [visible]);
+
+  useEffect(() => () => stopWatch.current?.(), []);
+
+  // Dados diferentes = pedido novo = chave de idempotência nova
+  useEffect(() => {
+    idemKey.current = newIdempotencyKey();
+  }, [quantity, location, providerId, phone]);
+
+  // Pequeno "pulso" quando o total muda
+  useEffect(() => {
+    Animated.sequence([
+      Animated.timing(bump, { toValue: 1.07, duration: 90, useNativeDriver: true }),
+      Animated.spring(bump, { toValue: 1, friction: 5, useNativeDriver: true }),
+    ]).start();
+  }, [estimate]);
+
+  /* ---------- lógica ---------- */
+  const changeQty = (delta: number) => setQuantity((q) => Math.min(maxQty, Math.max(1, q + delta)));
+
+  const startWatching = (intentId: string, fetcher?: any) => {
+    stopWatch.current?.();
+    stopWatch.current = watchPayment(intentId, {
+      fetcher,
+      onUpdate: (next: any) => {
+        setPayment((prev: any) => ({ ...(prev ?? {}), ...next }));
+        const status = effectiveStatus(next);
+        if (status === "succeeded") {
+          setStep("success");
+          onPaid?.({ payment: next, order: orderRef.current });
+        } else if (["failed", "cancelled", "expired", "refunded"].includes(status)) {
+          setError(STATUS_MESSAGES[status] ?? STATUS_MESSAGES.failed);
+          setStep("failed");
+        }
+      },
+    });
+  };
+
+  const handleCreated = ({ payment: created, order: createdOrder }: any, fetcher?: any) => {
+    setPayment(created);
+    setOrder(createdOrder);
+    orderRef.current = createdOrder;
+    const status = effectiveStatus(created);
+    if (status === "succeeded") {
+      setStep("success");
+      onPaid?.({ payment: created, order: createdOrder });
+      return;
+    }
+    if (["failed", "cancelled", "expired"].includes(status)) {
+      setError(STATUS_MESSAGES[status]);
+      setStep("failed");
+      return;
+    }
+    setStep("awaiting");
+    startWatching(created.id, fetcher);
+  };
+
+  const validate = () => {
+    if (location.trim().length < 3) return "Indica o local de entrega.";
+    if (!provider) return "Escolhe um método de pagamento.";
+    if (provider.needsPhone && !normalizeAoPhone(phone)) {
+      return "Número inválido. Usa 9 dígitos, por exemplo 923 456 789.";
+    }
+    return "";
+  };
+
+  const submit = async () => {
+    const problem = validate();
+    if (problem) return setError(problem);
+    setError("");
+    setStep("creating");
+    try {
+      const result = await createOrderPayment({
+        productId: product.id,
+        quantity,
+        location: location.trim(),
+        providerId: provider!.id,
+        payerPhone: provider!.needsPhone ? normalizeAoPhone(phone) : null,
+        idempotencyKey: idemKey.current,
+      });
+      setIsPreview(false);
+      handleCreated(result);
+    } catch (e: any) {
+      setError(e?.message ?? "Não foi possível iniciar o pagamento.");
+      setStep("form");
+    }
+  };
+
+  const submitPreview = () => {
+    const problem = validate();
+    if (problem) return setError(problem);
+    setError("");
+    setIsPreview(true);
+    const sim = previewPayment({ providerId: provider!.id, quantity, unitPrice });
+    handleCreated({ payment: sim.payment, order: sim.order }, sim.fetcher);
+  };
+
+  const retry = () => {
+    stopWatch.current?.();
+    idemKey.current = newIdempotencyKey();
+    setPayment(null);
+    setError("");
+    setStep("form");
+  };
+
+  const close = () => {
+    if (step === "creating") return;
+    onClose?.();
+  };
+  closeRef.current = close;
+
+  const shareReference = async () => {
+    const ref = payment?.reference;
+    if (!ref) return;
+    try {
+      await Share.share({
+        message: `Pagamento AgriLink\nEntidade: ${ref.entity}\nReferência: ${ref.reference}\nMontante: ${formatKz(ref.amount ?? payment.amount)}`,
+      });
+    } catch {
+      /* cancelado */
+    }
+  };
+
+  const openHistory = () => {
+    onViewHistory?.({ intentId: payment?.id, orderId: order?.id });
+    onClose?.();
+  };
+
+  /* ---------- arrastar para baixo ---------- */
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+        onPanResponderMove: (_, g) => {
+          if (g.dy > 0) translateY.setValue(g.dy);
+        },
+        onPanResponderRelease: (_, g) => {
+          if (g.dy > 110 || g.vy > 0.9) closeRef.current();
+          else Animated.spring(translateY, { toValue: 0, bounciness: 6, useNativeDriver: true }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        },
+      }),
+    [],
+  );
+
+  if (!product) return null;
+
+  /* ------------------------------ blocos ------------------------------ */
+
+  const chips = [1, 5, 10, 25, 50].filter((n) => n < maxQty);
+  if (maxQty > 1) chips.push(maxQty);
+
+  const renderForm = () => (
+    <>
+      <FadeSlide>
+        <View style={styles.productRow}>
+          <View style={styles.productIcon}>
+            <Ionicons name="leaf-outline" size={22} color={COLORS.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.productName} numberOfLines={1}>{product.product_type}</Text>
+            <Text style={styles.productSub} numberOfLines={1}>
+              {product.farmer_name} · {formatKz(unitPrice)}/kg
+            </Text>
+          </View>
+        </View>
+      </FadeSlide>
+
+      <FadeSlide delay={50}>
+        <Text style={styles.label}>Quantidade (kg)</Text>
+        <View style={styles.qtyRow}>
+          <PressableScale style={styles.qtyBtn} onPress={() => changeQty(-1)} accessibilityLabel="Diminuir">
+            <Ionicons name="remove" size={20} color={COLORS.text} />
+          </PressableScale>
+          <Animated.Text style={[styles.qtyValue, { transform: [{ scale: bump }] }]}>{quantity}</Animated.Text>
+          <PressableScale style={styles.qtyBtn} onPress={() => changeQty(1)} accessibilityLabel="Aumentar">
+            <Ionicons name="add" size={20} color={COLORS.text} />
+          </PressableScale>
+          <Text style={styles.qtyHint}>máx. {maxQty.toLocaleString("pt-AO")}</Text>
+        </View>
+        {chips.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+            {chips.map((n) => {
+              const on = quantity === n;
+              return (
+                <PressableScale key={n} onPress={() => setQuantity(n)} style={[styles.chip, on && styles.chipOn]}>
+                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{n === maxQty ? "Máx" : `${n} kg`}</Text>
+                </PressableScale>
+              );
+            })}
+          </ScrollView>
+        ) : null}
+      </FadeSlide>
+
+      <FadeSlide delay={100}>
+        <Text style={styles.label}>Local de entrega</Text>
+        <Field value={location} onChangeText={setLocation} placeholder="Bairro, município, província" />
+      </FadeSlide>
+
+      <FadeSlide delay={150}>
+        <Text style={styles.label}>Como queres pagar?</Text>
+        {PAYMENT_PROVIDERS.map((p) => (
+          <MethodCard
+            key={p.id}
+            p={p}
+            active={providerId === p.id}
+            available={isAvailable(p.id)}
+            onPress={() => setProviderId(p.id)}
+          />
+        ))}
+      </FadeSlide>
+
+      {provider?.needsPhone ? (
+        <FadeSlide>
+          <Text style={styles.label}>Telemóvel Unitel Money</Text>
+          <Field
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            placeholder="9__ ___ ___"
+            maxLength={16}
+          />
+        </FadeSlide>
+      ) : null}
+
+      <FadeSlide delay={200}>
+        <View style={styles.totalBox}>
+          <Text style={styles.totalLabel}>Total estimado</Text>
+          <Animated.Text
+            style={[styles.totalValue, { transform: [{ scale: bump }] }]}
+            adjustsFontSizeToFit
+            numberOfLines={1}
+          >
+            {formatKz(estimate)}
+          </Animated.Text>
+          <View style={styles.hintRow}>
+            <Ionicons name="shield-checkmark-outline" size={13} color={COLORS.faint} />
+            <Text style={styles.totalHint}>O valor final, com transporte, é confirmado antes de pagares.</Text>
+          </View>
+        </View>
+      </FadeSlide>
+
+      {error ? (
+        <FadeSlide key={error}>
+          <Text style={styles.error}>{error}</Text>
+        </FadeSlide>
+      ) : null}
+
+      <PressableScale
+        style={[styles.primaryBtn, !anyAvailable && styles.btnDisabled]}
+        onPress={submit}
+        disabled={!anyAvailable}
+      >
+        <Text style={styles.primaryBtnText}>Continuar para pagamento</Text>
+        <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+      </PressableScale>
+
+      <Pressable style={styles.linkBtn} onPress={close}>
+        <Text style={[styles.linkText, { textAlign: "center" }]}>Cancelar</Text>
+      </Pressable>
+
+      {__DEV__ ? (
+        <Pressable style={styles.previewBtn} onPress={submitPreview}>
+          <Ionicons name="flask-outline" size={14} color={COLORS.accent} />
+          <Text style={styles.previewText}>Pré-visualizar fluxo (só desenvolvimento)</Text>
+        </Pressable>
+      ) : null}
+    </>
+  );
+
+  const renderCreating = () => (
+    <FadeSlide style={styles.center}>
+      <PulseBadge>
+        <ActivityIndicator size="small" color="#FFFFFF" />
+      </PulseBadge>
+      <Text style={styles.centerTitle}>A preparar o pagamento…</Text>
+      <Text style={styles.centerBody}>Não feches esta janela.</Text>
+    </FadeSlide>
+  );
+
+  const renderAwaiting = () => {
+    const ref = payment?.reference;
+    const amount = ref?.amount ?? payment?.amount ?? order?.total_price;
+    return (
+      <FadeSlide>
+        {isPreview ? <Text style={styles.previewTag}>PRÉ-VISUALIZAÇÃO · nenhum valor real</Text> : null}
+        <Text style={styles.centerTitle}>Total a pagar</Text>
+        <Text style={styles.bigAmount} adjustsFontSizeToFit numberOfLines={1}>{formatKz(amount)}</Text>
+        {payment?.expires_at ? <Countdown expiresAt={payment.expires_at} /> : null}
+
+        {ref ? (
+          <View style={styles.refBox}>
+            <Text style={styles.refIntro}>Paga no ATM ou no Multicaixa Express com estes dados:</Text>
+            <View style={styles.refLine}>
+              <Text style={styles.refKey}>Entidade</Text>
+              <Text style={styles.refVal}>{ref.entity}</Text>
+            </View>
+            <View style={styles.refLine}>
+              <Text style={styles.refKey}>Referência</Text>
+              <Text style={styles.refVal}>{ref.reference}</Text>
+            </View>
+            <View style={styles.refLine}>
+              <Text style={styles.refKey}>Montante</Text>
+              <Text style={styles.refVal}>{formatKz(amount)}</Text>
+            </View>
+            <PressableScale style={styles.secondaryBtn} onPress={shareReference}>
+              <Ionicons name="share-social-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.secondaryBtnText}>Partilhar referência</Text>
+            </PressableScale>
+          </View>
+        ) : (
+          <View style={styles.refBox}>
+            <Text style={styles.refIntro}>
+              Enviámos um pedido para o teu Unitel Money. Abre a notificação no telemóvel e confirma com o teu PIN.
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.waitRow}>
+          <PulseBadge>
+            <Ionicons name="hourglass-outline" size={20} color="#FFFFFF" />
+          </PulseBadge>
+        </View>
+        <Text style={styles.waitText}>A aguardar confirmação…</Text>
+
+        <PressableScale style={styles.secondaryBtn} onPress={openHistory}>
+          <Text style={styles.secondaryBtnText}>Acompanhar no Histórico</Text>
+        </PressableScale>
+        <Pressable style={styles.linkBtn} onPress={close}>
+          <Text style={[styles.linkText, { textAlign: "center" }]}>Fechar</Text>
+        </Pressable>
+      </FadeSlide>
+    );
+  };
+
+  const renderSuccess = () => (
+    <View style={styles.center}>
+      <SuccessBurst />
+      <FadeSlide delay={250} style={styles.centerInner}>
+        <Text style={styles.centerTitle}>Pagamento confirmado</Text>
+        <Text style={styles.bigAmount} adjustsFontSizeToFit numberOfLines={1}>
+          {formatKz(payment?.amount ?? order?.total_price)}
+        </Text>
+        <Text style={styles.centerBody}>
+          {isPreview ? "Simulação: nada foi cobrado." : "A tua encomenda já está registada."}
+        </Text>
+        <PressableScale style={styles.primaryBtn} onPress={openHistory}>
+          <Text style={styles.primaryBtnText}>Ver no Histórico</Text>
+        </PressableScale>
+        <Pressable style={styles.linkBtn} onPress={close}>
+          <Text style={[styles.linkText, { textAlign: "center" }]}>Fechar</Text>
+        </Pressable>
+      </FadeSlide>
+    </View>
+  );
+
+  const renderFailed = () => (
+    <View style={styles.center}>
+      <FailIcon />
+      <FadeSlide delay={200} style={styles.centerInner}>
+        <Text style={styles.centerTitle}>Pagamento não concluído</Text>
+        <Text style={styles.centerBody}>{error || STATUS_MESSAGES.failed}</Text>
+        <PressableScale style={styles.primaryBtn} onPress={retry}>
+          <Text style={styles.primaryBtnText}>Tentar novamente</Text>
+        </PressableScale>
+        <Pressable style={styles.linkBtn} onPress={close}>
+          <Text style={[styles.linkText, { textAlign: "center" }]}>Fechar</Text>
+        </Pressable>
+      </FadeSlide>
+    </View>
+  );
+
+  return (
+    <Modal visible={mounted} transparent animationType="none" statusBarTranslucent onRequestClose={close}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={close} />
+        </Animated.View>
+
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              width: sheetWidth,
+              maxHeight: height * 0.92,
+              paddingBottom: Math.max(insets.bottom, 12),
+              transform: [{ translateY }],
+            },
+          ]}
+        >
+          <View {...pan.panHandlers}>
+            <View style={styles.grabber} />
+            <View style={[styles.header, { paddingHorizontal: pad }]}>
+              <Text style={styles.title}>Pagamento</Text>
+              {step !== "creating" ? (
+                <Pressable onPress={close} hitSlop={12} accessibilityLabel="Fechar" style={styles.closeBtn}>
+                  <Ionicons name="close" size={20} color={COLORS.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+            <View style={{ paddingHorizontal: pad }}>
+              <StepIndicator index={stepIndex} />
+            </View>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {step === "form" && renderForm()}
+            {step === "creating" && renderCreating()}
+            {step === "awaiting" && renderAwaiting()}
+            {step === "success" && renderSuccess()}
+            {step === "failed" && renderFailed()}
+          </ScrollView>
+        </Animated.View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: "flex-end", alignItems: "center" },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(22,35,28,0.55)" },
+  sheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 24,
+  },
+  grabber: { alignSelf: "center", width: 42, height: 5, borderRadius: 3, backgroundColor: COLORS.border, marginBottom: 10 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 10 },
+  title: { fontSize: 19, fontWeight: "800", color: COLORS.text },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.canvas },
+
+  stepWrap: { paddingBottom: 12 },
+  segRow: { flexDirection: "row", gap: 6 },
+  segment: { flex: 1, height: 4, borderRadius: 2 },
+  stepLabel: { flex: 1, marginTop: 6, fontSize: 10.5, fontWeight: "700", color: COLORS.faint },
+  stepLabelActive: { color: COLORS.primary },
+
+  productRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 16, backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  productIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primarySoft },
+  productName: { fontSize: 15, fontWeight: "800", color: COLORS.text },
+  productSub: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
+
+  label: { fontSize: 12, fontWeight: "700", color: COLORS.muted, marginTop: 18, marginBottom: 8 },
+  input: { height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: COLORS.border, paddingHorizontal: 14, fontSize: 14.5, color: COLORS.text, backgroundColor: COLORS.surface },
+  inputFocus: { borderColor: COLORS.primary, backgroundColor: COLORS.primarySoft },
+
+  qtyRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  qtyBtn: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  qtyValue: { minWidth: 52, textAlign: "center", fontSize: 22, fontWeight: "900", color: COLORS.text },
+  qtyHint: { fontSize: 11.5, color: COLORS.faint, marginLeft: "auto" },
+  chipRow: { gap: 8, paddingTop: 12 },
+  chip: { paddingHorizontal: 14, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  chipOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  chipText: { fontSize: 12.5, fontWeight: "700", color: COLORS.text },
+  chipTextOn: { color: "#FFFFFF" },
+
+  method: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 16, borderWidth: 1.5, borderColor: COLORS.border, marginBottom: 10, backgroundColor: COLORS.surface },
+  methodActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primarySoft },
+  methodOff: { opacity: 0.45 },
+  methodIcon: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primarySoft },
+  methodTitle: { fontSize: 14, fontWeight: "800", color: COLORS.text },
+  methodSub: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
+
+  totalBox: { marginTop: 18, padding: 16, borderRadius: 18, backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  totalLabel: { fontSize: 12, color: COLORS.muted, fontWeight: "600" },
+  totalValue: { fontSize: 28, fontWeight: "900", color: COLORS.text, marginTop: 2 },
+  hintRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+  totalHint: { flex: 1, fontSize: 11.5, color: COLORS.faint },
+
+  error: { marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: COLORS.redSoft, color: COLORS.red, fontSize: 12.5, lineHeight: 18, overflow: "hidden" },
+
+  primaryBtn: { height: 54, borderRadius: 16, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primary, marginTop: 18, alignSelf: "stretch", shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  primaryBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
+  btnDisabled: { opacity: 0.45 },
+  secondaryBtn: { height: 46, borderRadius: 14, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: COLORS.primary, marginTop: 14, alignSelf: "stretch" },
+  secondaryBtnText: { color: COLORS.primary, fontSize: 13.5, fontWeight: "800" },
+  linkBtn: { paddingVertical: 14, alignSelf: "stretch" },
+  linkText: { color: COLORS.muted, fontSize: 13.5, fontWeight: "700" },
+
+  previewBtn: { flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", padding: 10, borderRadius: 12, backgroundColor: COLORS.accentSoft },
+  previewText: { color: COLORS.accent, fontSize: 11.5, fontWeight: "700" },
+  previewTag: { alignSelf: "center", color: COLORS.accent, fontSize: 10.5, fontWeight: "800", backgroundColor: COLORS.accentSoft, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginBottom: 8, overflow: "hidden" },
+
+  center: { alignItems: "center", paddingTop: 12 },
+  centerInner: { alignItems: "center", alignSelf: "stretch" },
+  centerTitle: { fontSize: 17, fontWeight: "800", color: COLORS.text, textAlign: "center", marginTop: 10 },
+  centerBody: { fontSize: 13, color: COLORS.muted, textAlign: "center", lineHeight: 19, marginTop: 6 },
+  bigAmount: { fontSize: 32, fontWeight: "900", color: COLORS.text, textAlign: "center", marginTop: 4 },
+  resultIcon: { width: 76, height: 76, borderRadius: 28, alignItems: "center", justifyContent: "center" },
+  burstWrap: { width: 150, height: 130, alignItems: "center", justifyContent: "center" },
+  particle: { position: "absolute", width: 9, height: 9, borderRadius: 5 },
+
+  countdown: { alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: COLORS.accentSoft },
+  countdownText: { fontSize: 12, fontWeight: "800", color: COLORS.accent },
+
+  refBox: { marginTop: 16, padding: 16, borderRadius: 18, backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  refIntro: { fontSize: 13, color: COLORS.muted, lineHeight: 19, marginBottom: 6 },
+  refLine: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
+  refKey: { fontSize: 12.5, color: COLORS.muted },
+  refVal: { fontSize: 16, fontWeight: "900", color: COLORS.text, letterSpacing: 0.5 },
+
+  waitRow: { alignItems: "center", marginTop: 26, marginBottom: 14 },
+  waitText: { fontSize: 13, fontWeight: "700", color: COLORS.primary, textAlign: "center" },
+
+  pulseWrap: { width: 52, height: 52, alignItems: "center", justifyContent: "center" },
+  pulseCore: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primary },
+  ring: { position: "absolute", width: 52, height: 52, borderRadius: 26, borderWidth: 2 },
+});

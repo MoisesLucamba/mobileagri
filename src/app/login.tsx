@@ -5,38 +5,51 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Alert,
   ActivityIndicator,
   Image,
+  Dimensions,
+  StatusBar,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 
 import { supabase } from '../lib/supabase';
 
-const Logo = require('../assets/images/logo.jpeg');
+const LOGO = require('../../assets/images/Agrilink_SD.png');
+const HERO = require('../../assets/images/agricultor.jpg');
+
+// Substitui pelos links reais da plataforma
+const TERMS_URL = 'https://agrilink.ao/termos';
+const PRIVACY_URL = 'https://agrilink.ao/privacidade';
+
+const { height } = Dimensions.get('window');
+const HERO_HEIGHT = Math.max(160, height * 0.21);
+const LOGO_SIZE = 88;
 
 const COLORS = {
-  primary: '#2E7D32',
-  text: '#1F2937',
-  muted: '#6B7280',
-  border: '#D9DDE3',
+  primary: '#1F6B3A',
+  secondary: '#79C267',
+  dark: '#173D24',
+  text: '#173D24',
+  muted: '#627264',
+  border: '#DCE5DD',
+  field: '#F6F9F6',
   background: '#FFFFFF',
 };
 
-// Necessário para fechar o browser automaticamente depois do OAuth
 WebBrowser.maybeCompleteAuthSession();
 
 // ================================
-// OAUTH — ler parâmetros do url de retorno
-// (junta o que vem em ?query e o que vem em #fragmento)
+// OAUTH
 // ================================
 const parseUrlParams = (url: string) => {
   const out: Record<string, string> = {};
@@ -52,9 +65,6 @@ const parseUrlParams = (url: string) => {
   return out;
 };
 
-// ================================
-// OAUTH — troca o url de retorno por uma sessão Supabase
-// ================================
 const createSessionFromUrl = async (url: string) => {
   const p = parseUrlParams(url);
 
@@ -62,16 +72,12 @@ const createSessionFromUrl = async (url: string) => {
     throw new Error(p.error_description || p.error);
   }
 
-  // Fluxo PKCE: vem um "code"
   if (p.code) {
-    const { data, error } = await supabase.auth.exchangeCodeForSession(
-      p.code
-    );
+    const { data, error } = await supabase.auth.exchangeCodeForSession(p.code);
     if (error) throw error;
     return data.session;
   }
 
-  // Fluxo implícito: vêm os tokens
   if (p.access_token && p.refresh_token) {
     const { data, error } = await supabase.auth.setSession({
       access_token: p.access_token,
@@ -86,12 +92,22 @@ const createSessionFromUrl = async (url: string) => {
 
 export default function LoginScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [focused, setFocused] = useState<'email' | 'password' | null>(null);
+
+  const busy = loading || googleLoading;
+
+  const openLink = (url: string) => {
+    Linking.openURL(url).catch(() =>
+      Alert.alert('Erro', 'Não foi possível abrir o link.')
+    );
+  };
 
   // ================================
   // GOOGLE
@@ -100,9 +116,6 @@ export default function LoginScreen() {
     try {
       setGoogleLoading(true);
 
-      // Em build:    agrilink://auth/callback
-      // No Expo Go:  exp://IP:8081/--/auth/callback
-      // Este valor TEM de estar na lista "Redirect URLs" do Supabase.
       const redirectTo = makeRedirectUri({
         scheme: 'agrilink',
         path: 'auth/callback',
@@ -121,22 +134,16 @@ export default function LoginScreen() {
       if (error) throw error;
       if (!data?.url) throw new Error('Não foi possível iniciar o Google.');
 
-      const result = await WebBrowser.openAuthSessionAsync(
-        data.url,
-        redirectTo
-      );
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
 
-      if (result.type !== 'success') return; // utilizador cancelou
+      if (result.type !== 'success') return;
 
       const session = await createSessionFromUrl(result.url);
 
       if (session) {
         router.replace('/home');
       } else {
-        Alert.alert(
-          'Erro',
-          'Não foi possível concluir a sessão com o Google.'
-        );
+        Alert.alert('Erro', 'Não foi possível concluir a sessão com o Google.');
       }
     } catch (error: any) {
       console.log('Erro Google:', error);
@@ -154,70 +161,44 @@ export default function LoginScreen() {
   // ================================
   const handleSubmit = async () => {
     if (!email.trim()) {
-      Alert.alert(
-        'Atenção',
-        'Por favor, introduza o seu e-mail.'
-      );
+      Alert.alert('Atenção', 'Por favor, introduza o seu e-mail.');
       return;
     }
 
     if (!password) {
-      Alert.alert(
-        'Atenção',
-        'Por favor, introduza a sua palavra-passe.'
-      );
+      Alert.alert('Atenção', 'Por favor, introduza a sua palavra-passe.');
       return;
     }
 
     try {
       setLoading(true);
 
-      const { data, error } =
-        await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
       if (error) {
         console.log('Erro de login:', error);
 
-        if (
-          error.message === 'Invalid login credentials'
-        ) {
-          Alert.alert(
-            'Erro ao entrar',
-            'E-mail ou palavra-passe incorretos.'
-          );
+        if (error.message === 'Invalid login credentials') {
+          Alert.alert('Erro ao entrar', 'E-mail ou palavra-passe incorretos.');
         } else {
-          Alert.alert(
-            'Erro ao entrar',
-            error.message
-          );
+          Alert.alert('Erro ao entrar', error.message);
         }
-
         return;
       }
 
       console.log('Login realizado:', data.session);
 
-      // ==========================================
-      // LOGIN CORRETO → HOME
-      // ==========================================
       if (data.session) {
         router.replace('/home');
       } else {
-        Alert.alert(
-          'Erro',
-          'Não foi possível iniciar a sessão.'
-        );
+        Alert.alert('Erro', 'Não foi possível iniciar a sessão.');
       }
     } catch (error) {
       console.log('Erro inesperado:', error);
-
-      Alert.alert(
-        'Erro',
-        'Ocorreu um erro inesperado. Tente novamente.'
-      );
+      Alert.alert('Erro', 'Ocorreu um erro inesperado. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -228,26 +209,17 @@ export default function LoginScreen() {
   // ================================
   const handleForgotPassword = async () => {
     if (!email.trim()) {
-      Alert.alert(
-        'Recuperar palavra-passe',
-        'Introduza primeiro o seu e-mail.'
-      );
+      Alert.alert('Recuperar palavra-passe', 'Introduza primeiro o seu e-mail.');
       return;
     }
 
     try {
       setLoading(true);
 
-      const { error } =
-        await supabase.auth.resetPasswordForEmail(
-          email.trim()
-        );
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
 
       if (error) {
-        Alert.alert(
-          'Erro',
-          error.message
-        );
+        Alert.alert('Erro', error.message);
         return;
       }
 
@@ -256,440 +228,300 @@ export default function LoginScreen() {
         'Enviámos um link para redefinir a sua palavra-passe. Verifique o seu e-mail.'
       );
     } catch (error) {
-      console.log(
-        'Erro ao recuperar password:',
-        error
-      );
-
-      Alert.alert(
-        'Erro',
-        'Não foi possível enviar o e-mail de recuperação.'
-      );
+      console.log('Erro ao recuperar password:', error);
+      Alert.alert('Erro', 'Não foi possível enviar o e-mail de recuperação.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ================================
-  // REGISTAR
-  // ================================
-  const handleRegister = () => {
-    router.push('/register');
-  };
-
-  // ================================
-  // VOLTAR
-  // ================================
-  const handleBack = () => {
-    router.replace('/');
-  };
-
-  const busy = loading || googleLoading;
+  const handleRegister = () => router.push('/register');
+  const handleBack = () => router.replace('/');
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={
-          Platform.OS === 'ios'
-            ? 'padding'
-            : undefined
-        }
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+      {/* Imagem no topo */}
+      <View style={styles.hero}>
+        <Image source={HERO} style={styles.heroImage} resizeMode="cover" />
+        <View style={styles.heroOverlay} />
+      </View>
+
+      <TouchableOpacity
+        style={[styles.backBtn, { top: Math.max(insets.top, 24) + 8 }]}
+        onPress={handleBack}
+        disabled={busy}
+        activeOpacity={0.8}
       >
+        <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      {/* Painel */}
+      <KeyboardAvoidingView
+        style={styles.sheet}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.logoWrap}>
+          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+        </View>
+
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(insets.bottom, 16) + 40 },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.container}>
+          <Text style={styles.title}>Bem-vindo de volta</Text>
+          <Text style={styles.subtitle}>Entre na sua conta para continuar</Text>
 
-            {/* =========================
-                LOGO
-            ========================== */}
-            <View style={styles.logoContainer}>
-              <Image
-                source={Logo}
-                style={styles.logo}
-                resizeMode="contain"
+          {/* EMAIL */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>E-mail</Text>
+            <View style={[styles.inputWrapper, focused === 'email' && styles.inputFocused]}>
+              <Ionicons name="mail-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Digite o seu e-mail"
+                placeholderTextColor="#9AA79C"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!busy}
+                returnKeyType="next"
+                onFocus={() => setFocused('email')}
+                onBlur={() => setFocused(null)}
               />
             </View>
+          </View>
 
-            {/* =========================
-                TÍTULO
-            ========================== */}
-            <Text style={styles.title}>
-              Bem-vindo de volta
-            </Text>
-
-            <Text style={styles.subtitle}>
-              Entre na sua conta para continuar
-            </Text>
-
-            {/* =========================
-                FORMULÁRIO
-            ========================== */}
-            <View style={styles.form}>
-
-              {/* =========================
-                  BOTÃO GOOGLE
-              ========================== */}
+          {/* PASSWORD */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Palavra-passe</Text>
+            <View style={[styles.inputWrapper, focused === 'password' && styles.inputFocused]}>
+              <Ionicons name="lock-closed-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Digite a sua palavra-passe"
+                placeholderTextColor="#9AA79C"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!busy}
+                returnKeyType="done"
+                onSubmitEditing={handleSubmit}
+                onFocus={() => setFocused('password')}
+                onBlur={() => setFocused(null)}
+              />
               <TouchableOpacity
-                style={[
-                  styles.googleButton,
-                  busy && styles.loginButtonDisabled,
-                ]}
-                onPress={handleGoogleLogin}
-                disabled={busy}
-                activeOpacity={0.8}
-              >
-                {googleLoading ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={COLORS.text}
-                  />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="logo-google"
-                      size={20}
-                      color="#EA4335"
-                    />
-                    <Text style={styles.googleButtonText}>
-                      Continuar com o Google
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {/* DIVISOR */}
-              <View
-                style={
-                  styles.dividerContainer
-                }
-              >
-                <View
-                  style={styles.divider}
-                />
-
-                <Text
-                  style={styles.dividerText}
-                >
-                  ou
-                </Text>
-
-                <View
-                  style={styles.divider}
-                />
-              </View>
-
-              {/* EMAIL */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>
-                  E-mail
-                </Text>
-
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="mail-outline"
-                    size={21}
-                    color={COLORS.muted}
-                    style={styles.inputIcon}
-                  />
-
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Digite o seu e-mail"
-                    placeholderTextColor={
-                      COLORS.muted
-                    }
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!busy}
-                    returnKeyType="next"
-                  />
-                </View>
-              </View>
-
-              {/* PASSWORD */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>
-                  Palavra-passe
-                </Text>
-
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={21}
-                    color={COLORS.muted}
-                    style={styles.inputIcon}
-                  />
-
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Digite a sua palavra-passe"
-                    placeholderTextColor={
-                      COLORS.muted
-                    }
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={
-                      !showPassword
-                    }
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!busy}
-                    returnKeyType="done"
-                    onSubmitEditing={
-                      handleSubmit
-                    }
-                  />
-
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() =>
-                      setShowPassword(
-                        !showPassword
-                      )
-                    }
-                    disabled={busy}
-                  >
-                    <Ionicons
-                      name={
-                        showPassword
-                          ? 'eye-off-outline'
-                          : 'eye-outline'
-                      }
-                      size={22}
-                      color={COLORS.muted}
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* ESQUECI PASSWORD */}
-              <TouchableOpacity
-                style={styles.forgotButton}
-                onPress={
-                  handleForgotPassword
-                }
-                disabled={busy}
-              >
-                <Text style={styles.forgotText}>
-                  Esqueci a minha palavra-passe
-                </Text>
-              </TouchableOpacity>
-
-              {/* =========================
-                  BOTÃO ENTRAR
-              ========================== */}
-              <TouchableOpacity
-                style={[
-                  styles.loginButton,
-                  busy &&
-                    styles.loginButtonDisabled,
-                ]}
-                onPress={handleSubmit}
-                disabled={busy}
-                activeOpacity={0.8}
-              >
-                {loading ? (
-                  <ActivityIndicator
-                    size="small"
-                    color="#FFFFFF"
-                  />
-                ) : (
-                  <>
-                    <Text
-                      style={
-                        styles.loginButtonText
-                      }
-                    >
-                      Entrar
-                    </Text>
-
-                    <Ionicons
-                      name="arrow-forward"
-                      size={20}
-                      color="#FFFFFF"
-                    />
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {/* =========================
-                  REGISTRO
-              ========================== */}
-              <View
-                style={
-                  styles.registerContainer
-                }
-              >
-                <Text
-                  style={styles.registerText}
-                >
-                  Ainda não tem uma conta?
-                </Text>
-
-                <TouchableOpacity
-                  onPress={handleRegister}
-                  disabled={busy}
-                >
-                  <Text
-                    style={styles.registerLink}
-                  >
-                    Criar conta
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* VOLTAR */}
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={handleBack}
+                style={styles.eyeButton}
+                onPress={() => setShowPassword(!showPassword)}
                 disabled={busy}
               >
                 <Ionicons
-                  name="arrow-back-outline"
-                  size={18}
-                  color={COLORS.primary}
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={21}
+                  color={COLORS.muted}
                 />
-
-                <Text
-                  style={styles.backText}
-                >
-                  Voltar
-                </Text>
               </TouchableOpacity>
-
             </View>
+          </View>
 
-            {/* FOOTER */}
+          <TouchableOpacity
+            style={styles.forgotButton}
+            onPress={handleForgotPassword}
+            disabled={busy}
+          >
+            <Text style={styles.forgotText}>Esqueci a minha palavra-passe</Text>
+          </TouchableOpacity>
+
+          {/* ENTRAR */}
+          <TouchableOpacity
+            style={[styles.loginButton, busy && styles.disabled]}
+            onPress={handleSubmit}
+            disabled={busy}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.loginButtonText}>Entrar</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* DIVISOR */}
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>ou</Text>
+            <View style={styles.divider} />
+          </View>
+
+          {/* GOOGLE */}
+          <TouchableOpacity
+            style={[styles.googleButton, busy && styles.disabled]}
+            onPress={handleGoogleLogin}
+            disabled={busy}
+            activeOpacity={0.8}
+          >
+            {googleLoading ? (
+              <ActivityIndicator size="small" color={COLORS.text} />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={19} color="#EA4335" />
+                <Text style={styles.googleButtonText}>Continuar com o Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* REGISTO */}
+          <View style={styles.registerContainer}>
+            <Text style={styles.registerText}>Ainda não tem uma conta?</Text>
+            <TouchableOpacity onPress={handleRegister} disabled={busy}>
+              <Text style={styles.registerLink}>Criar conta</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* TERMOS E POLÍTICAS */}
+          <Text style={styles.legalText}>
+            Ao continuar, aceita os nossos{' '}
+            <Text style={styles.legalLink} onPress={() => openLink(TERMS_URL)}>
+              Termos de Utilização
+            </Text>{' '}
+            e a{' '}
+            <Text style={styles.legalLink} onPress={() => openLink(PRIVACY_URL)}>
+              Política de Privacidade
+            </Text>
+            .
+          </Text>
+
+          {/* FOOTER */}
+          <View style={styles.footer}>
             <Text style={styles.footerText}>
               © {new Date().getFullYear()} AgriLink
             </Text>
-
+            <Text style={styles.footerText}>
+              Desenvolvida pela <Text style={styles.footerBrand}>THE TEAM</Text>
+            </Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 // =====================================================
 // ESTILOS
 // =====================================================
-
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
+  container: { flex: 1, backgroundColor: COLORS.background },
+
+  hero: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: HERO_HEIGHT + 40,
+    overflow: 'hidden',
+    backgroundColor: '#0A2814',
+  },
+  heroImage: { width: '100%', height: '100%' },
+  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10, 40, 20, 0.28)' },
+
+  backBtn: {
+    position: 'absolute',
+    left: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(10, 40, 20, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    zIndex: 10,
   },
 
-  keyboardView: {
-    flex: 1,
+  sheet: {
+    position: 'absolute',
+    top: HERO_HEIGHT,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    shadowColor: '#0A2814',
+    shadowOpacity: 0.15,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 12,
   },
+
+  logoWrap: {
+    position: 'absolute',
+    top: -LOGO_SIZE / 2,
+    alignSelf: 'center',
+    zIndex: 5,
+    width: LOGO_SIZE,
+    height: LOGO_SIZE,
+    borderRadius: LOGO_SIZE / 2,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: `${COLORS.secondary}55`,
+    shadowColor: '#0A2814',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  logo: { width: LOGO_SIZE - 24, height: LOGO_SIZE - 24 },
 
   scrollContent: {
-    flexGrow: 1,
-  },
-
-  container: {
-    flex: 1,
+    paddingHorizontal: 26,
+    paddingTop: LOGO_SIZE / 2 + 16,
     width: '100%',
     maxWidth: 520,
     alignSelf: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 30,
-    paddingBottom: 30,
   },
-
-  // LOGO
-
-  logoContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18,
-  },
-
-  logo: {
-    width: 230,
-    height: 100,
-  },
-
-  // TÍTULO
 
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
     color: COLORS.text,
     textAlign: 'center',
-    marginTop: 8,
   },
-
   subtitle: {
-    fontSize: 15,
+    fontSize: 14.5,
     color: COLORS.muted,
     textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 30,
+    marginTop: 6,
+    marginBottom: 24,
   },
 
-  // FORM
-
-  form: {
-    width: '100%',
-  },
-
-  // GOOGLE
-
-  googleButton: {
-    height: 54,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#FFFFFF',
-  },
-
-  googleButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-
-  inputContainer: {
-    marginBottom: 18,
-  },
-
-  label: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 8,
-  },
-
+  inputContainer: { marginBottom: 16 },
+  label: { fontSize: 13.5, fontWeight: '700', color: COLORS.text, marginBottom: 7 },
   inputWrapper: {
     height: 54,
-    width: '100%',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
-    borderRadius: 12,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.field,
   },
-
-  inputIcon: {
-    marginLeft: 15,
-  },
-
+  inputFocused: { borderColor: COLORS.primary, backgroundColor: '#FFFFFF' },
+  inputIcon: { marginLeft: 15 },
   input: {
     flex: 1,
     height: '100%',
@@ -697,7 +529,6 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     paddingHorizontal: 12,
   },
-
   eyeButton: {
     paddingHorizontal: 15,
     height: '100%',
@@ -705,108 +536,68 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // FORGOT PASSWORD
-
-  forgotButton: {
-    alignSelf: 'flex-end',
-    marginTop: -5,
-    marginBottom: 22,
-  },
-
-  forgotText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.primary,
-  },
-
-  // LOGIN
+  forgotButton: { alignSelf: 'flex-end', marginTop: -4, marginBottom: 20 },
+  forgotText: { fontSize: 13.5, fontWeight: '700', color: COLORS.primary },
 
   loginButton: {
     height: 56,
-    borderRadius: 12,
+    borderRadius: 999,
     backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    marginTop: 4,
+    gap: 8,
+    shadowColor: '#173D24',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 6,
   },
-
-  loginButtonDisabled: {
-    opacity: 0.65,
-  },
-
-  loginButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-
-  // DIVISOR
+  loginButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  disabled: { opacity: 0.65 },
 
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 20,
   },
+  divider: { flex: 1, height: 1, backgroundColor: COLORS.border },
+  dividerText: { fontSize: 13, color: COLORS.muted, marginHorizontal: 12 },
 
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E5E7EB',
+  googleButton: {
+    height: 54,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
   },
-
-  dividerText: {
-    fontSize: 13,
-    color: COLORS.muted,
-    marginHorizontal: 12,
-  },
-
-  // REGISTRO
+  googleButtonText: { fontSize: 15, fontWeight: '700', color: COLORS.text },
 
   registerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
+    marginTop: 22,
   },
+  registerText: { fontSize: 14, color: COLORS.muted },
+  registerLink: { fontSize: 14, fontWeight: '800', color: COLORS.primary, marginLeft: 5 },
 
-  registerText: {
-    fontSize: 14,
-    color: COLORS.muted,
-  },
-
-  registerLink: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.primary,
-    marginLeft: 5,
-  },
-
-  // VOLTAR
-
-  backButton: {
-    marginTop: 25,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-  },
-
-  backText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-
-  // FOOTER
-
-  footerText: {
-    textAlign: 'center',
+  legalText: {
     fontSize: 12,
+    lineHeight: 18,
     color: COLORS.muted,
-    marginTop: 25,
+    textAlign: 'center',
+    marginTop: 22,
+    paddingHorizontal: 8,
   },
+  legalLink: { color: COLORS.primary, fontWeight: '700', textDecorationLine: 'underline' },
+
+  footer: { alignItems: 'center', marginTop: 22, gap: 3 },
+  footerText: { fontSize: 11.5, color: '#8A968C' },
+  footerBrand: { fontWeight: '800', color: COLORS.dark, letterSpacing: 0.5 },
 });

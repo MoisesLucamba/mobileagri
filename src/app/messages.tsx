@@ -58,13 +58,13 @@ const MAX_MESSAGE_LENGTH = 5000;
 const COLORS = {
   primary: "#2E7D32",
   primaryDark: "#1B5E20",
-  pale: "#E8F5E9",
-  background: "#FAFAF7",
+  pale: "#EEF0E9",
+  background: "#FBFAF6",
   surface: "#FFFFFF",
-  text: "#1C2B1E",
-  muted: "#6B7C6E",
-  border: "#D4E8D1",
-  danger: "#C62828",
+  text: "#3D403A",
+  muted: "#77796F",
+  border: "#E8E5DC",
+  danger: "#B95E54",
 };
 
 const formatTime = (timestamp?: string | null) => {
@@ -362,6 +362,14 @@ export default function MessagesScreen() {
     return (
       <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
         <View style={styles.header}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
+          >
+            <Ionicons name="arrow-back" size={20} color={COLORS.text} />
+          </Pressable>
           <Text style={styles.headerTitle}>Mensagens</Text>
           <Ionicons
             name="chatbubbles-outline"
@@ -594,12 +602,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   header: {
-    minHeight: 56,
+    minHeight: 60,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 4,
-    backgroundColor: COLORS.surface,
+    paddingVertical: 6,
+    backgroundColor: COLORS.background,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -612,11 +620,15 @@ const styles = StyleSheet.create({
   headerInfo: { flex: 1, marginLeft: 10 },
   onlineText: { color: COLORS.primary, fontSize: 11, marginTop: 2 },
   backButton: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
+    marginRight: 10,
+    backgroundColor: COLORS.pale,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   avatar: {
     width: 48,

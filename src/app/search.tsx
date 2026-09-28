@@ -24,36 +24,37 @@ import { supabase } from '../lib/supabase';
 ========================================================= */
 
 const T = {
-  g900: '#236B30',
-  g700: '#2C863B',
-  g600: '#3A9948',
-  g500: '#4CAF50',
-  g400: '#81C784',
-  g300: '#A5D6A7',
-  g100: '#E8F5E9',
-  g50: '#F2FAF3',
+  // Branding partilhado com o perfil: marfim, neutros quentes e verde original.
+  g900: '#173D24',
+  g700: '#1F6B3A',
+  g600: '#1F6B3A',
+  g500: '#1F6B3A',
+  g400: '#79C267',
+  g300: '#C7D6C4',
+  g100: '#EEF0E9',
+  g50: '#F5F3EC',
 
-  e700: '#5C3317',
-  e500: '#7B4F2E',
-  e300: '#A0522D',
-  ePale: '#FDF5EE',
+  e700: '#5C4A3A',
+  e500: '#7B6652',
+  e300: '#A0846A',
+  ePale: '#F3ECE4',
 
-  ink: '#111714',
-  mid: '#3D4D40',
-  muted: '#758A79',
-  faint: '#A8BAA9',
+  ink: '#3D403A',
+  mid: '#4D554B',
+  muted: '#77796F',
+  faint: '#A3A398',
 
-  canvas: '#F7F9F7',
+  canvas: '#FBFAF6',
   white: '#FFFFFF',
-  rule: '#E5EDE6',
+  rule: '#E8E5DC',
 
-  gold: '#B07D0A',
-  goldL: '#E5A020',
+  gold: '#B7833D',
+  goldL: '#D3A557',
 
-  blue: '#3977B8',
+  blue: '#637F9C',
   purple: '#7654B8',
   orange: '#D8782E',
-  red: '#C94A4A',
+  red: '#B95E54',
 };
 
 /* =========================================================
@@ -141,14 +142,14 @@ const angolaProvinces = [
 ];
 
 const productColors = [
-  '#E8F5E9',
-  '#FFF3E0',
-  '#E3F2FD',
-  '#F3E5F5',
-  '#FFF8E1',
-  '#E0F2F1',
-  '#FCE4EC',
-  '#EFEBE9',
+  '#EEF0E9',
+  '#F5F3EC',
+  '#EDF1F5',
+  '#F3EEE7',
+  '#F4F1E8',
+  '#EAF1EC',
+  '#F5EFEC',
+  '#F0EFEB',
 ];
 
 /* =========================================================
@@ -771,13 +772,13 @@ export default function SearchPage() {
                 <View
                   style={[
                     styles.categoryIcon,
-                    { backgroundColor: active ? '#FFFFFF33' : `${category.color}20` },
+                    { backgroundColor: active ? '#FFFFFF' : T.g100 },
                   ]}
                 >
                   <MaterialCommunityIcons
                     name={category.icon}
                     size={17}
-                    color={active ? '#fff' : category.color}
+                    color={T.g700}
                   />
                 </View>
 
@@ -891,7 +892,7 @@ export default function SearchPage() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor={T.canvas} translucent={false} />
 
       <FlatList
         keyboardShouldPersistTaps="handled"
@@ -1141,11 +1142,11 @@ const styles = StyleSheet.create({
   listContent: { paddingBottom: 30 },
 
   header: {
-    backgroundColor: '#FFFFFF',
-    paddingTop: 18,
-    paddingBottom: 14,
+    backgroundColor: T.canvas,
+    paddingTop: 40,
+    paddingBottom: 8,
     zIndex: 20,
-    elevation: 4,
+    elevation: 2,
     borderBottomWidth: 1,
     borderBottomColor: T.rule,
   },
@@ -1154,60 +1155,60 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     gap: 9,
-    minHeight: 48,
+    minHeight: 42,
   },
   backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: T.g50,
   },
   searchBox: {
     flex: 1,
-    height: 46,
-    borderRadius: 22,
-    backgroundColor: '#F1F4F1',
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F3EC',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
   },
   searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: T.ink, paddingVertical: 0 },
   filterButton: {
-    width: 43,
-    height: 43,
-    borderRadius: 22,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: T.g50,
   },
   filterButtonActive: { backgroundColor: T.g700 },
 
-  categoriesContainer: { paddingHorizontal: 16, paddingTop: 14, gap: 8 },
+  categoriesContainer: { paddingHorizontal: 16, paddingTop: 8, gap: 7 },
   categoryPill: {
-    height: 40,
-    paddingHorizontal: 13,
-    borderRadius: 20,
+    height: 34,
+    paddingHorizontal: 10,
+    borderRadius: 17,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F4F1',
+    backgroundColor: '#F5F3EC',
   },
   categoryPillActive: { backgroundColor: T.g600 },
   categoryIcon: {
-    width: 27,
-    height: 27,
-    borderRadius: 14,
+    width: 23,
+    height: 23,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 6,
+    marginRight: 4,
   },
   categoryText: { fontSize: 13, fontWeight: '700', color: T.mid },
   categoryTextActive: { color: '#fff' },
 
   filtersPanel: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
+    backgroundColor: T.canvas,
+    padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: T.rule,
   },
@@ -1215,18 +1216,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 17,
+    marginBottom: 12,
   },
   filterTitle: { fontSize: 17, fontWeight: '800', color: T.ink },
   clearText: { color: T.gold, fontSize: 13, fontWeight: '800' },
-  filterLabel: { color: T.mid, fontSize: 13, fontWeight: '800', marginBottom: 10 },
+  filterLabel: { color: T.mid, fontSize: 13, fontWeight: '800', marginBottom: 7 },
 
-  sortScroll: { marginBottom: 19 },
+  sortScroll: { marginBottom: 14 },
   sortPill: {
-    height: 36,
-    paddingHorizontal: 13,
-    borderRadius: 18,
-    backgroundColor: '#F1F4F1',
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: '#F5F3EC',
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 8,
@@ -1238,10 +1239,10 @@ const styles = StyleSheet.create({
 
   provinceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   provincePill: {
-    minHeight: 33,
-    paddingHorizontal: 11,
+    minHeight: 29,
+    paddingHorizontal: 9,
     borderRadius: 17,
-    backgroundColor: '#F1F4F1',
+    backgroundColor: '#F5F3EC',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -1250,15 +1251,15 @@ const styles = StyleSheet.create({
   provinceText: { color: T.muted, fontSize: 12, fontWeight: '700' },
   provinceTextActive: { color: '#fff' },
 
-  content: { paddingHorizontal: 16, paddingTop: 17 },
+  content: { paddingHorizontal: 16, paddingTop: 12 },
 
   tabsContainer: {
-    height: 50,
-    backgroundColor: '#E8EEE9',
+    height: 44,
+    backgroundColor: '#EEF0E9',
     borderRadius: 25,
     padding: 4,
     flexDirection: 'row',
-    marginBottom: 20,
+    marginBottom: 14,
   },
   tab: {
     flex: 1,
@@ -1276,7 +1277,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FDECEC',
+    backgroundColor: '#F6ECE9',
     borderRadius: 14,
     padding: 12,
     marginBottom: 14,
@@ -1285,8 +1286,8 @@ const styles = StyleSheet.create({
 
   hintText: { color: T.muted, fontSize: 12, marginBottom: 16 },
 
-  section: { marginBottom: 20 },
-  sectionHeaderProducts: { marginBottom: 12 },
+  section: { marginBottom: 16 },
+  sectionHeaderProducts: { marginBottom: 9 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center' },
   sectionIcon: {
     width: 34,
@@ -1320,7 +1321,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.05)',
   },
   productImageBox: {
-    height: 135,
+    height: 108,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -1346,7 +1347,7 @@ const styles = StyleSheet.create({
   },
   availableText: { color: T.g700, fontSize: 9, fontWeight: '800' },
 
-  productContent: { padding: 11, backgroundColor: 'rgba(255,255,255,0.94)' },
+  productContent: { padding: 9, backgroundColor: 'rgba(255,255,255,0.94)' },
   productName: { fontSize: 15, fontWeight: '900', color: T.ink, marginBottom: 4 },
   productSeller: { fontSize: 10, color: T.muted, marginBottom: 4 },
   locationRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 9 },
@@ -1423,7 +1424,7 @@ const styles = StyleSheet.create({
   loadingText: { color: T.muted, fontSize: 13, fontWeight: '700' },
 
   emptyBox: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.canvas,
     borderRadius: 24,
     paddingVertical: 50,
     paddingHorizontal: 28,
@@ -1452,10 +1453,10 @@ const styles = StyleSheet.create({
   },
   emptyButtonText: { color: '#fff', fontWeight: '800', fontSize: 12 },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)', justifyContent: 'flex-end' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(52,59,50,0.42)', justifyContent: 'flex-end' },
   orderModal: {
     maxHeight: '90%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.canvas,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
@@ -1466,7 +1467,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#D7DDD8',
+    backgroundColor: '#E8E5DC',
     alignSelf: 'center',
     marginBottom: 18,
   },
@@ -1482,7 +1483,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#F1F4F1',
+    backgroundColor: '#F5F3EC',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1490,7 +1491,7 @@ const styles = StyleSheet.create({
   inputLabel: { color: T.mid, fontSize: 13, fontWeight: '800', marginBottom: 9 },
   quantityBox: {
     height: 53,
-    backgroundColor: '#F1F4F1',
+    backgroundColor: '#F5F3EC',
     borderRadius: 18,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1510,19 +1511,19 @@ const styles = StyleSheet.create({
   modalInput: {
     height: 50,
     borderRadius: 17,
-    backgroundColor: '#F1F4F1',
+    backgroundColor: '#F5F3EC',
     paddingHorizontal: 15,
     color: T.ink,
     fontSize: 14,
   },
 
-  summaryBox: { marginTop: 20, padding: 16, backgroundColor: '#F4F7F4', borderRadius: 20 },
+  summaryBox: { marginTop: 20, padding: 16, backgroundColor: '#F5F3EC', borderRadius: 20 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   summaryLabel: { color: T.mid, fontSize: 13 },
   summaryValue: { color: T.ink, fontSize: 13, fontWeight: '700' },
   summaryLabelGold: { color: T.gold, fontSize: 13 },
   summaryValueGold: { color: T.gold, fontSize: 13, fontWeight: '700' },
-  summaryDivider: { height: 1, backgroundColor: '#DDE5DE', marginVertical: 5 },
+  summaryDivider: { height: 1, backgroundColor: '#E8E5DC', marginVertical: 5 },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1537,7 +1538,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#F1F4F1',
+    backgroundColor: '#F5F3EC',
     alignItems: 'center',
     justifyContent: 'center',
   },

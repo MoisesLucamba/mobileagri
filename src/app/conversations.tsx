@@ -33,14 +33,15 @@ type UserProfile = {
 };
 
 const COLORS = {
-  primary: "#2E7D32",
-  primaryDark: "#1B5E20",
-  pale: "#E8F5E9",
-  background: "#FAFAF7",
+  primary: "#1F6B3A",
+  primaryDark: "#173D24",
+  pale: "#EEF0E9",
+  field: "#F5F3EC",
+  background: "#FBFAF6",
   surface: "#FFFFFF",
-  text: "#1C2B1E",
-  muted: "#6B7C6E",
-  border: "#D4E8D1",
+  text: "#3D403A",
+  muted: "#77796F",
+  border: "#E8E5DC",
 };
 
 const getInitial = (name?: string | null) =>
@@ -247,14 +248,27 @@ export default function ConversationsScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
-        <View>
+        <Pressable
+          style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar"
+        >
+          <Ionicons name="arrow-back" size={20} color={COLORS.text} />
+        </Pressable>
+        <View style={styles.headerText}>
           <Text style={styles.title}>Mensagens</Text>
           <Text style={styles.subtitle}>
             {conversations.length}{" "}
             {conversations.length === 1 ? "conversa" : "conversas"}
           </Text>
         </View>
-        <Pressable style={styles.addButton} onPress={openNewConversation}>
+        <Pressable
+          style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+          onPress={openNewConversation}
+          accessibilityRole="button"
+          accessibilityLabel="Nova conversa"
+        >
           <Ionicons name="add" size={26} color="#FFFFFF" />
         </Pressable>
       </View>
@@ -268,6 +282,15 @@ export default function ConversationsScreen() {
           placeholder="Pesquisar conversas ou utilizadores"
           placeholderTextColor={COLORS.muted}
         />
+        {!!searchTerm && !searching && (
+          <Pressable
+            onPress={() => setSearchTerm("")}
+            accessibilityRole="button"
+            accessibilityLabel="Limpar pesquisa"
+          >
+            <Ionicons name="close-circle" size={19} color={COLORS.muted} />
+          </Pressable>
+        )}
         {searching && <ActivityIndicator size="small" color={COLORS.primary} />}
       </View>
 
@@ -312,20 +335,31 @@ export default function ConversationsScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons
-              name="chatbubbles-outline"
-              size={52}
-              color={COLORS.border}
-            />
+            <View style={styles.emptyIcon}>
+              <Ionicons
+                name="chatbubbles-outline"
+                size={28}
+                color={COLORS.primary}
+              />
+            </View>
             <Text style={styles.emptyTitle}>Ainda não tens conversas</Text>
             <Text style={styles.mutedText}>
-              Toca no botão + para começar uma nova conversa.
+              Começa uma conversa para manteres o contacto com a comunidade.
             </Text>
+            <Pressable
+              style={({ pressed }) => [styles.emptyAction, pressed && styles.pressed]}
+              onPress={openNewConversation}
+              accessibilityRole="button"
+              accessibilityLabel="Iniciar nova conversa"
+            >
+              <Ionicons name="add" size={18} color="#FFFFFF" />
+              <Text style={styles.emptyActionText}>Iniciar conversa</Text>
+            </Pressable>
           </View>
         }
         renderItem={({ item }) => (
           <Pressable
-            style={styles.conversationRow}
+            style={({ pressed }) => [styles.conversationRow, pressed && styles.pressedCard]}
             onPress={() =>
               router.push({ pathname: "/messages", params: { id: item.id } })
             }
@@ -437,13 +471,24 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 18,
-    paddingVertical: 10,
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    paddingTop: 8,
+    paddingBottom: 14,
+    backgroundColor: COLORS.background,
   },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.field,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  headerText: { flex: 1, marginLeft: 13 },
+  pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
+  pressedCard: { opacity: 0.82 },
   title: { color: COLORS.text, fontSize: 23, fontWeight: "800" },
   subtitle: { color: COLORS.muted, fontSize: 11, marginTop: 4 },
   addButton: {
@@ -457,15 +502,15 @@ const styles = StyleSheet.create({
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
-    minHeight: 48,
-    marginHorizontal: 12,
-    marginTop: 10,
-    marginBottom: 8,
+    minHeight: 50,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 12,
     paddingHorizontal: 13,
-    borderRadius: 13,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.field,
   },
   searchInput: { flex: 1, color: COLORS.text, fontSize: 14, marginLeft: 8 },
   list: { paddingHorizontal: 12, paddingBottom: 10 },
@@ -473,12 +518,17 @@ const styles = StyleSheet.create({
   conversationRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 13,
-    marginBottom: 8,
-    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.surface,
+    shadowColor: "#343B32",
+    shadowOpacity: 0.045,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1,
   },
   avatar: {
     width: 50,
@@ -511,7 +561,28 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   unreadText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
-  emptyState: { alignItems: "center", justifyContent: "center", padding: 32 },
+  emptyState: { alignItems: "center", justifyContent: "center", padding: 28 },
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.pale,
+    marginBottom: 4,
+  },
+  emptyAction: {
+    minHeight: 46,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    marginTop: 18,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    backgroundColor: COLORS.primary,
+  },
+  emptyActionText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
   emptyTitle: {
     color: COLORS.text,
     fontSize: 16,
@@ -547,7 +618,7 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(52,59,50,0.42)",
   },
   modalCard: {
     maxHeight: "82%",

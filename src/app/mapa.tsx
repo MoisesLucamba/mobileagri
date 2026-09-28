@@ -8,15 +8,12 @@ import React, {
 
 import {
   ActivityIndicator,
-  Animated,
-  Dimensions,
   FlatList,
   Image,
   Linking,
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -24,6 +21,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Dimensions,
 } from "react-native";
 
 import { WebView } from "react-native-webview";
@@ -34,52 +32,48 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../lib/supabase";
 
+// Mesmo logo e mesma pasta usados no ecrã de login
+const LOGO = require("../../assets/images/Agrilink_SD.png");
+
 const { height: SCREEN_H } = Dimensions.get("window");
 
 /* =====================================================================
-   DESIGN TOKENS — alinhados com o HomeScreen da app
+   BRANDING — tokens iguais aos do ecrã de login
    ===================================================================== */
 
 const COLORS = {
+  // Fundo marfim igual ao perfil; verde original mantido nos botões.
   primary: "#1F6B3A",
-  primaryDark: "#123C22",
-  primarySoft: "#EAF3EA",
-  primaryLight: "#D9EEDD",
-
+  secondary: "#79C267",
+  dark: "#465044",
+  deep: "#343B32",
+  text: "#3D403A",
+  muted: "#77796F",
+  border: "#E8E5DC",
+  field: "#F5F3EC",
+  background: "#FBFAF6",
+  soft: "#EEF0E9",
   accent: "#E2932F",
-  accentDark: "#B9741A",
-  accentSoft: "#FBEBD3",
-
-  text: "#16231C",
-  muted: "#78877D",
-  faint: "#AEB8AC",
-
-  canvas: "#FAF8F3",
-  surface: "#FFFFFF",
-  border: "#EAE4D6",
-
-  red: "#DD5138",
-  blue: "#4C7EDB",
-  blueSoft: "#E8EFFB",
+  accentSoft: "#F5EEDF",
+  blue: "#2F6DB5",
+  blueSoft: "#EDF1F5",
+  danger: "#B95E54",
 };
 
-const RADIUS = { sm: 10, md: 14, lg: 19, xl: 26 };
+const SHADOW_UP = {
+  shadowColor: COLORS.deep,
+  shadowOpacity: 0.15,
+  shadowRadius: 18,
+  shadowOffset: { width: 0, height: -6 },
+  elevation: 12,
+};
 
-const SHADOW = {
-  card: {
-    shadowColor: "#16231C",
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-  float: {
-    shadowColor: "#16231C",
-    shadowOpacity: 0.14,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
-  },
+const SHADOW_SOFT = {
+  shadowColor: COLORS.dark,
+  shadowOpacity: 0.22,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 5 },
+  elevation: 6,
 };
 
 /* =====================================================================
@@ -90,6 +84,7 @@ type Kind = "produto" | "motorista" | "agente" | "agricultor";
 
 type Entity = {
   id: string;
+  rawId: string;
   kind: Kind;
   title: string;
   subtitle?: string;
@@ -99,11 +94,8 @@ type Entity = {
   quantity?: number;
   unit?: string;
   phone?: string;
-  email?: string;
   image_url?: string;
-  status?: string;
   harvest_date?: string;
-  updated_at?: string;
 };
 
 type LatLng = { lat: number; lng: number };
@@ -114,61 +106,31 @@ type RouteResult = {
   duration: number | null;
 };
 
-const LAYERS: {
-  kind: Kind;
-  label: string;
-  emoji: string;
-  color: string;
-  icon: string;
-}[] = [
-  {
-    kind: "produto",
-    label: "Produtos",
-    emoji: "🌿",
-    color: COLORS.primary,
-    icon: "leaf-outline",
-  },
-  {
-    kind: "motorista",
-    label: "Motoristas",
-    emoji: "🚚",
-    color: COLORS.blue,
-    icon: "car-outline",
-  },
-  {
-    kind: "agente",
-    label: "Agentes",
-    emoji: "🎒",
-    color: COLORS.accent,
-    icon: "person-outline",
-  },
-  {
-    kind: "agricultor",
-    label: "Agricultores",
-    emoji: "🌾",
-    color: COLORS.primaryDark,
-    icon: "people-outline",
-  },
+type LocStatus = "idle" | "granted" | "denied" | "off";
+
+const LAYERS: { kind: Kind; label: string; emoji: string; color: string }[] = [
+  { kind: "produto", label: "Produtos", emoji: "🌿", color: COLORS.primary },
+  { kind: "motorista", label: "Motoristas", emoji: "🚚", color: COLORS.blue },
+  { kind: "agente", label: "Agentes", emoji: "🎒", color: COLORS.accent },
+  { kind: "agricultor", label: "Agricultores", emoji: "🌾", color: COLORS.dark },
 ];
 
 const LAYER_BY_KIND = Object.fromEntries(
-  LAYERS.map((layer) => [layer.kind, layer]),
+  LAYERS.map((l) => [l.kind, l]),
 ) as Record<Kind, (typeof LAYERS)[number]>;
 
 /* =====================================================================
-   HELPERS — distância, OSRM, formatação
+   HELPERS
    ===================================================================== */
 
 function distanceKm(a: LatLng, b: LatLng) {
   const R = 6371;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
   const x =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
@@ -185,32 +147,26 @@ async function fetchRoadRoute(from: LatLng, to: LatLng): Promise<RouteResult> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 9000);
-
     const url =
       "https://router.project-osrm.org/route/v1/driving/" +
       `${from.lng},${from.lat};${to.lng},${to.lat}` +
       "?overview=full&geometries=geojson";
-
-    const response = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
-
-    const data = await response.json();
+    const data = await res.json();
     const route = data?.routes?.[0];
-
     if (data?.code === "Ok" && route?.geometry?.coordinates?.length) {
-      const coords = route.geometry.coordinates.map(
-        ([lng, lat]: [number, number]) => [lat, lng] as [number, number],
-      );
       return {
-        coords,
+        coords: route.geometry.coordinates.map(
+          ([lng, lat]: [number, number]) => [lat, lng] as [number, number],
+        ),
         distance: route.distance ?? null,
         duration: route.duration ?? null,
       };
     }
   } catch {
-    // silêncio: caímos na linha reta
+    // sem rede ou timeout: linha reta
   }
-
   return fallback;
 }
 
@@ -227,9 +183,18 @@ function formatKz(value?: number) {
   return `${Number(value || 0).toLocaleString("pt-AO")} Kz`;
 }
 
+function pickCoords(row: any): LatLng | null {
+  const lat = row.location_lat ?? row.lat ?? row.latitude;
+  const lng = row.location_lng ?? row.lng ?? row.longitude;
+  if (lat == null || lng == null) return null;
+  const la = Number(lat);
+  const ln = Number(lng);
+  if (!isFinite(la) || !isFinite(ln)) return null;
+  return { lat: la, lng: ln };
+}
+
 /* =====================================================================
-   HTML DO MAPA — Leaflet dentro do WebView
-   Gratuito, sem chave de API. Comunica por postMessage.
+   HTML DO MAPA — Leaflet no WebView, com CDN de reserva
    ===================================================================== */
 
 const MAP_HTML = `<!DOCTYPE html>
@@ -237,188 +202,197 @@ const MAP_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  html, body, #map { height: 100%; margin: 0; padding: 0; background: #FAF8F3; }
+  html, body, #map { height: 100%; margin: 0; padding: 0; background: #FBFAF6; }
   .leaflet-control-attribution { font-size: 9px; background: rgba(255,255,255,0.75); }
-  .al-pin { display:flex; align-items:center; justify-content:center; }
+  .al-pin { background: transparent; border: none; }
   .al-tip {
-    background:#16231C !important; color:#fff !important; border:none !important;
+    background:#465044 !important; color:#fff !important; border:none !important;
     font-weight:700 !important; font-size:11px !important; padding:5px 9px !important;
     border-radius:8px !important; box-shadow:0 4px 12px rgba(0,0,0,0.25) !important;
   }
-  .al-tip::before { border-top-color:#16231C !important; }
+  .al-tip::before { border-top-color:#465044 !important; }
 </style>
 </head>
 <body>
 <div id="map"></div>
 <script>
 (function () {
-  var map = L.map('map', { zoomControl: false, attributionControl: true })
-    .setView([-11.2, 17.8], 5);
-
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd',
-    maxZoom: 20,
-    attribution: '&copy; OpenStreetMap &middot; &copy; CARTO'
-  }).addTo(map);
-
-  var markers = {};
-  var userMarker = null;
-  var userHalo = null;
-  var routeLayers = [];
-  var movingDot = null;
-  var animTimer = null;
-  var pickMode = false;
-  var pickMarker = null;
-
   function post(type, payload) {
     if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: type, payload: payload }));
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: type, payload: payload || {} }));
     }
   }
 
-  function pinHtml(color, emoji, selected) {
-    var size = selected ? 44 : 36;
-    var inner = selected ? 19 : 16;
-    return '<div style="width:' + size + 'px;height:' + size + 'px;background:' + color +
-      ';border:2.5px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);' +
-      'display:flex;align-items:center;justify-content:center;' +
-      'box-shadow:0 5px 14px rgba(0,0,0,0.32);">' +
-      '<div style="transform:rotate(45deg);font-size:' + inner + 'px;line-height:1;">' + emoji + '</div></div>';
+  var BASES = [
+    'https://unpkg.com/leaflet@1.9.4/dist/',
+    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/',
+    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/'
+  ];
+
+  function loadLeaflet(i) {
+    if (i >= BASES.length) { post('fatal', { message: 'Não foi possível carregar o mapa.' }); return; }
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = BASES[i] + 'leaflet.css';
+    document.head.appendChild(css);
+    var s = document.createElement('script');
+    s.src = BASES[i] + 'leaflet.js';
+    s.onload = function () { try { boot(); } catch (e) { post('fatal', { message: String(e) }); } };
+    s.onerror = function () { loadLeaflet(i + 1); };
+    document.head.appendChild(s);
   }
 
-  function clearRoute() {
-    routeLayers.forEach(function (layer) { try { map.removeLayer(layer); } catch (e) {} });
-    routeLayers = [];
-    if (animTimer) { clearInterval(animTimer); animTimer = null; }
-    movingDot = null;
-  }
+  function boot() {
+    var map = L.map('map', { zoomControl: false, attributionControl: true })
+      .setView([-11.2, 17.8], 5);
 
-  var API = {
-    setEntities: function (list, selectedId) {
-      Object.keys(markers).forEach(function (id) {
-        try { map.removeLayer(markers[id]); } catch (e) {}
-      });
-      markers = {};
+    // Tiles públicos OpenStreetMap: sem chave; manter a atribuição visível.
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
+    }).addTo(map);
 
-      list.forEach(function (item) {
-        var selected = item.id === selectedId;
+    var markers = {};
+    var userMarker = null, userHalo = null, userAcc = null;
+    var routeLayers = [];
+    var animTimer = null;
+    var pickMode = false, pickMarker = null;
+
+    function pinHtml(color, emoji, selected) {
+      var size = selected ? 44 : 36;
+      var inner = selected ? 19 : 16;
+      return '<div style="width:' + size + 'px;height:' + size + 'px;background:' + color +
+        ';border:2.5px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);' +
+        'display:flex;align-items:center;justify-content:center;' +
+        'box-shadow:0 5px 14px rgba(0,0,0,0.32);">' +
+        '<div style="transform:rotate(45deg);font-size:' + inner + 'px;line-height:1;">' + emoji + '</div></div>';
+    }
+
+    function clearRoute() {
+      routeLayers.forEach(function (l) { try { map.removeLayer(l); } catch (e) {} });
+      routeLayers = [];
+      if (animTimer) { clearInterval(animTimer); animTimer = null; }
+    }
+
+    var API = {
+      setEntities: function (list, selectedId) {
+        Object.keys(markers).forEach(function (id) {
+          try { map.removeLayer(markers[id]); } catch (e) {}
+        });
+        markers = {};
+        list.forEach(function (item) {
+          var sel = item.id === selectedId;
+          var icon = L.divIcon({
+            className: 'al-pin',
+            html: pinHtml(item.color, item.emoji, sel),
+            iconSize: sel ? [44, 44] : [36, 36],
+            iconAnchor: sel ? [22, 44] : [18, 36]
+          });
+          var m = L.marker([item.lat, item.lng], { icon: icon, zIndexOffset: sel ? 1000 : 0 })
+            .addTo(map)
+            .on('click', function () { post('select', { id: item.id }); });
+          m.bindTooltip(item.title, { direction: 'top', offset: [0, -34], className: 'al-tip' });
+          markers[item.id] = m;
+        });
+      },
+
+      setUser: function (lat, lng, accuracy) {
+        [userMarker, userHalo, userAcc].forEach(function (l) {
+          if (l) { try { map.removeLayer(l); } catch (e) {} }
+        });
+        if (accuracy && accuracy > 20) {
+          userAcc = L.circle([lat, lng], {
+            radius: Math.min(accuracy, 2000), color: '#4C7EDB', weight: 1,
+            fillColor: '#4C7EDB', fillOpacity: 0.08
+          }).addTo(map);
+        }
+        userHalo = L.circleMarker([lat, lng], {
+          radius: 18, color: '#2F6DB5', weight: 0, fillColor: '#2F6DB5', fillOpacity: 0.14
+        }).addTo(map);
         var icon = L.divIcon({
           className: 'al-pin',
-          html: pinHtml(item.color, item.emoji, selected),
-          iconSize: selected ? [44, 44] : [36, 36],
-          iconAnchor: selected ? [22, 44] : [18, 36]
+          html: '<div style="width:18px;height:18px;background:#2F6DB5;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>',
+          iconSize: [18, 18], iconAnchor: [9, 9]
         });
-        var marker = L.marker([item.lat, item.lng], { icon: icon, zIndexOffset: selected ? 1000 : 0 })
-          .addTo(map)
-          .on('click', function () { post('select', { id: item.id }); });
-        marker.bindTooltip(item.title, { direction: 'top', offset: [0, -34], className: 'al-tip' });
-        markers[item.id] = marker;
-      });
-    },
+        userMarker = L.marker([lat, lng], { icon: icon, zIndexOffset: 900 }).addTo(map);
+      },
 
-    setUser: function (lat, lng) {
-      if (userMarker) { try { map.removeLayer(userMarker); } catch (e) {} }
-      if (userHalo) { try { map.removeLayer(userHalo); } catch (e) {} }
-      userHalo = L.circleMarker([lat, lng], {
-        radius: 18, color: '#4C7EDB', weight: 0, fillColor: '#4C7EDB', fillOpacity: 0.14
-      }).addTo(map);
+      flyTo: function (lat, lng, zoom) {
+        map.flyTo([lat, lng], zoom || 14, { duration: 1.1 });
+      },
+
+      fitAll: function (points) {
+        if (!points || !points.length) return;
+        map.fitBounds(L.latLngBounds(points), { padding: [70, 70], maxZoom: 15 });
+      },
+
+      drawRoute: function (coords, color, animate, bottomPad) {
+        clearRoute();
+        if (!coords || coords.length < 2) return;
+        var glow = L.polyline(coords, { color: color, weight: 9, opacity: 0.16 }).addTo(map);
+        var line = L.polyline(coords, { color: color, weight: 3.5, opacity: 0.9, dashArray: '10 7' }).addTo(map);
+        var origin = L.circleMarker(coords[0], { radius: 7, fillColor: '#fff', fillOpacity: 1, color: color, weight: 4 }).addTo(map);
+        var dest = L.circleMarker(coords[coords.length - 1], { radius: 7, fillColor: color, fillOpacity: 1, color: '#fff', weight: 3 }).addTo(map);
+        routeLayers.push(glow, line, origin, dest);
+
+        map.fitBounds(L.latLngBounds(coords), {
+          paddingTopLeft: [50, 220],
+          paddingBottomRight: [50, bottomPad || 260]
+        });
+
+        if (animate) {
+          var dot = L.circleMarker(coords[0], { radius: 9, fillColor: '#E2932F', fillOpacity: 1, color: '#fff', weight: 3 }).addTo(map);
+          routeLayers.push(dot);
+          var idx = 0, t = 0;
+          var step = Math.max(1, Math.floor(coords.length / 400));
+          animTimer = setInterval(function () {
+            if (idx >= coords.length - 1) { idx = 0; t = 0; }
+            var a = coords[idx], b = coords[Math.min(idx + step, coords.length - 1)];
+            t += 0.08;
+            if (t >= 1) { t = 0; idx += step; }
+            dot.setLatLng([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+          }, 40);
+        }
+      },
+
+      clearRoute: clearRoute,
+
+      setPickMode: function (active) {
+        pickMode = active;
+        if (!active && pickMarker) {
+          try { map.removeLayer(pickMarker); } catch (e) {}
+          pickMarker = null;
+        }
+      }
+    };
+
+    map.on('click', function (ev) {
+      if (!pickMode) return;
+      if (pickMarker) { try { map.removeLayer(pickMarker); } catch (e) {} }
       var icon = L.divIcon({
-        className: '',
-        html: '<div style="width:18px;height:18px;background:#4C7EDB;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>',
-        iconSize: [18, 18], iconAnchor: [9, 9]
+        className: 'al-pin',
+        html: pinHtml('#E2932F', '📍', true),
+        iconSize: [44, 44], iconAnchor: [22, 44]
       });
-      userMarker = L.marker([lat, lng], { icon: icon }).addTo(map);
-    },
-
-    flyTo: function (lat, lng, zoom) {
-      map.flyTo([lat, lng], zoom || 14, { duration: 1.1 });
-    },
-
-    fitAll: function (points) {
-      if (!points || !points.length) return;
-      map.fitBounds(L.latLngBounds(points), { padding: [70, 70] });
-    },
-
-    drawRoute: function (coords, color, animate) {
-      clearRoute();
-      if (!coords || coords.length < 2) return;
-
-      var glow = L.polyline(coords, { color: color, weight: 9, opacity: 0.16 }).addTo(map);
-      var line = L.polyline(coords, { color: color, weight: 3.5, opacity: 0.9, dashArray: '10 7' }).addTo(map);
-      routeLayers.push(glow, line);
-
-      var origin = L.circleMarker(coords[0], {
-        radius: 7, fillColor: '#fff', fillOpacity: 1, color: color, weight: 4
-      }).addTo(map);
-      var dest = L.circleMarker(coords[coords.length - 1], {
-        radius: 7, fillColor: color, fillOpacity: 1, color: '#fff', weight: 3
-      }).addTo(map);
-      routeLayers.push(origin, dest);
-
-      map.fitBounds(L.latLngBounds(coords), { padding: [80, 160] });
-
-      if (animate) {
-        movingDot = L.circleMarker(coords[0], {
-          radius: 9, fillColor: '#E2932F', fillOpacity: 1, color: '#fff', weight: 3
-        }).addTo(map);
-        routeLayers.push(movingDot);
-
-        var idx = 0, t = 0;
-        animTimer = setInterval(function () {
-          if (idx >= coords.length - 1) { idx = 0; t = 0; }
-          var from = coords[idx], to = coords[idx + 1];
-          if (from && to) {
-            t += 0.06;
-            if (t >= 1) { t = 0; idx++; }
-            movingDot.setLatLng([
-              from[0] + (to[0] - from[0]) * t,
-              from[1] + (to[1] - from[1]) * t
-            ]);
-          }
-        }, 40);
-      }
-    },
-
-    clearRoute: clearRoute,
-
-    setPickMode: function (active) {
-      pickMode = active;
-      if (!active && pickMarker) {
-        try { map.removeLayer(pickMarker); } catch (e) {}
-        pickMarker = null;
-      }
-    }
-  };
-
-  map.on('click', function (event) {
-    if (!pickMode) return;
-    var lat = event.latlng.lat, lng = event.latlng.lng;
-    if (pickMarker) { try { map.removeLayer(pickMarker); } catch (e) {} }
-    var icon = L.divIcon({
-      className: 'al-pin',
-      html: pinHtml('#E2932F', '📍', true),
-      iconSize: [44, 44], iconAnchor: [22, 44]
+      pickMarker = L.marker(ev.latlng, { icon: icon }).addTo(map);
+      post('pick', { lat: ev.latlng.lat, lng: ev.latlng.lng });
     });
-    pickMarker = L.marker([lat, lng], { icon: icon }).addTo(map);
-    post('pick', { lat: lat, lng: lng });
-  });
 
-  window.AL = function (raw) {
-    try {
-      var msg = JSON.parse(raw);
-      if (API[msg.fn]) API[msg.fn].apply(null, msg.args || []);
-    } catch (e) {
-      post('error', { message: String(e) });
-    }
-  };
+    window.AL = function (raw) {
+      try {
+        var msg = JSON.parse(raw);
+        if (API[msg.fn]) API[msg.fn].apply(null, msg.args || []);
+      } catch (e) { post('error', { message: String(e) }); }
+    };
+    document.addEventListener('message', function (e) { window.AL(e.data); });
+    window.addEventListener('message', function (e) { window.AL(e.data); });
 
-  document.addEventListener('message', function (e) { window.AL(e.data); });
-  window.addEventListener('message', function (e) { window.AL(e.data); });
+    setTimeout(function () { map.invalidateSize(); }, 300);
+    post('ready');
+  }
 
-  post('ready', {});
+  loadLeaflet(0);
 })();
 </script>
 </body>
@@ -433,47 +407,60 @@ export default function MapaScreen() {
   const insets = useSafeAreaInsets();
   const webRef = useRef<WebView>(null);
 
+  const [webKey, setWebKey] = useState(0);
   const [mapReady, setMapReady] = useState(false);
+  const [mapFailed, setMapFailed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [entities, setEntities] = useState<Entity[]>([]);
-  const [activeKinds, setActiveKinds] = useState<Kind[]>([
-    "produto",
-    "motorista",
-    "agente",
-    "agricultor",
-  ]);
-
+  const [activeKinds, setActiveKinds] = useState<Kind[]>(
+    LAYERS.map((l) => l.kind),
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
   const [userLocation, setUserLocation] = useState<LatLng | null>(null);
+  const [userAccuracy, setUserAccuracy] = useState<number | null>(null);
+  const [locStatus, setLocStatus] = useState<LocStatus>("idle");
 
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
 
   const [listOpen, setListOpen] = useState(false);
-  const [tracked, setTracked] = useState<Entity | null>(null);
+  const [trackedId, setTrackedId] = useState<string | null>(null);
   const [routeInfo, setRouteInfo] = useState<{
     km: number;
     duration: number | null;
   } | null>(null);
+  const [startKm, setStartKm] = useState<number | null>(null);
 
   const [pickMode, setPickMode] = useState(false);
   const [pickedPoint, setPickedPoint] = useState<LatLng | null>(null);
 
+  // refs para callbacks estáveis
+  const entitiesRef = useRef<Entity[]>([]);
+  const userRef = useRef<LatLng | null>(null);
+  const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const centeredRef = useRef(false);
+  const routeReq = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchReq = useRef(0);
+
+  entitiesRef.current = entities;
+  userRef.current = userLocation;
+
   const selected = useMemo(
-    () => entities.find((item) => item.id === selectedId) || null,
+    () => entities.find((e) => e.id === selectedId) || null,
     [entities, selectedId],
   );
-
+  const tracked = useMemo(
+    () => entities.find((e) => e.id === trackedId) || null,
+    [entities, trackedId],
+  );
   const visible = useMemo(
-    () => entities.filter((item) => activeKinds.includes(item.kind)),
+    () => entities.filter((e) => activeKinds.includes(e.kind)),
     [entities, activeKinds],
   );
-
-  /* ---------------------------------------------------------------
-     Ponte para o WebView
-     --------------------------------------------------------------- */
 
   const call = useCallback((fn: string, ...args: any[]) => {
     webRef.current?.injectJavaScript(
@@ -481,80 +468,70 @@ export default function MapaScreen() {
     );
   }, []);
 
-  /* ---------------------------------------------------------------
-     Carregar dados do Supabase
-     --------------------------------------------------------------- */
+  /* ---------------- Dados (Supabase) ---------------- */
 
   const loadEntities = useCallback(async () => {
     setLoading(true);
     const collected: Entity[] = [];
 
-    // Produtos (tabela que já existe)
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("products")
         .select("*")
         .limit(200);
+      if (error) console.log("Mapa: erro em products:", error.message);
 
       (data || []).forEach((row: any) => {
-        if (row.location_lat == null || row.location_lng == null) return;
+        const c = pickCoords(row);
+        if (!c) return;
         collected.push({
           id: `produto:${row.id}`,
+          rawId: String(row.id),
           kind: "produto",
           title: row.product_type || row.name || row.title || "Produto",
           subtitle: row.farmer_name || row.municipality_id,
-          lat: Number(row.location_lat),
-          lng: Number(row.location_lng),
+          ...c,
           price: row.price,
           quantity: row.quantity,
           unit: "kg",
           phone: row.farmer_phone,
-          email: row.farmer_email,
           image_url: row.image_url,
-          status: row.status,
           harvest_date: row.harvest_date,
         });
       });
-    } catch {
-      // ignorar
+    } catch (e) {
+      console.log("Mapa: falha em products", e);
     }
 
-    // Camadas de logística — opcionais: se a tabela não existir, saltamos
-    const fleet: { table: string; kind: Kind; titleField: string }[] = [
-      { table: "drivers", kind: "motorista", titleField: "name" },
-      { table: "field_agents", kind: "agente", titleField: "name" },
-      { table: "farmers", kind: "agricultor", titleField: "name" },
+    const fleet: { table: string; kind: Kind }[] = [
+      { table: "drivers", kind: "motorista" },
+      { table: "field_agents", kind: "agente" },
+      { table: "farmers", kind: "agricultor" },
     ];
 
-    for (const source of fleet) {
+    for (const src of fleet) {
       try {
         const { data, error } = await supabase
-          .from(source.table)
+          .from(src.table)
           .select("*")
           .limit(200);
-
-        if (error) continue;
+        if (error) continue; // tabela opcional
 
         (data || []).forEach((row: any) => {
-          const lat = row.location_lat ?? row.lat ?? row.latitude;
-          const lng = row.location_lng ?? row.lng ?? row.longitude;
-          if (lat == null || lng == null) return;
-
+          const c = pickCoords(row);
+          if (!c) return;
           collected.push({
-            id: `${source.kind}:${row.id}`,
-            kind: source.kind,
-            title: row[source.titleField] || row.full_name || "Sem nome",
+            id: `${src.kind}:${row.id}`,
+            rawId: String(row.id),
+            kind: src.kind,
+            title: row.name || row.full_name || "Sem nome",
             subtitle: row.vehicle || row.municipality_id || row.phone,
-            lat: Number(lat),
-            lng: Number(lng),
+            ...c,
             phone: row.phone,
-            email: row.email,
-            status: row.status,
-            updated_at: row.updated_at,
           });
         });
       } catch {
-        // tabela ainda não existe — segue
+        // ignora
       }
     }
 
@@ -566,87 +543,126 @@ export default function MapaScreen() {
     loadEntities();
   }, [loadEntities]);
 
-  /* ---------------------------------------------------------------
-     Realtime — posições que se movem (motoristas e agentes)
-     --------------------------------------------------------------- */
+  /* ---------------- Realtime (motoristas e agentes) ---------------- */
 
   useEffect(() => {
-    const channel = supabase
-      .channel("agrilink-mapa")
-      .on(
+    const channel = supabase.channel("agrilink-mapa");
+
+    const listen = (table: string, kind: Kind, fallback: string) => {
+      channel.on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "drivers" },
+        { event: "*", schema: "public", table },
         (payload: any) => {
           const row = payload.new;
-          if (!row) return;
-          const lat = row.location_lat ?? row.lat ?? row.latitude;
-          const lng = row.location_lng ?? row.lng ?? row.longitude;
-          if (lat == null || lng == null) return;
-
-          setEntities((current) => {
-            const id = `motorista:${row.id}`;
-            const next = [...current];
-            const index = next.findIndex((item) => item.id === id);
-            const entity: Entity = {
-              id,
-              kind: "motorista",
-              title: row.name || "Motorista",
-              subtitle: row.vehicle || row.phone,
-              lat: Number(lat),
-              lng: Number(lng),
-              phone: row.phone,
-              status: row.status,
-              updated_at: row.updated_at,
-            };
-            if (index >= 0) next[index] = entity;
-            else next.push(entity);
+          if (!row?.id) return;
+          const c = pickCoords(row);
+          if (!c) return;
+          const id = `${kind}:${row.id}`;
+          const entity: Entity = {
+            id,
+            rawId: String(row.id),
+            kind,
+            title: row.name || fallback,
+            subtitle: row.vehicle || row.phone,
+            ...c,
+            phone: row.phone,
+          };
+          setEntities((cur) => {
+            const i = cur.findIndex((e) => e.id === id);
+            if (i < 0) return [...cur, entity];
+            const next = [...cur];
+            next[i] = { ...cur[i], ...entity };
             return next;
           });
         },
-      )
-      .subscribe();
+      );
+    };
+
+    listen("drivers", "motorista", "Motorista");
+    listen("field_agents", "agente", "Agente");
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
 
-  /* ---------------------------------------------------------------
-     Localização do utilizador
-     --------------------------------------------------------------- */
+  /* ---------------- Geolocalização ---------------- */
 
-  useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
+  const startLocation = useCallback(async () => {
+    try {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== "granted") {
+        setLocStatus("denied");
+        return;
+      }
 
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+      const enabled = await Location.hasServicesEnabledAsync();
+      if (!enabled) {
+        setLocStatus("off");
+        return;
+      }
 
-      setUserLocation({
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-      });
-    })();
+      setLocStatus("granted");
+
+      const apply = (pos: Location.LocationObject) => {
+        setUserLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+        setUserAccuracy(pos.coords.accuracy ?? null);
+      };
+
+      // posição rápida primeiro, depois a precisa
+      const last = await Location.getLastKnownPositionAsync();
+      if (last) apply(last);
+
+      try {
+        apply(
+          await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          }),
+        );
+      } catch {
+        // o watch abaixo continua a tentar
+      }
+
+      watchRef.current?.remove();
+      watchRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          distanceInterval: 15,
+          timeInterval: 5000,
+        },
+        apply,
+      );
+    } catch (e) {
+      console.log("Mapa: erro de localização", e);
+      setLocStatus("off");
+    }
   }, []);
 
-  /* ---------------------------------------------------------------
-     Sincronizar estado -> mapa
-     --------------------------------------------------------------- */
+  useEffect(() => {
+    startLocation();
+    return () => {
+      watchRef.current?.remove();
+      watchRef.current = null;
+    };
+  }, [startLocation]);
+
+  /* ---------------- Sincronizar estado -> mapa ---------------- */
 
   useEffect(() => {
     if (!mapReady) return;
-
     call(
       "setEntities",
-      visible.map((item) => ({
-        id: item.id,
-        lat: item.lat,
-        lng: item.lng,
-        title: item.title,
-        emoji: LAYER_BY_KIND[item.kind].emoji,
-        color: LAYER_BY_KIND[item.kind].color,
+      visible.map((e) => ({
+        id: e.id,
+        lat: e.lat,
+        lng: e.lng,
+        title: e.title,
+        emoji: LAYER_BY_KIND[e.kind].emoji,
+        color: LAYER_BY_KIND[e.kind].color,
       })),
       selectedId,
     );
@@ -654,9 +670,12 @@ export default function MapaScreen() {
 
   useEffect(() => {
     if (!mapReady || !userLocation) return;
-    call("setUser", userLocation.lat, userLocation.lng);
-    call("flyTo", userLocation.lat, userLocation.lng, 11);
-  }, [mapReady, userLocation, call]);
+    call("setUser", userLocation.lat, userLocation.lng, userAccuracy);
+    if (!centeredRef.current) {
+      centeredRef.current = true;
+      call("flyTo", userLocation.lat, userLocation.lng, 12);
+    }
+  }, [mapReady, userLocation, userAccuracy, call]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -664,224 +683,287 @@ export default function MapaScreen() {
     if (!pickMode) setPickedPoint(null);
   }, [mapReady, pickMode, call]);
 
-  /* ---------------------------------------------------------------
-     Rota — utilizador até ao elemento selecionado
-     --------------------------------------------------------------- */
+  /* ---------------- Rotas ---------------- */
 
   const drawRouteTo = useCallback(
     async (entity: Entity, animate: boolean) => {
-      if (!userLocation) return;
+      const origin = userRef.current;
+      if (!origin) return;
 
-      const route = await fetchRoadRoute(userLocation, {
-        lat: entity.lat,
-        lng: entity.lng,
-      });
+      const req = ++routeReq.current;
+      const dest = { lat: entity.lat, lng: entity.lng };
+      const route = await fetchRoadRoute(origin, dest);
+      if (req !== routeReq.current) return; // resposta antiga
 
       const km =
         route.distance != null
           ? route.distance / 1000
-          : distanceKm(userLocation, { lat: entity.lat, lng: entity.lng });
+          : distanceKm(origin, dest);
 
-      setRouteInfo({ km: Math.round(km * 10) / 10, duration: route.duration });
+      const rounded = Math.round(km * 10) / 10;
+      setRouteInfo({ km: rounded, duration: route.duration });
+      setStartKm((cur) => (animate && cur == null ? rounded : cur));
 
       call(
         "drawRoute",
         route.coords,
         animate ? COLORS.primary : COLORS.blue,
         animate,
+        animate ? 340 : 300,
       );
     },
-    [userLocation, call],
+    [call],
   );
 
-  /* ---------------------------------------------------------------
-     Mensagens vindas do WebView
-     --------------------------------------------------------------- */
+  // Enquanto se rastreia, atualiza a rota (o motorista pode estar a mover-se)
+  useEffect(() => {
+    if (!tracked) return;
+    const id = setInterval(() => drawRouteTo(tracked, true), 20000);
+    return () => clearInterval(id);
+  }, [tracked?.id, tracked?.lat, tracked?.lng, drawRouteTo]);
+
+  /* ---------------- Ações ---------------- */
+
+  const selectEntity = useCallback(
+    (entity: Entity) => {
+      setSelectedId(entity.id);
+      setListOpen(false);
+      setRouteInfo(null);
+      if (userRef.current) {
+        drawRouteTo(entity, false);
+      } else {
+        call("flyTo", entity.lat, entity.lng, 14);
+      }
+    },
+    [call, drawRouteTo],
+  );
 
   const onMessage = useCallback(
     (event: any) => {
-      let message: any;
+      let msg: any;
       try {
-        message = JSON.parse(event.nativeEvent.data);
+        msg = JSON.parse(event.nativeEvent.data);
       } catch {
         return;
       }
 
-      if (message.type === "ready") {
-        setMapReady(true);
-        return;
-      }
-
-      if (message.type === "select") {
-        setSelectedId(message.payload.id);
-        setListOpen(false);
-        return;
-      }
-
-      if (message.type === "pick") {
-        setPickedPoint(message.payload);
+      switch (msg.type) {
+        case "ready":
+          setMapReady(true);
+          setMapFailed(false);
+          break;
+        case "fatal":
+          setMapFailed(true);
+          break;
+        case "select": {
+          const ent = entitiesRef.current.find((e) => e.id === msg.payload.id);
+          if (ent) selectEntity(ent);
+          break;
+        }
+        case "pick":
+          setPickedPoint(msg.payload);
+          break;
       }
     },
-    [],
+    [selectEntity],
   );
 
-  /* ---------------------------------------------------------------
-     Pesquisa de locais (Nominatim, gratuito)
-     --------------------------------------------------------------- */
-
-  const runSearch = useCallback(async (value: string) => {
-    setSearch(value);
-
-    if (!value.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    setSearching(true);
-    try {
-      const url =
-        "https://nominatim.openstreetmap.org/search?format=json&limit=5" +
-        "&countrycodes=ao&q=" +
-        encodeURIComponent(value);
-
-      const response = await fetch(url, {
-        headers: {
-          "Accept-Language": "pt",
-          "User-Agent": "AgriLink/1.0 (app mobile)",
-        },
-      });
-
-      setSearchResults(await response.json());
-    } catch {
-      setSearchResults([]);
-    } finally {
-      setSearching(false);
-    }
-  }, []);
-
-  /* ---------------------------------------------------------------
-     Ações
-     --------------------------------------------------------------- */
-
-  const toggleLayer = (kind: Kind) => {
-    setActiveKinds((current) =>
-      current.includes(kind)
-        ? current.filter((item) => item !== kind)
-        : [...current, kind],
-    );
-  };
-
-  const selectEntity = (entity: Entity) => {
-    setSelectedId(entity.id);
-    setListOpen(false);
-    call("flyTo", entity.lat, entity.lng, 14);
-    drawRouteTo(entity, false);
+  const retryMap = () => {
+    setMapReady(false);
+    setMapFailed(false);
+    setWebKey((k) => k + 1);
   };
 
   const closeSelection = () => {
+    routeReq.current++;
     setSelectedId(null);
     setRouteInfo(null);
     call("clearRoute");
   };
 
   const startTracking = (entity: Entity) => {
-    setTracked(entity);
+    if (!userLocation) {
+      startLocation();
+      return;
+    }
+    setStartKm(null);
+    setTrackedId(entity.id);
+    setSelectedId(entity.id);
     drawRouteTo(entity, true);
   };
 
+  const stopTracking = () => {
+    setTrackedId(null);
+    setStartKm(null);
+    closeSelection();
+  };
+
+  const toggleLayer = (kind: Kind) =>
+    setActiveKinds((cur) =>
+      cur.includes(kind) ? cur.filter((k) => k !== kind) : [...cur, kind],
+    );
+
   const recenter = () => {
     if (userLocation) {
-      call("flyTo", userLocation.lat, userLocation.lng, 13);
+      call("flyTo", userLocation.lat, userLocation.lng, 14);
+    } else if (locStatus === "denied" || locStatus === "off") {
+      Linking.openSettings().catch(() => {});
     } else {
-      call(
-        "fitAll",
-        visible.map((item) => [item.lat, item.lng]),
-      );
+      startLocation();
     }
   };
+
+  const fitAll = () =>
+    call(
+      "fitAll",
+      visible.map((e) => [e.lat, e.lng]),
+    );
+
+  /* ---------------- Pesquisa (Nominatim, com debounce) ---------------- */
+
+  const runSearch = (value: string) => {
+    setSearch(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+
+    if (value.trim().length < 3) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      const req = ++searchReq.current;
+      try {
+        const url =
+          "https://nominatim.openstreetmap.org/search?format=json&limit=5" +
+          "&countrycodes=ao&q=" +
+          encodeURIComponent(value.trim());
+        const res = await fetch(url, {
+          headers: { "Accept-Language": "pt" },
+        });
+        const json = await res.json();
+        if (req === searchReq.current) setSearchResults(json);
+      } catch {
+        if (req === searchReq.current) setSearchResults([]);
+      } finally {
+        if (req === searchReq.current) setSearching(false);
+      }
+    }, 500);
+  };
+
+  useEffect(
+    () => () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    },
+    [],
+  );
+
+  /* ---------------- Derivados ---------------- */
 
   const distanceLabel = (entity: Entity) => {
     if (!userLocation) return null;
     if (selectedId === entity.id && routeInfo) {
       return `${routeInfo.km} km · ${formatDuration(routeInfo.duration)}`;
     }
-    const km = distanceKm(userLocation, { lat: entity.lat, lng: entity.lng });
-    return `${Math.round(km)} km`;
+    return `${Math.round(distanceKm(userLocation, entity))} km`;
   };
 
-  /* ---------------------------------------------------------------
+  const remainingKm =
+    tracked && userLocation ? distanceKm(userLocation, tracked) : null;
+  const progress =
+    startKm && remainingKm != null && startKm > 0
+      ? Math.max(0.04, Math.min(1, 1 - remainingKm / startKm))
+      : 0.04;
+  const arrived = remainingKm != null && remainingKm < 0.1;
+
+  const hasPanel = !!selected || !!tracked;
+  const fabBottom =
+    insets.bottom + (tracked ? 360 : selected ? 300 : 96);
+
+  const locBanner =
+    locStatus === "denied"
+      ? "Ative a localização para ver a sua posição e as distâncias."
+      : locStatus === "off"
+        ? "O GPS está desligado. Ligue-o para ver a sua posição."
+        : null;
+
+  /* =====================================================================
      RENDER
-     --------------------------------------------------------------- */
+     ===================================================================== */
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
       <WebView
+        key={webKey}
         ref={webRef}
-        source={{ html: MAP_HTML, baseUrl: "https://agrilink.local" }}
+        source={{ html: MAP_HTML, baseUrl: "https://agrilink.ao" }}
         originWhitelist={["*"]}
         onMessage={onMessage}
+        onError={() => setMapFailed(true)}
+        onHttpError={() => {}}
         javaScriptEnabled
         domStorageEnabled
+        mixedContentMode="always"
+        geolocationEnabled
         style={styles.web}
         androidLayerType={Platform.OS === "android" ? "hardware" : undefined}
         setSupportMultipleWindows={false}
       />
 
-      {/* ============================================================
-          HEADER
-      ============================================================= */}
-
-      <SafeAreaView style={[styles.headerWrap, { paddingTop: insets.top }]}>
+      {/* ================= HEADER ================= */}
+      <View style={[styles.headerWrap, { paddingTop: insets.top + 8 }]}>
         <View style={styles.header}>
           <TouchableOpacity
-            style={styles.roundButton}
+            style={styles.backBtn}
             onPress={() => router.back()}
             activeOpacity={0.8}
           >
-            <Ionicons name="arrow-back" size={19} color={COLORS.text} />
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </TouchableOpacity>
 
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.headerTitle}>Mapa de rastreio</Text>
+          <View style={styles.logoWrap}>
+            <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+          </View>
+
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              Mapa de rastreio
+            </Text>
             <Text style={styles.headerSubtitle}>
-              {visible.length} elementos ativos
+              {visible.length} elementos no mapa
             </Text>
           </View>
 
           <TouchableOpacity
-            style={[styles.roundButton, pickMode && styles.roundButtonActive]}
-            onPress={() => setPickMode((current) => !current)}
+            style={[styles.backBtn, pickMode && styles.backBtnActive]}
+            onPress={() => setPickMode((c) => !c)}
             activeOpacity={0.8}
           >
-            <Ionicons
-              name="location-outline"
-              size={19}
-              color={pickMode ? "#FFFFFF" : COLORS.text}
-            />
+            <Ionicons name="location-outline" size={20} color="#FFFFFF" />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.roundButton, { marginLeft: 8 }]}
+            style={[styles.backBtn, { marginLeft: 8 }]}
             onPress={loadEntities}
             activeOpacity={0.8}
           >
-            <Ionicons name="refresh" size={19} color={COLORS.text} />
+            <Ionicons name="refresh" size={19} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
-        {/* PESQUISA */}
-
         <View style={styles.searchBox}>
-          <Ionicons name="search-outline" size={17} color={COLORS.muted} />
+          <Ionicons name="search-outline" size={19} color={COLORS.muted} />
           <TextInput
             style={styles.searchInput}
             value={search}
             onChangeText={runSearch}
-            placeholder="Pesquisar local em Angola..."
-            placeholderTextColor={COLORS.muted}
+            placeholder="Pesquisar local em Angola"
+            placeholderTextColor="#A3A398"
             returnKeyType="search"
+            autoCorrect={false}
           />
           {searching && <ActivityIndicator size="small" color={COLORS.primary} />}
           {!!search && !searching && (
@@ -891,52 +973,41 @@ export default function MapaScreen() {
                 setSearchResults([]);
               }}
             >
-              <Ionicons name="close-circle" size={18} color={COLORS.faint} />
+              <Ionicons name="close-circle" size={19} color={COLORS.muted} />
             </TouchableOpacity>
           )}
         </View>
 
         {searchResults.length > 0 && (
           <View style={styles.searchResults}>
-            {searchResults.map((result, index) => (
+            {searchResults.map((r, i) => (
               <TouchableOpacity
-                key={result.place_id || index}
+                key={r.place_id || i}
                 style={[
-                  styles.searchResultRow,
-                  index < searchResults.length - 1 && styles.rowDivider,
+                  styles.searchRow,
+                  i < searchResults.length - 1 && styles.rowDivider,
                 ]}
                 onPress={() => {
-                  call(
-                    "flyTo",
-                    parseFloat(result.lat),
-                    parseFloat(result.lon),
-                    12,
-                  );
+                  call("flyTo", parseFloat(r.lat), parseFloat(r.lon), 13);
                   setSearch("");
                   setSearchResults([]);
                 }}
               >
-                <View style={styles.searchResultIcon}>
-                  <Ionicons
-                    name="location-outline"
-                    size={15}
-                    color={COLORS.primary}
-                  />
+                <View style={styles.searchIcon}>
+                  <Ionicons name="location-outline" size={16} color={COLORS.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.searchResultTitle} numberOfLines={1}>
-                    {String(result.display_name).split(",")[0]}
+                  <Text style={styles.searchTitle} numberOfLines={1}>
+                    {String(r.display_name).split(",")[0]}
                   </Text>
-                  <Text style={styles.searchResultSub} numberOfLines={1}>
-                    {result.display_name}
+                  <Text style={styles.searchSub} numberOfLines={1}>
+                    {r.display_name}
                   </Text>
                 </View>
               </TouchableOpacity>
             ))}
           </View>
         )}
-
-        {/* CAMADAS */}
 
         <ScrollView
           horizontal
@@ -945,10 +1016,7 @@ export default function MapaScreen() {
         >
           {LAYERS.map((layer) => {
             const active = activeKinds.includes(layer.kind);
-            const count = entities.filter(
-              (item) => item.kind === layer.kind,
-            ).length;
-
+            const count = entities.filter((e) => e.kind === layer.kind).length;
             return (
               <TouchableOpacity
                 key={layer.kind}
@@ -956,16 +1024,14 @@ export default function MapaScreen() {
                   styles.layerChip,
                   active && {
                     backgroundColor: layer.color,
-                    borderColor: layer.color,
+                    borderColor: "rgba(255,255,255,0.7)",
                   },
                 ]}
                 onPress={() => toggleLayer(layer.kind)}
                 activeOpacity={0.85}
               >
-                <Text style={styles.layerEmoji}>{layer.emoji}</Text>
-                <Text
-                  style={[styles.layerText, active && styles.layerTextActive]}
-                >
+                <Text style={{ fontSize: 13 }}>{layer.emoji}</Text>
+                <Text style={[styles.layerText, active && { color: "#FFFFFF" }]}>
                   {layer.label}
                 </Text>
                 <View
@@ -975,10 +1041,7 @@ export default function MapaScreen() {
                   ]}
                 >
                   <Text
-                    style={[
-                      styles.layerCountText,
-                      active && { color: "#FFFFFF" },
-                    ]}
+                    style={[styles.layerCountText, active && { color: "#FFFFFF" }]}
                   >
                     {count}
                   </Text>
@@ -987,32 +1050,45 @@ export default function MapaScreen() {
             );
           })}
         </ScrollView>
-      </SafeAreaView>
+      </View>
 
-      {/* ============================================================
-          MODO PINO — barra de confirmação
-      ============================================================= */}
+      {/* Aviso de localização */}
+      {!!locBanner && (
+        <TouchableOpacity
+          style={[styles.locBanner, { top: insets.top + 214 }]}
+          onPress={recenter}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="navigate-circle-outline" size={20} color={COLORS.accent} />
+          <Text style={styles.locBannerText}>{locBanner}</Text>
+          <Text style={styles.locBannerAction}>Ativar</Text>
+        </TouchableOpacity>
+      )}
 
+      {/* ================= MODO PINO ================= */}
       {pickMode && (
-        <View style={[styles.pickBar, { bottom: insets.bottom + 26 }]}>
-          <Ionicons name="pin-outline" size={18} color={COLORS.accentDark} />
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.pickTitle}>
-              {pickedPoint ? "Local selecionado" : "Toque no mapa"}
-            </Text>
-            <Text style={styles.pickCoords}>
-              {pickedPoint
-                ? `${pickedPoint.lat.toFixed(5)}, ${pickedPoint.lng.toFixed(5)}`
-                : "Escolha o ponto de recolha ou entrega"}
-            </Text>
+        <View style={[styles.sheet, styles.pickSheet, { paddingBottom: insets.bottom + 18 }]}>
+          <View style={styles.sheetHandle} />
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={styles.pickIcon}>
+              <Ionicons name="pin-outline" size={20} color={COLORS.accent} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.cardTitle}>
+                {pickedPoint ? "Local selecionado" : "Toque no mapa"}
+              </Text>
+              <Text style={styles.cardSub}>
+                {pickedPoint
+                  ? `${pickedPoint.lat.toFixed(5)}, ${pickedPoint.lng.toFixed(5)}`
+                  : "Escolha o ponto de recolha ou entrega"}
+              </Text>
+            </View>
           </View>
 
           <TouchableOpacity
-            style={[
-              styles.pickConfirm,
-              !pickedPoint && { backgroundColor: COLORS.faint },
-            ]}
+            style={[styles.pillButton, { marginTop: 16 }, !pickedPoint && styles.disabled]}
             disabled={!pickedPoint}
+            activeOpacity={0.85}
             onPress={() => {
               if (!pickedPoint) return;
               router.push({
@@ -1025,74 +1101,56 @@ export default function MapaScreen() {
               setPickMode(false);
             }}
           >
-            <Text style={styles.pickConfirmText}>Usar</Text>
+            <Text style={styles.pillButtonText}>Usar este local</Text>
+            <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       )}
 
-      {/* ============================================================
-          BOTÕES FLUTUANTES
-      ============================================================= */}
-
+      {/* ================= FABs ================= */}
       {!pickMode && (
-        <View style={[styles.fabColumn, { bottom: insets.bottom + 120 }]}>
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={recenter}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="locate" size={20} color={COLORS.primary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.fab, { marginTop: 10 }]}
-            onPress={() =>
-              call(
-                "fitAll",
-                visible.map((item) => [item.lat, item.lng]),
-              )
-            }
-            activeOpacity={0.85}
-          >
-            <MaterialCommunityIcons
-              name="arrow-expand-all"
-              size={19}
-              color={COLORS.primary}
+        <View style={[styles.fabColumn, { bottom: fabBottom }]}>
+          <TouchableOpacity style={styles.fab} onPress={recenter} activeOpacity={0.85}>
+            <Ionicons
+              name={userLocation ? "locate" : "locate-outline"}
+              size={21}
+              color={userLocation ? COLORS.primary : COLORS.muted}
             />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.fab, { marginTop: 10 }]}
+            onPress={fitAll}
+            activeOpacity={0.85}
+          >
+            <MaterialCommunityIcons name="arrow-expand-all" size={20} color={COLORS.primary} />
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* ============================================================
-          CARTÃO DO ELEMENTO SELECIONADO
-      ============================================================= */}
+      {/* ================= CARTÃO SELECIONADO ================= */}
+      {selected && !tracked && !pickMode && (
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 18 }]}>
+          <View style={styles.sheetHandle} />
 
-      {selected && !pickMode && (
-        <View style={[styles.selectedCard, { bottom: insets.bottom + 18 }]}>
-          <View style={styles.selectedHeader}>
+          <View style={styles.rowCenter}>
             <View
-              style={[
-                styles.selectedBadge,
-                { backgroundColor: LAYER_BY_KIND[selected.kind].color },
-              ]}
+              style={[styles.badge, { backgroundColor: LAYER_BY_KIND[selected.kind].color }]}
             >
-              <Text style={{ fontSize: 17 }}>
-                {LAYER_BY_KIND[selected.kind].emoji}
-              </Text>
+              <Text style={{ fontSize: 19 }}>{LAYER_BY_KIND[selected.kind].emoji}</Text>
             </View>
 
-            <View style={{ flex: 1, marginLeft: 11 }}>
-              <Text style={styles.selectedTitle} numberOfLines={1}>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
                 {selected.title}
               </Text>
-              <Text style={styles.selectedSub} numberOfLines={1}>
+              <Text style={styles.cardSub} numberOfLines={1}>
                 {LAYER_BY_KIND[selected.kind].label.replace(/s$/, "")}
                 {selected.subtitle ? ` · ${selected.subtitle}` : ""}
               </Text>
             </View>
 
             <TouchableOpacity style={styles.closeChip} onPress={closeSelection}>
-              <Ionicons name="close" size={17} color={COLORS.text} />
+              <Ionicons name="close" size={18} color={COLORS.text} />
             </TouchableOpacity>
           </View>
 
@@ -1100,9 +1158,7 @@ export default function MapaScreen() {
             <View style={styles.metricsRow}>
               <View style={styles.metricBox}>
                 <Text style={styles.metricLabel}>Preço</Text>
-                <Text style={styles.metricValue}>
-                  {formatKz(selected.price)}
-                </Text>
+                <Text style={styles.metricValue}>{formatKz(selected.price)}</Text>
               </View>
               <View style={styles.metricBox}>
                 <Text style={styles.metricLabel}>Quantidade</Text>
@@ -1115,241 +1171,113 @@ export default function MapaScreen() {
 
           {!!distanceLabel(selected) && (
             <View style={styles.distancePill}>
-              <Ionicons name="navigate" size={14} color={COLORS.blue} />
+              <Ionicons name="navigate" size={15} color={COLORS.blue} />
               <Text style={styles.distanceText}>
                 A {distanceLabel(selected)} de si
               </Text>
             </View>
           )}
 
-          <View style={styles.actionRow}>
+          <View style={[styles.rowCenter, { marginTop: 14, gap: 10 }]}>
             <TouchableOpacity
-              style={styles.primaryAction}
+              style={[styles.pillButton, { flex: 1 }]}
               onPress={() => startTracking(selected)}
               activeOpacity={0.85}
             >
-              <Ionicons name="navigate-outline" size={17} color="#FFFFFF" />
-              <Text style={styles.primaryActionText}>Rastrear</Text>
+              <Ionicons name="navigate-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.pillButtonText}>Rastrear</Text>
             </TouchableOpacity>
 
             {!!selected.phone && (
               <TouchableOpacity
-                style={styles.secondaryAction}
+                style={styles.roundAction}
                 onPress={() => Linking.openURL(`tel:${selected.phone}`)}
                 activeOpacity={0.85}
               >
-                <Ionicons name="call-outline" size={17} color={COLORS.primary} />
+                <Ionicons name="call-outline" size={19} color={COLORS.primary} />
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={styles.secondaryAction}
-              onPress={() =>
-                router.push({
-                  pathname: "/product",
-                  params: { id: selected.id.split(":")[1] },
-                })
-              }
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name="information-circle-outline"
-                size={18}
-                color={COLORS.primary}
-              />
-            </TouchableOpacity>
+            {selected.kind === "produto" && (
+              <TouchableOpacity
+                style={styles.roundAction}
+                onPress={() =>
+                  router.push({ pathname: "/product", params: { id: selected.rawId } })
+                }
+                activeOpacity={0.85}
+              >
+                <Ionicons name="information-circle-outline" size={20} color={COLORS.primary} />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       )}
 
-      {/* ============================================================
-          BOTÃO DA LISTA
-      ============================================================= */}
+      {/* ================= PAINEL DE RASTREIO ================= */}
+      {tracked && !pickMode && (
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 18 }]}>
+          <View style={styles.sheetHandle} />
 
-      {!selected && !pickMode && (
-        <TouchableOpacity
-          style={[styles.listButton, { bottom: insets.bottom + 22 }]}
-          onPress={() => setListOpen(true)}
-          activeOpacity={0.9}
-        >
-          <Ionicons name="list" size={18} color="#FFFFFF" />
-          <Text style={styles.listButtonText}>
-            Ver lista ({visible.length})
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* ============================================================
-          FOLHA DA LISTA
-      ============================================================= */}
-
-      <Modal
-        visible={listOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setListOpen(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setListOpen(false)}
-        >
-          <Pressable
-            style={styles.sheet}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>No mapa</Text>
-            <Text style={styles.sheetSubtitle}>
-              Toque para centrar e traçar a rota
-            </Text>
-
-            <FlatList
-              data={visible}
-              keyExtractor={(item) => item.id}
-              style={{ maxHeight: SCREEN_H * 0.5 }}
-              ItemSeparatorComponent={() => <View style={styles.rowDivider} />}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.listRow}
-                  onPress={() => selectEntity(item)}
-                  activeOpacity={0.8}
-                >
-                  <View
-                    style={[
-                      styles.listThumb,
-                      {
-                        backgroundColor: LAYER_BY_KIND[item.kind].color + "22",
-                      },
-                    ]}
-                  >
-                    {item.image_url ? (
-                      <Image
-                        source={{ uri: item.image_url }}
-                        style={styles.listThumbImage}
-                      />
-                    ) : (
-                      <Text style={{ fontSize: 20 }}>
-                        {LAYER_BY_KIND[item.kind].emoji}
-                      </Text>
-                    )}
-                  </View>
-
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.listTitle} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    <Text style={styles.listSub} numberOfLines={1}>
-                      {item.kind === "produto" && item.price
-                        ? `${formatKz(item.price)} · `
-                        : ""}
-                      {item.subtitle || LAYER_BY_KIND[item.kind].label}
-                    </Text>
-                  </View>
-
-                  {!!distanceLabel(item) && (
-                    <Text style={styles.listDistance}>
-                      {distanceLabel(item)}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <View style={styles.emptyBox}>
-                  <Text style={styles.emptyText}>
-                    Nenhum elemento nas camadas ativas.
-                  </Text>
-                </View>
-              }
-            />
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* ============================================================
-          FOLHA DE RASTREABILIDADE
-      ============================================================= */}
-
-      <Modal
-        visible={!!tracked}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setTracked(null)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setTracked(null)}
-        >
-          <Pressable
-            style={styles.sheet}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <View style={styles.sheetHandle} />
-
-            <View style={styles.sheetHeaderRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetTitle}>Rastreabilidade</Text>
-                <Text style={styles.sheetSubtitle}>{tracked?.title}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.closeChip}
-                onPress={() => setTracked(null)}
-              >
-                <Ionicons name="close" size={17} color={COLORS.text} />
-              </TouchableOpacity>
+          <View style={styles.rowCenter}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Rastreabilidade</Text>
+              <Text style={styles.cardSub} numberOfLines={1}>
+                {tracked.title}
+              </Text>
             </View>
+            <TouchableOpacity style={styles.closeChip} onPress={stopTracking}>
+              <Ionicons name="close" size={18} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
 
+          <View style={{ marginTop: 16 }}>
             {[
               {
                 state: "done",
                 icon: "leaf-outline",
                 title: "Colhido",
-                detail: tracked?.harvest_date
+                detail: tracked.harvest_date
                   ? new Date(tracked.harvest_date).toLocaleDateString("pt-AO")
                   : "Data por confirmar",
-                sub: tracked?.subtitle || "Origem",
               },
               {
                 state: "done",
                 icon: "person-outline",
                 title: "Recolhido pelo agente",
                 detail: "Local de recolha confirmado",
-                sub: "Agente de campo",
               },
               {
-                state: "active",
+                state: arrived ? "done" : "active",
                 icon: "cube-outline",
                 title: "Em trânsito",
-                detail: routeInfo
-                  ? `${routeInfo.km} km · ${formatDuration(routeInfo.duration)}`
-                  : "A calcular rota...",
-                sub: "A caminho do destino",
+                detail: arrived
+                  ? "Chegou ao destino"
+                  : routeInfo
+                    ? `${routeInfo.km} km · ${formatDuration(routeInfo.duration)}`
+                    : "A calcular rota...",
               },
               {
-                state: "pending",
+                state: arrived ? "active" : "pending",
                 icon: "checkmark-circle-outline",
-                title: "Entrega prevista",
-                detail: "Próximas 24h",
-                sub: "Destino final",
+                title: "Entrega",
+                detail: arrived ? "A confirmar entrega" : "Por concluir",
               },
-            ].map((step, index, all) => (
+            ].map((step, i, all) => (
               <View key={step.title} style={styles.stepRow}>
-                {index < all.length - 1 && (
+                {i < all.length - 1 && (
                   <View
                     style={[
                       styles.stepLine,
-                      step.state === "done" && {
-                        backgroundColor: COLORS.primaryLight,
-                      },
+                      step.state === "done" && { backgroundColor: COLORS.secondary },
                     ]}
                   />
                 )}
-
                 <View
                   style={[
                     styles.stepDot,
                     step.state === "done" && {
                       borderColor: COLORS.primary,
-                      backgroundColor: COLORS.primarySoft,
+                      backgroundColor: COLORS.soft,
                     },
                     step.state === "active" && {
                       borderColor: COLORS.accent,
@@ -1364,43 +1292,149 @@ export default function MapaScreen() {
                       step.state === "done"
                         ? COLORS.primary
                         : step.state === "active"
-                          ? COLORS.accentDark
-                          : COLORS.faint
+                          ? COLORS.accent
+                          : COLORS.muted
                     }
                   />
                 </View>
-
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={styles.stepTitle}>{step.title}</Text>
                   <Text style={styles.stepDetail}>{step.detail}</Text>
-                  <Text style={styles.stepSub}>{step.sub}</Text>
                 </View>
               </View>
             ))}
+          </View>
 
-            <View style={styles.progressBox}>
-              <View style={styles.progressHeader}>
-                <Text style={styles.metricLabel}>Progresso da rota</Text>
-                <Text style={styles.progressValue}>60%</Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View style={styles.progressFill} />
-              </View>
+          <View style={styles.progressBox}>
+            <View style={styles.progressHeader}>
+              <Text style={styles.metricLabel}>Progresso da rota</Text>
+              <Text style={styles.progressValue}>
+                {arrived ? 100 : Math.round(progress * 100)}%
+              </Text>
             </View>
+            <View style={styles.progressTrack}>
+              <View
+                style={[styles.progressFill, { width: `${arrived ? 100 : progress * 100}%` }]}
+              />
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* ================= BOTÃO DA LISTA ================= */}
+      {!hasPanel && !pickMode && (
+        <TouchableOpacity
+          style={[styles.listButton, { bottom: insets.bottom + 22 }]}
+          onPress={() => setListOpen(true)}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="list" size={19} color="#FFFFFF" />
+          <Text style={styles.pillButtonText}>Ver lista ({visible.length})</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ================= LISTA ================= */}
+      <Modal
+        visible={listOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setListOpen(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setListOpen(false)}>
+          <Pressable
+            style={[styles.sheetModal, { paddingBottom: insets.bottom + 20 }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>No mapa</Text>
+            <Text style={styles.cardSub}>Toque para centrar e traçar a rota</Text>
+
+            <FlatList
+              data={visible}
+              keyExtractor={(item) => item.id}
+              style={{ maxHeight: SCREEN_H * 0.5, marginTop: 10 }}
+              ItemSeparatorComponent={() => <View style={styles.rowDivider} />}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.listRow}
+                  onPress={() => selectEntity(item)}
+                  activeOpacity={0.8}
+                >
+                  <View
+                    style={[
+                      styles.listThumb,
+                      { backgroundColor: LAYER_BY_KIND[item.kind].color + "22" },
+                    ]}
+                  >
+                    {item.image_url ? (
+                      <Image source={{ uri: item.image_url }} style={styles.listThumbImage} />
+                    ) : (
+                      <Text style={{ fontSize: 20 }}>{LAYER_BY_KIND[item.kind].emoji}</Text>
+                    )}
+                  </View>
+
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.listTitle} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.cardSub} numberOfLines={1}>
+                      {item.kind === "produto" && item.price
+                        ? `${formatKz(item.price)} · `
+                        : ""}
+                      {item.subtitle || LAYER_BY_KIND[item.kind].label}
+                    </Text>
+                  </View>
+
+                  {!!distanceLabel(item) && (
+                    <Text style={styles.listDistance}>{distanceLabel(item)}</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                  <Text style={styles.cardSub}>
+                    Nenhum elemento nas camadas ativas.
+                  </Text>
+                </View>
+              }
+            />
           </Pressable>
         </Pressable>
       </Modal>
 
-      {/* ============================================================
-          LOADING
-      ============================================================= */}
+      {/* ================= ESTADOS ================= */}
+      {!loading && mapReady && entities.length === 0 && !hasPanel && !pickMode && (
+        <View style={[styles.emptyCard, { bottom: insets.bottom + 84 }]}>
+          <Text style={styles.cardTitle}>Ainda não há elementos com localização</Text>
+          <Text style={[styles.cardSub, { marginTop: 4 }]}>
+            Os produtos aparecem aqui quando têm coordenadas guardadas.
+          </Text>
+        </View>
+      )}
 
-      {(loading || !mapReady) && (
-        <View style={styles.loadingOverlay} pointerEvents="none">
-          <View style={styles.loadingCard}>
+      {mapFailed && (
+        <View style={styles.overlay}>
+          <View style={styles.overlayCard}>
+            <Ionicons name="cloud-offline-outline" size={34} color={COLORS.danger} />
+            <Text style={styles.overlayTitle}>Não foi possível carregar o mapa</Text>
+            <Text style={styles.overlaySub}>Verifique a ligação à internet.</Text>
+            <TouchableOpacity
+              style={[styles.pillButton, { marginTop: 16, paddingHorizontal: 28 }]}
+              onPress={retryMap}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.pillButtonText}>Tentar novamente</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {!mapFailed && (loading || !mapReady) && (
+        <View style={styles.overlay} pointerEvents="none">
+          <View style={styles.overlayCard}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingTitle}>A carregar mapa</Text>
-            <Text style={styles.loadingSub}>Aguarde um momento...</Text>
+            <Text style={styles.overlayTitle}>A carregar mapa</Text>
+            <Text style={styles.overlaySub}>Aguarde um momento...</Text>
           </View>
         </View>
       )}
@@ -1409,284 +1443,272 @@ export default function MapaScreen() {
 }
 
 /* =====================================================================
-   STYLES
+   ESTILOS
    ===================================================================== */
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.canvas },
-  web: { flex: 1, backgroundColor: COLORS.canvas },
+  screen: { flex: 1, backgroundColor: COLORS.background },
+  web: { flex: 1, backgroundColor: COLORS.background },
+
+  rowCenter: { flexDirection: "row", alignItems: "center" },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  disabled: { opacity: 0.55 },
 
   // HEADER
-
   headerWrap: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(250,248,243,0.94)",
+    backgroundColor: COLORS.background,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
-    paddingBottom: 10,
+    paddingBottom: 14,
+    shadowColor: COLORS.deep,
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
   },
-
   header: {
-    height: 54,
-    paddingHorizontal: 14,
+    minHeight: 48,
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
   },
-
-  roundButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.surface,
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: COLORS.primary,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: "rgba(255,255,255,0.25)",
   },
-
-  roundButtonActive: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
+  backBtnActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
+  logoWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginLeft: 10,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2.5,
+    borderColor: `${COLORS.secondary}88`,
   },
+  logo: { width: 28, height: 28 },
+  headerTitle: { fontSize: 16, fontWeight: "800", color: COLORS.text },
+  headerSubtitle: { fontSize: 11.5, color: COLORS.muted, marginTop: 1 },
 
-  headerTitle: { fontSize: 15, fontWeight: "800", color: COLORS.text },
-  headerSubtitle: { fontSize: 11, color: COLORS.muted, marginTop: 1 },
-
-  // SEARCH
-
+  // PESQUISA
   searchBox: {
-    marginHorizontal: 14,
-    height: 46,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
+    marginHorizontal: 16,
+    marginTop: 10,
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: COLORS.field,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
-    gap: 9,
-    ...SHADOW.card,
+    gap: 10,
   },
-
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.text,
-    padding: 0,
-  },
-
+  searchInput: { flex: 1, fontSize: 15, color: COLORS.text, padding: 0 },
   searchResults: {
-    marginHorizontal: 14,
+    marginHorizontal: 16,
     marginTop: 8,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.border,
     overflow: "hidden",
-    ...SHADOW.float,
   },
-
-  searchResultRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    gap: 10,
-  },
-
-  searchResultIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: COLORS.primarySoft,
+  searchRow: { flexDirection: "row", alignItems: "center", padding: 12, gap: 10 },
+  searchIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.soft,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  searchResultTitle: { fontSize: 13, fontWeight: "800", color: COLORS.text },
-  searchResultSub: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
-
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  searchTitle: { fontSize: 13.5, fontWeight: "800", color: COLORS.text },
+  searchSub: { fontSize: 11.5, color: COLORS.muted, marginTop: 2 },
 
   // CAMADAS
-
-  layerRow: { paddingHorizontal: 14, paddingTop: 10, gap: 8 },
-
+  layerRow: { paddingHorizontal: 16, paddingTop: 12, gap: 8 },
   layerChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    height: 36,
-    paddingHorizontal: 12,
-    borderRadius: 18,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
+    height: 38,
+    paddingHorizontal: 13,
+    borderRadius: 999,
+    backgroundColor: COLORS.background,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
   },
-
-  layerEmoji: { fontSize: 13 },
-  layerText: { fontSize: 12, fontWeight: "700", color: COLORS.text },
-  layerTextActive: { color: "#FFFFFF" },
-
+  layerText: { fontSize: 12.5, fontWeight: "700", color: COLORS.text },
   layerCount: {
     minWidth: 20,
-    paddingHorizontal: 5,
     height: 18,
+    paddingHorizontal: 5,
     borderRadius: 9,
-    backgroundColor: COLORS.canvas,
+    backgroundColor: COLORS.field,
     alignItems: "center",
     justifyContent: "center",
   },
+  layerCountText: { fontSize: 10.5, fontWeight: "800", color: COLORS.muted },
 
-  layerCountText: { fontSize: 10, fontWeight: "800", color: COLORS.muted },
+  // AVISO DE LOCALIZAÇÃO
+  locBanner: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: COLORS.background,
+    borderWidth: 1.5,
+    borderColor: COLORS.accent,
+    ...SHADOW_SOFT,
+  },
+  locBannerText: { flex: 1, fontSize: 12.5, color: COLORS.text, fontWeight: "600" },
+  locBannerAction: { fontSize: 13, fontWeight: "800", color: COLORS.primary },
 
-  // FABS
-
-  fabColumn: { position: "absolute", right: 14 },
-
+  // FABs
+  fabColumn: { position: "absolute", right: 16 },
   fab: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.background,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    ...SHADOW_SOFT,
+  },
+
+  // FOLHAS (mesma linguagem do painel do login)
+  sheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    ...SHADOW_UP,
+  },
+  pickSheet: { borderTopWidth: 3, borderTopColor: COLORS.accent },
+  sheetModal: {
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    paddingHorizontal: 22,
+    paddingTop: 12,
+  },
+  sheetHandle: {
+    width: 42,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: COLORS.border,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  sheetTitle: { fontSize: 22, fontWeight: "800", color: COLORS.text },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(52,59,50,0.42)",
+    justifyContent: "flex-end",
+  },
+
+  badge: {
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: COLORS.surface,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    ...SHADOW.float,
+    borderWidth: 3,
+    borderColor: `${COLORS.secondary}55`,
   },
-
-  // MODO PINO
-
-  pickBar: {
-    position: "absolute",
-    left: 14,
-    right: 14,
-    minHeight: 64,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.accent,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    ...SHADOW.float,
-  },
-
-  pickTitle: { fontSize: 13, fontWeight: "800", color: COLORS.text },
-  pickCoords: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
-
-  pickConfirm: {
-    height: 38,
-    paddingHorizontal: 18,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.accent,
+  pickIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: COLORS.accentSoft,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  pickConfirmText: { color: "#FFFFFF", fontWeight: "800", fontSize: 13 },
-
-  // CARTÃO SELECIONADO
-
-  selectedCard: {
-    position: "absolute",
-    left: 14,
-    right: 14,
-    borderRadius: RADIUS.xl,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 15,
-    ...SHADOW.float,
-  },
-
-  selectedHeader: { flexDirection: "row", alignItems: "center" },
-
-  selectedBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  selectedTitle: { fontSize: 16, fontWeight: "800", color: COLORS.text },
-  selectedSub: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
-
+  cardTitle: { fontSize: 17, fontWeight: "800", color: COLORS.text },
+  cardSub: { fontSize: 12.5, color: COLORS.muted, marginTop: 2 },
   closeChip: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.canvas,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLORS.field,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     alignItems: "center",
     justifyContent: "center",
   },
 
-  metricsRow: { flexDirection: "row", gap: 9, marginTop: 13 },
-
+  metricsRow: { flexDirection: "row", gap: 10, marginTop: 14 },
   metricBox: {
     flex: 1,
-    padding: 11,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primarySoft,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: COLORS.field,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
   },
-
-  metricLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: COLORS.muted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-
-  metricValue: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: COLORS.text,
-    marginTop: 3,
-  },
+  metricLabel: { fontSize: 12, fontWeight: "700", color: COLORS.muted },
+  metricValue: { fontSize: 16, fontWeight: "800", color: COLORS.text, marginTop: 3 },
 
   distancePill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
-    marginTop: 11,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: RADIUS.md,
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
     backgroundColor: COLORS.blueSoft,
+    alignSelf: "flex-start",
   },
+  distanceText: { fontSize: 12.5, fontWeight: "700", color: COLORS.blue },
 
-  distanceText: { fontSize: 12, fontWeight: "700", color: COLORS.blue },
-
-  actionRow: { flexDirection: "row", gap: 9, marginTop: 13 },
-
-  primaryAction: {
-    flex: 1,
-    height: 46,
-    borderRadius: RADIUS.md,
+  pillButton: {
+    height: 54,
+    borderRadius: 999,
     backgroundColor: COLORS.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+    ...SHADOW_SOFT,
   },
-
-  primaryActionText: { color: "#FFFFFF", fontWeight: "800", fontSize: 14 },
-
-  secondaryAction: {
-    width: 46,
-    height: 46,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primarySoft,
+  pillButtonText: { color: "#FFFFFF", fontSize: 15.5, fontWeight: "800" },
+  roundAction: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  // BOTÃO DA LISTA
 
   listButton: {
     position: "absolute",
@@ -1694,73 +1716,29 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    height: 48,
-    paddingHorizontal: 22,
-    borderRadius: 24,
+    height: 52,
+    paddingHorizontal: 26,
+    borderRadius: 999,
     backgroundColor: COLORS.primary,
-    ...SHADOW.float,
+    ...SHADOW_SOFT,
   },
 
-  listButtonText: { color: "#FFFFFF", fontWeight: "800", fontSize: 14 },
-
-  // FOLHAS
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15,20,17,0.5)",
-    justifyContent: "flex-end",
-  },
-
-  sheet: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 13,
-    paddingBottom: 32,
-  },
-
-  sheetHandle: {
-    width: 40,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: COLORS.border,
-    alignSelf: "center",
-    marginBottom: 18,
-  },
-
-  sheetHeaderRow: { flexDirection: "row", alignItems: "center" },
-  sheetTitle: { fontSize: 20, fontWeight: "800", color: COLORS.text },
-  sheetSubtitle: { fontSize: 12, color: COLORS.muted, marginTop: 4 },
-
-  listRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-  },
-
+  // LISTA
+  listRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12 },
   listThumb: {
-    width: 46,
-    height: 46,
-    borderRadius: RADIUS.md,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
-
   listThumbImage: { width: "100%", height: "100%" },
-
-  listTitle: { fontSize: 14, fontWeight: "800", color: COLORS.text },
-  listSub: { fontSize: 11, color: COLORS.muted, marginTop: 3 },
-  listDistance: { fontSize: 11, fontWeight: "700", color: COLORS.primary },
-
-  emptyBox: { paddingVertical: 40, alignItems: "center" },
-  emptyText: { fontSize: 13, color: COLORS.muted },
+  listTitle: { fontSize: 14.5, fontWeight: "800", color: COLORS.text },
+  listDistance: { fontSize: 12, fontWeight: "700", color: COLORS.primary },
 
   // TIMELINE
-
-  stepRow: { flexDirection: "row", paddingBottom: 18, position: "relative" },
-
+  stepRow: { flexDirection: "row", paddingBottom: 16, position: "relative" },
   stepLine: {
     position: "absolute",
     left: 15,
@@ -1769,76 +1747,69 @@ const styles = StyleSheet.create({
     width: 2,
     backgroundColor: COLORS.border,
   },
-
   stepDot: {
     width: 32,
     height: 32,
     borderRadius: 16,
     borderWidth: 2,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.canvas,
+    backgroundColor: COLORS.field,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  stepTitle: { fontSize: 13, fontWeight: "800", color: COLORS.text },
-  stepDetail: { fontSize: 12, color: COLORS.muted, marginTop: 3 },
-  stepSub: { fontSize: 11, color: COLORS.faint, marginTop: 2 },
+  stepTitle: { fontSize: 14, fontWeight: "800", color: COLORS.text },
+  stepDetail: { fontSize: 12.5, color: COLORS.muted, marginTop: 2 },
 
   progressBox: {
-    marginTop: 6,
     padding: 14,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.primarySoft,
+    borderRadius: 14,
+    backgroundColor: COLORS.field,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
   },
-
   progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 8,
   },
-
-  progressValue: { fontSize: 12, fontWeight: "800", color: COLORS.primary },
-
+  progressValue: { fontSize: 13, fontWeight: "800", color: COLORS.primary },
   progressTrack: {
-    height: 6,
+    height: 7,
     borderRadius: 4,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: COLORS.border,
     overflow: "hidden",
   },
+  progressFill: { height: "100%", borderRadius: 4, backgroundColor: COLORS.primary },
 
-  progressFill: {
-    width: "60%",
-    height: "100%",
-    borderRadius: 4,
-    backgroundColor: COLORS.primary,
+  // ESTADOS
+  emptyCard: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: COLORS.background,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    ...SHADOW_SOFT,
   },
-
-  // LOADING
-
-  loadingOverlay: {
+  overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(250,248,243,0.85)",
+    backgroundColor: "rgba(251,250,246,0.92)",
     alignItems: "center",
     justifyContent: "center",
   },
-
-  loadingCard: {
-    paddingVertical: 26,
+  overlayCard: {
+    paddingVertical: 28,
     paddingHorizontal: 34,
-    borderRadius: RADIUS.xl,
-    backgroundColor: COLORS.surface,
+    borderRadius: 28,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     alignItems: "center",
-    ...SHADOW.float,
+    ...SHADOW_UP,
   },
-
-  loadingTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: COLORS.text,
-    marginTop: 14,
-  },
-
-  loadingSub: { fontSize: 12, color: COLORS.muted, marginTop: 4 },
+  overlayTitle: { fontSize: 15, fontWeight: "800", color: COLORS.text, marginTop: 14 },
+  overlaySub: { fontSize: 12.5, color: COLORS.muted, marginTop: 4 },
 });
