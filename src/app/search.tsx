@@ -4,7 +4,6 @@ import {
   Alert,
   FlatList,
   Image,
-  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -18,13 +17,14 @@ import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { supabase } from '../lib/supabase';
+import ProductCard, { Product as CardProduct } from '@/components/ProductCard';
+import PaymentSheet from '@/components/PaymentSheet';
 
 /* =========================================================
    TEMA
 ========================================================= */
 
 const T = {
-  // Branding partilhado com o perfil: marfim, neutros quentes e verde original.
   g900: '#173D24',
   g700: '#1F6B3A',
   g600: '#1F6B3A',
@@ -71,14 +71,18 @@ interface Product {
   quantity: number;
   unit?: string;
   farmer_name?: string;
+  contact?: string;
+  harvest_date?: string;
   user_id?: string;
   seller_id?: string;
   province_id?: string;
   province?: string;
+  municipality_id?: string;
   location?: string;
   location_lat?: number;
   location_lng?: number;
   image_url?: string;
+  photos?: string[];
   created_at?: string;
   status?: string;
   is_active?: boolean;
@@ -86,6 +90,7 @@ interface Product {
   likes_count?: number;
   is_liked?: boolean;
   comments?: any[];
+  user_verified?: boolean;
 }
 
 interface UserResult {
@@ -141,17 +146,6 @@ const angolaProvinces = [
   { id: 'zaire', name: 'Zaire' },
 ];
 
-const productColors = [
-  '#EEF0E9',
-  '#F5F3EC',
-  '#EDF1F5',
-  '#F3EEE7',
-  '#F4F1E8',
-  '#EAF1EC',
-  '#F5EFEC',
-  '#F0EFEB',
-];
-
 /* =========================================================
    HELPERS DE CONSULTA
    O PostgREST recebe os filtros .or() como uma string.
@@ -201,11 +195,13 @@ export default function SearchPage() {
   const [userError, setUserError] = useState<string | null>(null);
 
   const [showFilters, setShowFilters] = useState(false);
-  const [preOrderModalOpen, setPreOrderModalOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [orderData, setOrderData] = useState({ quantity: 1, location: '' });
-  const [submitting, setSubmitting] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // ---------------------------------------------------
+  // Pagamento (substitui o antigo modal de pré-compra)
+  // ---------------------------------------------------
+  const [paymentProduct, setPaymentProduct] = useState<CardProduct | null>(null);
+  const [paymentVisible, setPaymentVisible] = useState(false);
 
   const requestId = useRef(0);
 
@@ -219,6 +215,36 @@ export default function SearchPage() {
     product.product_type || product.name || product.title || 'Produto agrícola';
 
   const getSellerName = (product: Product) => product.farmer_name || 'Agricultor';
+
+  // Converte o resultado de pesquisa (formato solto) para o formato que o
+  // ProductCard e a PaymentSheet partilhados esperam.
+  const toCardProduct = (item: Product): CardProduct => ({
+    id: item.id,
+    product_type: getProductName(item),
+    description: item.description ?? null,
+    quantity: Number(item.quantity || 0),
+    harvest_date: item.harvest_date || '',
+    price: Number(item.price || 0),
+    province_id: item.province_id || item.province || '',
+    municipality_id: item.municipality_id || item.location || '',
+    farmer_name: getSellerName(item),
+    contact: item.contact || '',
+    photos: Array.isArray(item.photos) && item.photos.length > 0
+      ? item.photos
+      : item.image_url
+        ? [item.image_url]
+        : [],
+    status: item.status || 'active',
+    created_at: item.created_at || new Date().toISOString(),
+    user_id: item.user_id || item.seller_id || '',
+    location_lat: item.location_lat ?? null,
+    location_lng: item.location_lng ?? null,
+    likes_count: item.likes_count || 0,
+    is_liked: !!item.is_liked,
+    comments: (item.comments || []) as any,
+    commentsLoaded: true,
+    user_verified: !!item.user_verified,
+  });
 
   /* --------------------------------------------------------
      SESSÃO
@@ -307,7 +333,7 @@ export default function SearchPage() {
 
       const ids = products.map((product) => product.id);
 
-      // Likes: UMA query para todos os produtos (antes era 1 por produto).
+      // Likes: UMA query para todos os produtos.
       const likesByProduct: Record<string, number> = {};
       const likedByMe = new Set<string>();
 
@@ -364,7 +390,6 @@ export default function SearchPage() {
 
     const columns = 'id, full_name, email, user_type, avatar_url';
 
-    // 1ª tentativa: nome OU email.
     const primary = await supabase
       .from('users')
       .select(columns)
@@ -375,8 +400,6 @@ export default function SearchPage() {
 
     console.warn('[Search] utilizadores (nome+email):', primary.error.message);
 
-    // 2ª tentativa: só nome — cobre o caso de a coluna email não existir
-    // ou de a RLS bloquear a leitura do email.
     const byName = await supabase
       .from('users')
       .select('id, full_name, user_type, avatar_url')
@@ -385,7 +408,6 @@ export default function SearchPage() {
 
     if (!byName.error) return (byName.data || []) as UserResult[];
 
-    // 3ª tentativa: tabela profiles, para esquemas que usam esse nome.
     const fromProfiles = await supabase
       .from('profiles')
       .select('id, full_name, user_type, avatar_url')
@@ -494,183 +516,55 @@ export default function SearchPage() {
     !!selectedProvince || selectedCategory !== 'all' || sortBy !== 'recent' || !!searchTerm;
 
   /* --------------------------------------------------------
-     PRÉ-COMPRA
+     LOGIN
   -------------------------------------------------------- */
 
-  const handleOpenPreOrder = (product: Product) => {
+  const requireLogin = useCallback(() => {
+    Alert.alert('Entrar na conta', 'É preciso entrar para continuar.', [
+      { text: 'Agora não', style: 'cancel' },
+      { text: 'Entrar', onPress: () => router.push('/login') },
+    ]);
+  }, [router]);
+
+  /* --------------------------------------------------------
+     PAGAMENTO — abre a PaymentSheet real em vez da pré-compra
+  -------------------------------------------------------- */
+
+  const openPayment = (cardProduct: CardProduct) => {
     if (!currentUser) {
-      Alert.alert('Entrar na conta', 'É preciso entrar para fazer uma pré-compra.', [
-        { text: 'Agora não', style: 'cancel' },
-        { text: 'Entrar', onPress: () => router.push('/login') },
-      ]);
+      requireLogin();
       return;
     }
-
-    setSelectedProduct(product);
-    setOrderData({ quantity: 1, location: '' });
-    setPreOrderModalOpen(true);
+    setPaymentProduct(cardProduct);
+    setPaymentVisible(true);
   };
 
-  const handlePreOrderSubmit = async () => {
-    if (!selectedProduct || !currentUser || submitting) return;
+  const closePayment = () => setPaymentVisible(false);
 
-    if (!orderData.location.trim()) {
-      Alert.alert('Local de entrega', 'Indique onde quer receber o produto.');
-      return;
-    }
-
-    if (orderData.quantity <= 0) {
-      Alert.alert('Quantidade', 'Indique uma quantidade válida.');
-      return;
-    }
-
-    if (orderData.quantity > Number(selectedProduct.quantity)) {
-      Alert.alert('Quantidade indisponível', 'O pedido é maior do que o estoque disponível.');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-
-      // Nota: se a tabela pre_orders usar buyer_id em vez de user_id,
-      // a primeira tentativa falha e a segunda resolve.
-      const payload = {
-        product_id: selectedProduct.id,
-        quantity: orderData.quantity,
-        location: orderData.location,
-        status: 'pending',
-      };
-
-      let { error } = await supabase
-        .from('pre_orders')
-        .insert({ ...payload, user_id: currentUser.id });
-
-      if (error && isMissingColumn(error)) {
-        const retry = await supabase
-          .from('pre_orders')
-          .insert({ ...payload, buyer_id: currentUser.id });
-        error = retry.error;
-      }
-
-      if (error) throw error;
-
-      const sellerId = selectedProduct.user_id || selectedProduct.seller_id;
-
-      if (sellerId) {
-        try {
-          await supabase.rpc('create_notification', {
-            p_user_id: sellerId,
-            p_type: 'pre_order',
-            p_title: 'Nova pré-compra',
-            p_message: `${currentUser.email} quer comprar ${orderData.quantity}kg de ${getProductName(
-              selectedProduct
-            )}`,
-            p_metadata: {
-              product_id: selectedProduct.id,
-              buyer_id: currentUser.id,
-              quantity: orderData.quantity,
-            },
-          });
-        } catch (notificationError) {
-          console.log('[Search] notificação não enviada:', notificationError);
-        }
-      }
-
-      Alert.alert('Pedido enviado', 'O agricultor foi notificado da sua pré-compra.');
-      setPreOrderModalOpen(false);
-      setSelectedProduct(null);
-    } catch (error: any) {
-      console.error('[Search] pré-compra:', error?.message || error);
-      Alert.alert('Pré-compra', error?.message || 'O pedido não foi registado. Tente de novo.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  /* --------------------------------------------------------
-     TOTAL
-  -------------------------------------------------------- */
-
-  const TAX_RATE = 0.1;
-  const subtotal = selectedProduct ? orderData.quantity * Number(selectedProduct.price) : 0;
-  const tax = subtotal * TAX_RATE;
-  const totalPrice = subtotal + tax;
-
-  /* --------------------------------------------------------
-     CARD DO PRODUTO
-  -------------------------------------------------------- */
-
-  const renderProduct = ({ item, index }: { item: Product; index: number }) => {
-    const background = productColors[index % productColors.length];
-    const name = getProductName(item);
-    const price = Number(item.price || 0);
-
-    return (
-      <Pressable
-        style={[styles.productCard, { backgroundColor: background }]}
-        onPress={() => router.push(`/product/${item.id}`)}
-      >
-        <View style={[styles.productImageBox, { backgroundColor: '#FFFFFF99' }]}>
-          {item.image_url ? (
-            <Image source={{ uri: item.image_url }} style={styles.productImage} resizeMode="cover" />
-          ) : (
-            <MaterialCommunityIcons name="sprout" size={52} color={T.g700} />
-          )}
-
-          <View style={styles.availableBadge}>
-            <View style={styles.availableDot} />
-            <Text style={styles.availableText}>Disponível</Text>
-          </View>
-        </View>
-
-        <View style={styles.productContent}>
-          <Text style={styles.productName} numberOfLines={1}>
-            {name}
-          </Text>
-
-          <Text style={styles.productSeller} numberOfLines={1}>
-            <Ionicons name="person-outline" size={12} color={T.muted} /> {getSellerName(item)}
-          </Text>
-
-          <View style={styles.locationRow}>
-            <Ionicons name="location-outline" size={13} color={T.muted} />
-            <Text style={styles.locationText} numberOfLines={1}>
-              {item.province || item.location || 'Angola'}
-            </Text>
-          </View>
-
-          <View style={styles.priceRow}>
-            <View>
-              <Text style={styles.priceLabel}>Preço</Text>
-              <Text style={styles.productPrice}>{price.toLocaleString('pt-AO')} Kz</Text>
-              <Text style={styles.unitText}>/ {item.unit || 'kg'}</Text>
-            </View>
-
-            <View style={styles.stockBox}>
-              <Text style={styles.stockNumber}>
-                {Number(item.quantity || 0).toLocaleString('pt-AO')}
-              </Text>
-              <Text style={styles.stockLabel}>estoque</Text>
-            </View>
-          </View>
-
-          <View style={styles.actionRow}>
-            <Pressable
-              style={styles.detailsButton}
-              onPress={() => router.push(`/product/${item.id}`)}
-            >
-              <Text style={styles.detailsButtonText}>Ver produto</Text>
-            </Pressable>
-
-            <Pressable style={styles.orderButton} onPress={() => handleOpenPreOrder(item)}>
-              <Ionicons name="cart-outline" size={17} color="#fff" />
-              <Text style={styles.orderButtonText}>Pré-comprar</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Pressable>
+  const handlePaid = ({ order }: { payment: any; order: any }) => {
+    if (!paymentProduct) return;
+    setProductResults((current) =>
+      current.map((p) =>
+        p.id === paymentProduct.id
+          ? { ...p, quantity: Math.max(0, Number(p.quantity) - Number(order?.quantity ?? 0)) }
+          : p
+      )
     );
   };
+
+  const handleViewHistory = ({ intentId, orderId }: { intentId?: string; orderId?: string }) => {
+    router.push({ pathname: '/historico', params: { intentId, orderId } } as any);
+  };
+
+  const handleProductUpdate = useCallback((updated: CardProduct) => {
+    setProductResults((current) =>
+      current.map((p) =>
+        p.id === updated.id
+          ? { ...p, likes_count: updated.likes_count, is_liked: updated.is_liked, comments: updated.comments }
+          : p
+      )
+    );
+  }, []);
 
   /* --------------------------------------------------------
      CARD DO UTILIZADOR
@@ -898,9 +792,15 @@ export default function SearchPage() {
         keyboardShouldPersistTaps="handled"
         data={showProductsSection ? sortedProducts : []}
         keyExtractor={(item) => item.id}
-        renderItem={renderProduct}
-        numColumns={2}
-        columnWrapperStyle={styles.productColumns}
+        renderItem={({ item }) => (
+          <ProductCard
+            product={toCardProduct(item)}
+            currentUserId={currentUser?.id ?? null}
+            onProductUpdate={handleProductUpdate}
+            onOpenPreOrder={openPayment}
+            onRequireLogin={requireLogin}
+          />
+        )}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
@@ -1003,132 +903,14 @@ export default function SearchPage() {
         }
       />
 
-      {/* MODAL DE PRÉ-COMPRA */}
-      <Modal
-        visible={preOrderModalOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPreOrderModalOpen(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.orderModal}>
-            <View style={styles.modalHandle} />
-
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>Pré-compra</Text>
-                <Text style={styles.modalSubtitle} numberOfLines={1}>
-                  {selectedProduct ? getProductName(selectedProduct) : ''}
-                </Text>
-              </View>
-
-              <Pressable onPress={() => setPreOrderModalOpen(false)} style={styles.modalClose}>
-                <Ionicons name="close" size={22} color={T.mid} />
-              </Pressable>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Quantidade (kg)</Text>
-
-              <View style={styles.quantityBox}>
-                <Pressable
-                  style={styles.quantityButton}
-                  onPress={() =>
-                    setOrderData((prev) => ({ ...prev, quantity: Math.max(1, prev.quantity - 1) }))
-                  }
-                >
-                  <Ionicons name="remove" size={21} color={T.g700} />
-                </Pressable>
-
-                <Text style={styles.quantityText}>{orderData.quantity}</Text>
-
-                <Pressable
-                  style={styles.quantityButton}
-                  onPress={() =>
-                    setOrderData((prev) => ({
-                      ...prev,
-                      quantity: Math.min(
-                        Number(selectedProduct?.quantity || 999999),
-                        prev.quantity + 1
-                      ),
-                    }))
-                  }
-                >
-                  <Ionicons name="add" size={21} color={T.g700} />
-                </Pressable>
-              </View>
-
-              <Text style={styles.availableTextModal}>
-                Disponível:{' '}
-                <Text style={{ fontWeight: '800', color: T.g700 }}>
-                  {Number(selectedProduct?.quantity || 0).toLocaleString('pt-AO')} kg
-                </Text>
-              </Text>
-
-              <Text style={[styles.inputLabel, { marginTop: 22 }]}>Local de entrega</Text>
-
-              <TextInput
-                value={orderData.location}
-                onChangeText={(text) => setOrderData((prev) => ({ ...prev, location: text }))}
-                placeholder="Ex.: Luanda, Talatona"
-                placeholderTextColor={T.faint}
-                style={styles.modalInput}
-              />
-
-              <View style={styles.summaryBox}>
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Preço por kg</Text>
-                  <Text style={styles.summaryValue}>
-                    {Number(selectedProduct?.price || 0).toLocaleString('pt-AO')} Kz
-                  </Text>
-                </View>
-
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Subtotal</Text>
-                  <Text style={styles.summaryValue}>{subtotal.toLocaleString('pt-AO')} Kz</Text>
-                </View>
-
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabelGold}>Taxa de serviço (10%)</Text>
-                  <Text style={styles.summaryValueGold}>{tax.toLocaleString('pt-AO')} Kz</Text>
-                </View>
-
-                <View style={styles.summaryDivider} />
-
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Total</Text>
-                  <Text style={styles.totalValue}>{totalPrice.toLocaleString('pt-AO')} Kz</Text>
-                </View>
-              </View>
-
-              <View style={styles.modalButtons}>
-                <Pressable
-                  style={styles.cancelButton}
-                  onPress={() => setPreOrderModalOpen(false)}
-                  disabled={submitting}
-                >
-                  <Text style={styles.cancelText}>Cancelar</Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.confirmButton, submitting && { opacity: 0.7 }]}
-                  onPress={handlePreOrderSubmit}
-                  disabled={submitting}
-                >
-                  {submitting ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Ionicons name="checkmark-circle-outline" size={19} color="#fff" />
-                  )}
-                  <Text style={styles.confirmText}>
-                    {submitting ? 'A enviar' : 'Confirmar'}
-                  </Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      {/* PAGAMENTO — substitui o antigo modal de pré-compra */}
+      <PaymentSheet
+        product={paymentProduct}
+        visible={paymentVisible}
+        onClose={closePayment}
+        onPaid={handlePaid}
+        onViewHistory={handleViewHistory}
+      />
     </SafeAreaView>
   );
 }
@@ -1311,82 +1093,6 @@ const styles = StyleSheet.create({
   },
   countText: { color: T.g700, fontSize: 11, fontWeight: '900' },
 
-  productColumns: { paddingHorizontal: 14, gap: 10, marginBottom: 10 },
-  productCard: {
-    flex: 1,
-    maxWidth: '50%',
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
-  },
-  productImageBox: {
-    height: 108,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  productImage: { width: '100%', height: '100%' },
-  availableBadge: {
-    position: 'absolute',
-    top: 9,
-    left: 9,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderRadius: 12,
-    paddingHorizontal: 7,
-    paddingVertical: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  availableDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: T.g500,
-    marginRight: 4,
-  },
-  availableText: { color: T.g700, fontSize: 9, fontWeight: '800' },
-
-  productContent: { padding: 9, backgroundColor: 'rgba(255,255,255,0.94)' },
-  productName: { fontSize: 15, fontWeight: '900', color: T.ink, marginBottom: 4 },
-  productSeller: { fontSize: 10, color: T.muted, marginBottom: 4 },
-  locationRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 9 },
-  locationText: { fontSize: 10, color: T.muted, marginLeft: 3, flex: 1 },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginBottom: 10,
-  },
-  priceLabel: { fontSize: 8, color: T.faint, fontWeight: '800', marginBottom: 1 },
-  productPrice: { fontSize: 15, fontWeight: '900', color: T.g700 },
-  unitText: { fontSize: 9, color: T.muted },
-  stockBox: { alignItems: 'flex-end' },
-  stockNumber: { fontSize: 12, fontWeight: '900', color: T.mid },
-  stockLabel: { fontSize: 8, color: T.muted },
-
-  actionRow: { flexDirection: 'row', gap: 6 },
-  detailsButton: {
-    flex: 1,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: T.g50,
-  },
-  detailsButtonText: { color: T.g700, fontSize: 10, fontWeight: '800' },
-  orderButton: {
-    flex: 1,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 3,
-    backgroundColor: T.g600,
-  },
-  orderButtonText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-
   userCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 17,
@@ -1452,106 +1158,4 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   emptyButtonText: { color: '#fff', fontWeight: '800', fontSize: 12 },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(52,59,50,0.42)', justifyContent: 'flex-end' },
-  orderModal: {
-    maxHeight: '90%',
-    backgroundColor: T.canvas,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 25,
-  },
-  modalHandle: {
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#E8E5DC',
-    alignSelf: 'center',
-    marginBottom: 18,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 22,
-  },
-  modalTitle: { color: T.g700, fontSize: 21, fontWeight: '900' },
-  modalSubtitle: { color: T.muted, fontSize: 13, marginTop: 3 },
-  modalClose: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#F5F3EC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  inputLabel: { color: T.mid, fontSize: 13, fontWeight: '800', marginBottom: 9 },
-  quantityBox: {
-    height: 53,
-    backgroundColor: '#F5F3EC',
-    borderRadius: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 7,
-  },
-  quantityButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quantityText: { fontSize: 20, fontWeight: '900', color: T.ink },
-  availableTextModal: { color: T.muted, fontSize: 11, marginTop: 7 },
-  modalInput: {
-    height: 50,
-    borderRadius: 17,
-    backgroundColor: '#F5F3EC',
-    paddingHorizontal: 15,
-    color: T.ink,
-    fontSize: 14,
-  },
-
-  summaryBox: { marginTop: 20, padding: 16, backgroundColor: '#F5F3EC', borderRadius: 20 },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  summaryLabel: { color: T.mid, fontSize: 13 },
-  summaryValue: { color: T.ink, fontSize: 13, fontWeight: '700' },
-  summaryLabelGold: { color: T.gold, fontSize: 13 },
-  summaryValueGold: { color: T.gold, fontSize: 13, fontWeight: '700' },
-  summaryDivider: { height: 1, backgroundColor: '#E8E5DC', marginVertical: 5 },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 5,
-  },
-  totalLabel: { color: T.ink, fontSize: 16, fontWeight: '900' },
-  totalValue: { color: T.g700, fontSize: 19, fontWeight: '900' },
-
-  modalButtons: { flexDirection: 'row', gap: 10, marginTop: 18 },
-  cancelButton: {
-    flex: 1,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#F5F3EC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelText: { color: T.muted, fontSize: 13, fontWeight: '800' },
-  confirmButton: {
-    flex: 1.5,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: T.g600,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  confirmText: { color: '#fff', fontSize: 13, fontWeight: '900' },
 });

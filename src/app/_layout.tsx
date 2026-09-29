@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import { RoleProvider } from '../context/RoleContext';
+import '../../global.css';
 
 export default function RootLayout() {
   return (

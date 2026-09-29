@@ -22,7 +22,7 @@
     "expo-image": "~57.0.5",
     "expo-image-picker": "~57.0.18",
     "expo-linear-gradient": "~57.0.2",
-    "expo-linking": "~57.0.10",
+    "expo-linking": "~57.0.11",
     "expo-location": "~57.0.18",
     "expo-router": "~57.0.21",
     "expo-splash-screen": "~57.0.9",
@@ -31,7 +31,8 @@
     "expo-system-ui": "~57.0.4",
     "expo-web-browser": "~57.0.3",
     "i18next": "^26.4.2",
-    "lucide-react-native": "^1.47.0",
+    "lucide-react-native": "^1.48.0",
+    "nativewind": "^4.2.7",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-i18next": "^17.0.14",
@@ -49,7 +50,13 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "lightningcss-win32-x64-msvc": "1.33.0",
+    "prettier-plugin-tailwindcss": "^0.5.11",
+    "tailwindcss": "^3.4.17",
     "typescript": "~6.0.3"
+  },
+  "overrides": {
+    "lightningcss": "1.33.0"
   },
   "scripts": {
     "start": "expo start",

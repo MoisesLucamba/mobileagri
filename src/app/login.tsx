@@ -4,20 +4,19 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Alert,
   ActivityIndicator,
   Image,
-  Dimensions,
   StatusBar,
   Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
@@ -25,26 +24,13 @@ import { makeRedirectUri } from 'expo-auth-session';
 import { supabase } from '../lib/supabase';
 
 const LOGO = require('../../assets/images/Agrilink_SD.png');
-const HERO = require('../../assets/images/agricultor.jpg');
 
 // Substitui pelos links reais da plataforma
 const TERMS_URL = 'https://agrilink.ao/termos';
 const PRIVACY_URL = 'https://agrilink.ao/privacidade';
 
-const { height } = Dimensions.get('window');
-const HERO_HEIGHT = Math.max(160, height * 0.21);
-const LOGO_SIZE = 88;
-
-const COLORS = {
-  primary: '#1F6B3A',
-  secondary: '#79C267',
-  dark: '#173D24',
-  text: '#173D24',
-  muted: '#627264',
-  border: '#DCE5DD',
-  field: '#F6F9F6',
-  background: '#FFFFFF',
-};
+const PRIMARY = '#1F6B3A';
+const MUTED = '#627264';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -238,366 +224,227 @@ export default function LoginScreen() {
   const handleRegister = () => router.push('/register');
   const handleBack = () => router.replace('/');
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+  const fieldClass = (name: 'email' | 'password') =>
+    `h-14 flex-row items-center rounded-2xl border-[1.5px] ${
+      focused === name
+        ? 'border-[#1F6B3A] bg-white'
+        : 'border-[#E3EAE4] bg-[#F5F8F5]'
+    }`;
 
-      {/* Imagem no topo */}
-      <View style={styles.hero}>
-        <Image source={HERO} style={styles.heroImage} resizeMode="cover" />
-        <View style={styles.heroOverlay} />
+  return (
+    <KeyboardAvoidingView
+      className="flex-1 bg-white"
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+
+      {/* Detalhes decorativos suaves */}
+      <View pointerEvents="none" className="absolute inset-0 overflow-hidden">
+        <View className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#79C267]/20" />
+        <View className="absolute -left-16 top-40 h-40 w-40 rounded-full bg-[#1F6B3A]/[0.06]" />
       </View>
 
-      <TouchableOpacity
-        style={[styles.backBtn, { top: Math.max(insets.top, 24) + 8 }]}
-        onPress={handleBack}
-        disabled={busy}
-        activeOpacity={0.8}
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: Math.max(insets.top, 24) + 8,
+          paddingBottom: Math.max(insets.bottom, 16) + 20,
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
       >
-        <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-      </TouchableOpacity>
+        <View className="flex-1 px-7">
+          {/* Topo */}
+          <TouchableOpacity
+            className="h-11 w-11 items-center justify-center rounded-full border border-[#E3EAE4] bg-white"
+            onPress={handleBack}
+            disabled={busy}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={20} color="#173D24" />
+          </TouchableOpacity>
 
-      {/* Painel */}
-      <KeyboardAvoidingView
-        style={styles.sheet}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.logoWrap}>
-          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
-        </View>
-
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: Math.max(insets.bottom, 16) + 40 },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.title}>Bem-vindo de volta</Text>
-          <Text style={styles.subtitle}>Entre na sua conta para continuar</Text>
+          {/* Cabeçalho */}
+          <Animated.View entering={FadeIn.duration(600)} className="mb-9 mt-8">
+            <View className="mb-6 h-16 w-16 items-center justify-center rounded-2xl border border-[#E3EAE4] bg-white shadow-md shadow-[#1F6B3A]/20">
+              <Image source={LOGO} className="h-11 w-11" resizeMode="contain" />
+            </View>
+            <Text className="text-[34px] font-extrabold leading-[40px] tracking-tight text-[#173D24]">
+              Bem-vindo{'\n'}de volta
+              <Text className="text-[#79C267]">.</Text>
+            </Text>
+            <Text className="mt-3 text-[15px] leading-[22px] text-[#627264]">
+              Entre na sua conta para continuar.
+            </Text>
+          </Animated.View>
 
           {/* EMAIL */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>E-mail</Text>
-            <View style={[styles.inputWrapper, focused === 'email' && styles.inputFocused]}>
-              <Ionicons name="mail-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Digite o seu e-mail"
-                placeholderTextColor="#9AA79C"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!busy}
-                returnKeyType="next"
-                onFocus={() => setFocused('email')}
-                onBlur={() => setFocused(null)}
-              />
+          <Animated.View entering={FadeInDown.delay(120).duration(500)}>
+            <View className="mb-4">
+              <Text className="mb-2 text-[13.5px] font-bold text-[#173D24]">E-mail</Text>
+              <View className={fieldClass('email')}>
+                <Ionicons
+                  name="mail-outline"
+                  size={20}
+                  color={focused === 'email' ? PRIMARY : MUTED}
+                  style={{ marginLeft: 16 }}
+                />
+                <TextInput
+                  className="h-full flex-1 px-3 text-[15.5px] text-[#173D24]"
+                  placeholder="nome@exemplo.com"
+                  placeholderTextColor="#9AA79C"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!busy}
+                  returnKeyType="next"
+                  onFocus={() => setFocused('email')}
+                  onBlur={() => setFocused(null)}
+                />
+              </View>
             </View>
-          </View>
+          </Animated.View>
 
           {/* PASSWORD */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Palavra-passe</Text>
-            <View style={[styles.inputWrapper, focused === 'password' && styles.inputFocused]}>
-              <Ionicons name="lock-closed-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Digite a sua palavra-passe"
-                placeholderTextColor="#9AA79C"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!busy}
-                returnKeyType="done"
-                onSubmitEditing={handleSubmit}
-                onFocus={() => setFocused('password')}
-                onBlur={() => setFocused(null)}
-              />
-              <TouchableOpacity
-                style={styles.eyeButton}
-                onPress={() => setShowPassword(!showPassword)}
-                disabled={busy}
-              >
+          <Animated.View entering={FadeInDown.delay(200).duration(500)}>
+            <View className="mb-6">
+              <View className="mb-2 flex-row items-center justify-between">
+                <Text className="text-[13.5px] font-bold text-[#173D24]">Palavra-passe</Text>
+                <TouchableOpacity onPress={handleForgotPassword} disabled={busy} hitSlop={8}>
+                  <Text className="text-[13px] font-bold text-[#1F6B3A]">Esqueci-me</Text>
+                </TouchableOpacity>
+              </View>
+              <View className={fieldClass('password')}>
                 <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={21}
-                  color={COLORS.muted}
+                  name="lock-closed-outline"
+                  size={20}
+                  color={focused === 'password' ? PRIMARY : MUTED}
+                  style={{ marginLeft: 16 }}
                 />
-              </TouchableOpacity>
+                <TextInput
+                  className="h-full flex-1 px-3 text-[15.5px] text-[#173D24]"
+                  placeholder="A sua palavra-passe"
+                  placeholderTextColor="#9AA79C"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!busy}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSubmit}
+                  onFocus={() => setFocused('password')}
+                  onBlur={() => setFocused(null)}
+                />
+                <TouchableOpacity
+                  className="h-full items-center justify-center px-4"
+                  onPress={() => setShowPassword(!showPassword)}
+                  disabled={busy}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={21}
+                    color={MUTED}
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-
-          <TouchableOpacity
-            style={styles.forgotButton}
-            onPress={handleForgotPassword}
-            disabled={busy}
-          >
-            <Text style={styles.forgotText}>Esqueci a minha palavra-passe</Text>
-          </TouchableOpacity>
+          </Animated.View>
 
           {/* ENTRAR */}
-          <TouchableOpacity
-            style={[styles.loginButton, busy && styles.disabled]}
-            onPress={handleSubmit}
-            disabled={busy}
-            activeOpacity={0.85}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <Text style={styles.loginButtonText}>Entrar</Text>
-                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-              </>
-            )}
-          </TouchableOpacity>
+          <Animated.View entering={FadeInDown.delay(280).duration(500)}>
+            <TouchableOpacity
+              className={`h-14 flex-row items-center justify-center gap-2 rounded-2xl bg-[#1F6B3A] shadow-lg shadow-[#1F6B3A]/40 ${
+                busy ? 'opacity-60' : ''
+              }`}
+              onPress={handleSubmit}
+              disabled={busy}
+              activeOpacity={0.88}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text className="text-base font-extrabold text-white">Entrar</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                </>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
 
           {/* DIVISOR */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>ou</Text>
-            <View style={styles.divider} />
-          </View>
+          <Animated.View
+            entering={FadeInDown.delay(340).duration(500)}
+            className="my-6 flex-row items-center"
+          >
+            <View className="h-px flex-1 bg-[#E3EAE4]" />
+            <Text className="mx-3 text-[12.5px] text-[#627264]">ou continue com</Text>
+            <View className="h-px flex-1 bg-[#E3EAE4]" />
+          </Animated.View>
 
           {/* GOOGLE */}
-          <TouchableOpacity
-            style={[styles.googleButton, busy && styles.disabled]}
-            onPress={handleGoogleLogin}
-            disabled={busy}
-            activeOpacity={0.8}
-          >
-            {googleLoading ? (
-              <ActivityIndicator size="small" color={COLORS.text} />
-            ) : (
-              <>
-                <Ionicons name="logo-google" size={19} color="#EA4335" />
-                <Text style={styles.googleButtonText}>Continuar com o Google</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <Animated.View entering={FadeInDown.delay(400).duration(500)}>
+            <TouchableOpacity
+              className={`h-14 flex-row items-center justify-center gap-2.5 rounded-2xl border-[1.5px] border-[#E3EAE4] bg-white ${
+                busy ? 'opacity-60' : ''
+              }`}
+              onPress={handleGoogleLogin}
+              disabled={busy}
+              activeOpacity={0.8}
+            >
+              {googleLoading ? (
+                <ActivityIndicator size="small" color="#173D24" />
+              ) : (
+                <>
+                  <Ionicons name="logo-google" size={19} color="#EA4335" />
+                  <Text className="text-[15.5px] font-bold text-[#173D24]">Google</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
 
           {/* REGISTO */}
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>Ainda não tem uma conta?</Text>
-            <TouchableOpacity onPress={handleRegister} disabled={busy}>
-              <Text style={styles.registerLink}>Criar conta</Text>
+          <Animated.View
+            entering={FadeInDown.delay(460).duration(500)}
+            className="mt-7 flex-row flex-wrap items-center justify-center"
+          >
+            <Text className="text-sm text-[#627264]">Ainda não tem uma conta?</Text>
+            <TouchableOpacity onPress={handleRegister} disabled={busy} hitSlop={8}>
+              <Text className="ml-1.5 text-sm font-extrabold text-[#1F6B3A]">Criar conta</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
 
-          {/* TERMOS E POLÍTICAS */}
-          <Text style={styles.legalText}>
+          <View className="min-h-[28px] flex-1" />
+
+          {/* TERMOS E FOOTER */}
+          <Text className="px-2 text-center text-xs leading-[18px] text-[#627264]">
             Ao continuar, aceita os nossos{' '}
-            <Text style={styles.legalLink} onPress={() => openLink(TERMS_URL)}>
+            <Text
+              className="font-bold text-[#1F6B3A] underline"
+              onPress={() => openLink(TERMS_URL)}
+            >
               Termos de Utilização
             </Text>{' '}
             e a{' '}
-            <Text style={styles.legalLink} onPress={() => openLink(PRIVACY_URL)}>
+            <Text
+              className="font-bold text-[#1F6B3A] underline"
+              onPress={() => openLink(PRIVACY_URL)}
+            >
               Política de Privacidade
             </Text>
             .
           </Text>
 
-          {/* FOOTER */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              © {new Date().getFullYear()} AgriLink
-            </Text>
-            <Text style={styles.footerText}>
-              Desenvolvida pela <Text style={styles.footerBrand}>THE TEAM</Text>
-            </Text>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+          <Text className="mt-4 text-center text-[11.5px] text-[#8A968C]">
+            © {new Date().getFullYear()} AgriLink · Desenvolvida pela{' '}
+            <Text className="font-extrabold tracking-wide text-[#173D24]">THE TEAM</Text>
+          </Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
-
-// =====================================================
-// ESTILOS
-// =====================================================
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-
-  hero: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: HERO_HEIGHT + 40,
-    overflow: 'hidden',
-    backgroundColor: '#0A2814',
-  },
-  heroImage: { width: '100%', height: '100%' },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10, 40, 20, 0.28)' },
-
-  backBtn: {
-    position: 'absolute',
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(10, 40, 20, 0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    zIndex: 10,
-  },
-
-  sheet: {
-    position: 'absolute',
-    top: HERO_HEIGHT,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    shadowColor: '#0A2814',
-    shadowOpacity: 0.15,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: -6 },
-    elevation: 12,
-  },
-
-  logoWrap: {
-    position: 'absolute',
-    top: -LOGO_SIZE / 2,
-    alignSelf: 'center',
-    zIndex: 5,
-    width: LOGO_SIZE,
-    height: LOGO_SIZE,
-    borderRadius: LOGO_SIZE / 2,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: `${COLORS.secondary}55`,
-    shadowColor: '#0A2814',
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
-  logo: { width: LOGO_SIZE - 24, height: LOGO_SIZE - 24 },
-
-  scrollContent: {
-    paddingHorizontal: 26,
-    paddingTop: LOGO_SIZE / 2 + 16,
-    width: '100%',
-    maxWidth: 520,
-    alignSelf: 'center',
-  },
-
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: COLORS.text,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 14.5,
-    color: COLORS.muted,
-    textAlign: 'center',
-    marginTop: 6,
-    marginBottom: 24,
-  },
-
-  inputContainer: { marginBottom: 16 },
-  label: { fontSize: 13.5, fontWeight: '700', color: COLORS.text, marginBottom: 7 },
-  inputWrapper: {
-    height: 54,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.field,
-  },
-  inputFocused: { borderColor: COLORS.primary, backgroundColor: '#FFFFFF' },
-  inputIcon: { marginLeft: 15 },
-  input: {
-    flex: 1,
-    height: '100%',
-    fontSize: 15,
-    color: COLORS.text,
-    paddingHorizontal: 12,
-  },
-  eyeButton: {
-    paddingHorizontal: 15,
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  forgotButton: { alignSelf: 'flex-end', marginTop: -4, marginBottom: 20 },
-  forgotText: { fontSize: 13.5, fontWeight: '700', color: COLORS.primary },
-
-  loginButton: {
-    height: 56,
-    borderRadius: 999,
-    backgroundColor: COLORS.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#173D24',
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 6,
-  },
-  loginButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
-  disabled: { opacity: 0.65 },
-
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  divider: { flex: 1, height: 1, backgroundColor: COLORS.border },
-  dividerText: { fontSize: 13, color: COLORS.muted, marginHorizontal: 12 },
-
-  googleButton: {
-    height: 54,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 999,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  googleButtonText: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-
-  registerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-    marginTop: 22,
-  },
-  registerText: { fontSize: 14, color: COLORS.muted },
-  registerLink: { fontSize: 14, fontWeight: '800', color: COLORS.primary, marginLeft: 5 },
-
-  legalText: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: COLORS.muted,
-    textAlign: 'center',
-    marginTop: 22,
-    paddingHorizontal: 8,
-  },
-  legalLink: { color: COLORS.primary, fontWeight: '700', textDecorationLine: 'underline' },
-
-  footer: { alignItems: 'center', marginTop: 22, gap: 3 },
-  footerText: { fontSize: 11.5, color: '#8A968C' },
-  footerBrand: { fontWeight: '800', color: COLORS.dark, letterSpacing: 0.5 },
-});
