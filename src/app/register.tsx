@@ -1,54 +1,73 @@
 // src/app/register.tsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Image,
-  Dimensions,
   StatusBar,
-  Linking,
+  ViewStyle,
+  StyleProp,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeInDown,
+  FadeInRight,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { supabase } from '../lib/supabase';
 import { getProvincesForCountry, getProvinceLabel, getMunicipalityLabel } from '../data/country-locations';
+import Icon, { IconName } from '../components/Icon';
 
 const LOGO = require('../../assets/images/Agrilink_SD.png');
-const HERO = require('../../assets/images/agricultor.jpg');
 
-// Substitui pelos links reais da plataforma
-const TERMS_URL = 'https://agrilink.ao/termos';
-const PRIVACY_URL = 'https://agrilink.ao/privacidade';
-
-const { height } = Dimensions.get('window');
-const HERO_HEIGHT = Math.max(140, height * 0.18);
-const LOGO_SIZE = 84;
-
+// Mesma palette da página de Segurança
 const COLORS = {
   primary: '#1F6B3A',
   secondary: '#79C267',
-  dark: '#173D24',
-  text: '#173D24',
-  mid: '#34503B',
-  muted: '#627264',
-  border: '#DCE5DD',
-  field: '#F6F9F6',
-  background: '#FFFFFF',
-  tint: '#EAF5E6',
-  gold: '#B5670F',
-  goldBg: '#FFF6E5',
-  goldBorder: 'rgba(229,160,32,0.28)',
+  dark: '#465044',
+  text: '#3D403A',
+  mid: '#5A5E54',
+  muted: '#77796F',
+  faint: '#A3A398',
+  border: '#E8E5DC',
+  field: '#F5F3EC',
+  background: '#FBFAF6',
+  soft: '#EEF0E9',
+  gold: '#B7833D',
+  goldSoft: '#F5EEDF',
+  danger: '#B95E54',
+  dangerSoft: '#F6ECE9',
 };
+
+const SHADOW_SOFT = {
+  shadowColor: COLORS.dark,
+  shadowOpacity: 0.22,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 5 },
+  elevation: 6,
+};
+
+const MIN_PASSWORD = 8;
+
+const enter = (delay: number) => FadeInDown.delay(delay).springify().damping(18).stiffness(140);
 
 // Gera um NIF aleatório (13 dígitos, nunca começa por 0)
 // para quem não preencher o campo no registo.
@@ -58,18 +77,86 @@ const generateRandomNif = () => {
   return nif;
 };
 
-const steps = [
-  { title: 'Perfil', hint: 'Quem és tu na plataforma' },
-  { title: 'Contacto', hint: 'Como te encontramos' },
-  { title: 'Segurança', hint: 'Protege a tua conta' },
+const steps: { title: string; hint: string; icon: IconName }[] = [
+  { title: 'Perfil', hint: 'Quem és tu na plataforma', icon: 'user' },
+  { title: 'Contacto', hint: 'Como te encontramos', icon: 'phone' },
+  { title: 'Segurança', hint: 'Protege a tua conta', icon: 'lock' },
 ];
 
-const userTypeOptions = [
-  { id: 'agricultor', label: 'Fornecedor', icon: 'leaf-outline' as const },
-  { id: 'agente', label: 'Agente', icon: 'briefcase-outline' as const },
-  { id: 'comprador', label: 'Comprador', icon: 'business-outline' as const },
-  { id: 'motorista', label: 'Motorista', icon: 'car-outline' as const },
+const userTypeOptions: { id: string; label: string; icon: IconName }[] = [
+  { id: 'agricultor', label: 'Fornecedor', icon: 'leaf' },
+  { id: 'agente', label: 'Agente', icon: 'users' },
+  { id: 'comprador', label: 'Comprador', icon: 'cart' },
+  { id: 'motorista', label: 'Motorista', icon: 'truck' },
 ];
+
+// ================================
+// COMPONENTES ANIMADOS
+// ================================
+
+// Toque que encolhe com mola
+function PressScale({
+  onPress,
+  disabled,
+  style,
+  containerStyle,
+  children,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+  containerStyle?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  const scale = useSharedValue(1);
+  const anim = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <Animated.View style={[anim, containerStyle]}>
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        onPressIn={() => (scale.value = withSpring(0.96, { damping: 15, stiffness: 300 }))}
+        onPressOut={() => (scale.value = withSpring(1, { damping: 12, stiffness: 240 }))}
+        style={style}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+// Campo com borda que anima a cor ao focar
+function Field({
+  icon,
+  focused,
+  children,
+}: {
+  icon: IconName;
+  focused: boolean;
+  children: React.ReactNode;
+}) {
+  const p = useSharedValue(0);
+
+  useEffect(() => {
+    p.value = withTiming(focused ? 1 : 0, { duration: 220 });
+  }, [focused]);
+
+  const anim = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(p.value, [0, 1], [COLORS.border, COLORS.primary]),
+    backgroundColor: interpolateColor(p.value, [0, 1], [COLORS.field, '#FFFFFF']),
+    transform: [{ scale: 1 + p.value * 0.008 }],
+  }));
+
+  return (
+    <Animated.View style={[styles.inputWrapper, anim]}>
+      <View style={styles.inputIcon}>
+        <Icon name={icon} size={19} color={focused ? COLORS.primary : COLORS.muted} />
+      </View>
+      {children}
+    </Animated.View>
+  );
+}
 
 export default function Register() {
   const router = useRouter();
@@ -104,11 +191,37 @@ export default function Register() {
   const availableMunicipalities =
     availableProvinces.find((p) => p.id === selectedProvince)?.municipalities || [];
 
-  const openLink = (url: string) => {
-    Linking.openURL(url).catch(() =>
-      Alert.alert('Erro', 'Não foi possível abrir o link.')
+  // Logo: entra com mola e flutua suavemente
+  const logoScale = useSharedValue(0.6);
+  const logoOpacity = useSharedValue(0);
+  const logoFloat = useSharedValue(0);
+
+  useEffect(() => {
+    logoOpacity.value = withTiming(1, { duration: 500 });
+    logoScale.value = withSpring(1, { damping: 10, stiffness: 110 });
+    logoFloat.value = withRepeat(
+      withSequence(
+        withTiming(-5, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+      ),
+      -1,
     );
-  };
+  }, []);
+
+  const logoStyle = useAnimatedStyle(() => ({
+    opacity: logoOpacity.value,
+    transform: [{ scale: logoScale.value }, { translateY: logoFloat.value }],
+  }));
+
+  // Barra de progresso animada
+  const progressPercent = ((currentStep + 1) / steps.length) * 100;
+  const progress = useSharedValue(progressPercent);
+
+  useEffect(() => {
+    progress.value = withTiming(progressPercent, { duration: 450, easing: Easing.out(Easing.cubic) });
+  }, [progressPercent]);
+
+  const progressStyle = useAnimatedStyle(() => ({ width: `${progress.value}%` }));
 
   const validateAgentCode = async (code: string) => {
     if (code.length !== 6) {
@@ -141,8 +254,8 @@ export default function Register() {
       return false;
     }
     if (currentStep === 2) {
-      if (password.length < 6) {
-        setErrorMessage('A senha deve ter pelo menos 6 caracteres.');
+      if (password.length < MIN_PASSWORD) {
+        setErrorMessage(`A senha deve ter pelo menos ${MIN_PASSWORD} caracteres.`);
         return false;
       }
       if (password !== confirmPassword) {
@@ -211,110 +324,137 @@ export default function Register() {
     }
   };
 
-  const handleTopBack = () => {
-    if (currentStep > 0) {
-      setErrorMessage('');
-      setCurrentStep((s) => s - 1);
-    } else {
-      router.replace('/login');
-    }
+  const goPrev = () => {
+    setErrorMessage('');
+    setCurrentStep((s) => Math.max(s - 1, 0));
   };
 
-  const progressPercent = ((currentStep + 1) / steps.length) * 100;
-  const fieldStyle = (name: string) => [styles.inputWrapper, focused === name && styles.inputFocused];
+  const handleTopBack = () => {
+    if (currentStep > 0) goPrev();
+    else router.replace('/login');
+  };
+
   const focusProps = (name: string) => ({
     onFocus: () => setFocused(name),
     onBlur: () => setFocused(null),
   });
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
-      {/* Imagem no topo */}
-      <View style={styles.hero}>
-        <Image source={HERO} style={styles.heroImage} resizeMode="cover" />
-        <View style={styles.heroOverlay} />
-      </View>
-
-      <TouchableOpacity
-        style={[styles.topBackBtn, { top: Math.max(insets.top, 24) + 8 }]}
-        onPress={handleTopBack}
-        disabled={loading}
-        activeOpacity={0.8}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: Math.max(insets.top, 24) + 4,
+          paddingBottom: Math.max(insets.bottom, 16) + 20,
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
       >
-        <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-      </TouchableOpacity>
+        <View style={styles.content}>
+          {/* Voltar */}
+          <Animated.View entering={FadeIn.duration(500)}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={handleTopBack}
+              disabled={loading}
+              activeOpacity={0.5}
+              accessibilityRole="button"
+              accessibilityLabel="Voltar"
+            >
+              <Icon name="chevron-left" size={22} color={COLORS.text} />
+              <Text style={styles.backText}>Voltar</Text>
+            </TouchableOpacity>
+          </Animated.View>
 
-      {/* Painel */}
-      <KeyboardAvoidingView
-        style={styles.sheet}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.logoWrap}>
-          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
-        </View>
-
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: Math.max(insets.bottom, 16) + 40 },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.title}>Cria a tua conta</Text>
-          <Text style={styles.subtitle}>Leva menos de dois minutos.</Text>
+          {/* Logo */}
+          <View style={styles.header}>
+            <Animated.Image source={LOGO} style={[styles.logo, logoStyle]} resizeMode="contain" />
+            <Animated.Text entering={enter(250)} style={styles.title}>
+              Cria a tua conta
+            </Animated.Text>
+            <Animated.Text entering={enter(330)} style={styles.subtitle}>
+              Leva menos de dois minutos.
+            </Animated.Text>
+          </View>
 
           {errorMessage ? (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={17} color="#B91C1C" />
+            <Animated.View entering={FadeInDown.duration(300)} style={styles.errorBox}>
+              <Icon name="alert-circle" size={17} color={COLORS.danger} />
               <Text style={styles.errorText}>{errorMessage}</Text>
-            </View>
+            </Animated.View>
           ) : null}
 
           {/* PROGRESSO */}
-          <View style={styles.progressBlock}>
+          <Animated.View entering={enter(400)} style={styles.progressBlock}>
+            <View style={styles.stepper}>
+              {steps.map((s, i) => {
+                const done = i < currentStep;
+                const active = i === currentStep;
+                return (
+                  <View key={s.title} style={styles.stepperItem}>
+                    <View
+                      style={[
+                        styles.stepDot,
+                        (done || active) && styles.stepDotOn,
+                        active && styles.stepDotActive,
+                      ]}
+                    >
+                      <Icon
+                        name={done ? 'check' : s.icon}
+                        size={16}
+                        color={done || active ? '#FFFFFF' : COLORS.faint}
+                      />
+                    </View>
+                    <Text style={[styles.stepDotLabel, (done || active) && { color: COLORS.primary }]}>
+                      {s.title}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            <View style={styles.progressTrack}>
+              <Animated.View style={[styles.progressFill, progressStyle]} />
+            </View>
             <View style={styles.stepRow}>
-              <Text style={styles.stepTitle}>{steps[currentStep].title}</Text>
+              <Text style={styles.stepHint}>{steps[currentStep].hint}</Text>
               <View style={styles.stepBadge}>
                 <Text style={styles.stepBadgeText}>
                   Passo {currentStep + 1} de {steps.length}
                 </Text>
               </View>
             </View>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
-            </View>
-            <Text style={styles.stepHint}>{steps[currentStep].hint}</Text>
-          </View>
+          </Animated.View>
 
           {/* PASSO 1 */}
           {currentStep === 0 && (
-            <View style={styles.stepBody}>
+            <Animated.View key="step-0" entering={FadeInRight.duration(350)} style={styles.stepBody}>
               <View>
                 <Text style={styles.label}>Tipo de conta</Text>
                 <View style={styles.userTypeRow}>
                   {userTypeOptions.map((opt) => {
                     const active = userType === opt.id;
                     return (
-                      <TouchableOpacity
+                      <PressScale
                         key={opt.id}
                         onPress={() => setUserType(opt.id)}
-                        activeOpacity={0.85}
+                        containerStyle={styles.userTypeCell}
                         style={[styles.userTypeBtn, active && styles.userTypeBtnActive]}
                       >
                         <View style={[styles.userTypeIcon, active && styles.userTypeIconActive]}>
-                          <Ionicons
-                            name={opt.icon}
-                            size={20}
-                            color={active ? '#FFFFFF' : COLORS.primary}
-                          />
+                          <Icon name={opt.icon} size={20} color={active ? '#FFFFFF' : COLORS.primary} />
                         </View>
                         <Text style={[styles.userTypeLabel, active && styles.userTypeLabelActive]}>
                           {opt.label}
                         </Text>
-                      </TouchableOpacity>
+                      </PressScale>
                     );
                   })}
                 </View>
@@ -322,17 +462,16 @@ export default function Register() {
 
               <View>
                 <Text style={styles.label}>Nome completo</Text>
-                <View style={fieldStyle('name')}>
-                  <Ionicons name="person-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+                <Field icon="user" focused={focused === 'name'}>
                   <TextInput
                     value={fullName}
                     onChangeText={setFullName}
                     placeholder="Nome completo"
-                    placeholderTextColor="#9AA79C"
+                    placeholderTextColor={COLORS.faint}
                     style={styles.input}
                     {...focusProps('name')}
                   />
-                </View>
+                </Field>
               </View>
 
               <View>
@@ -342,19 +481,19 @@ export default function Register() {
                     <Text style={styles.optionalText}>Opcional</Text>
                   </View>
                 </View>
-                <View style={fieldStyle('nif')}>
-                  <Ionicons name="card-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+                <Field icon="card" focused={focused === 'nif'}>
                   <TextInput
                     value={identityDocument}
                     onChangeText={setIdentityDocument}
                     placeholder="000000000AA000"
-                    placeholderTextColor="#9AA79C"
+                    placeholderTextColor={COLORS.faint}
                     autoCapitalize="characters"
                     style={styles.input}
                     {...focusProps('nif')}
                   />
-                </View>
+                </Field>
                 <View style={styles.hintBox}>
+                  <Icon name="info" size={15} color={COLORS.gold} />
                   <Text style={styles.hintText}>
                     Não tens o número à mão? Deixa em branco, preenchemos automaticamente. Podes atualizar depois no perfil.
                   </Text>
@@ -362,65 +501,63 @@ export default function Register() {
               </View>
 
               {userType === 'motorista' && (
-                <View>
+                <Animated.View entering={FadeInDown.duration(350)}>
                   <Text style={styles.label}>Capacidade de carga (kg)</Text>
-                  <View style={fieldStyle('load')}>
-                    <Ionicons name="car-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+                  <Field icon="truck" focused={focused === 'load'}>
                     <TextInput
                       value={loadCapacity}
                       onChangeText={setLoadCapacity}
                       placeholder="Ex.: 8000"
-                      placeholderTextColor="#9AA79C"
+                      placeholderTextColor={COLORS.faint}
                       keyboardType="numeric"
                       style={styles.input}
                       {...focusProps('load')}
                     />
-                  </View>
+                  </Field>
                   <View style={styles.hintBox}>
+                    <Icon name="info" size={15} color={COLORS.gold} />
                     <Text style={styles.hintText}>
                       Usamos esta capacidade para mostrar apenas cargas compatíveis com o seu veículo.
                     </Text>
                   </View>
-                </View>
+                </Animated.View>
               )}
-            </View>
+            </Animated.View>
           )}
 
           {/* PASSO 2 */}
           {currentStep === 1 && (
-            <View style={styles.stepBody}>
+            <Animated.View key="step-1" entering={FadeInRight.duration(350)} style={styles.stepBody}>
               <View>
                 <Text style={styles.label}>Email</Text>
-                <View style={fieldStyle('email')}>
-                  <Ionicons name="mail-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+                <Field icon="mail" focused={focused === 'email'}>
                   <TextInput
                     value={email}
                     onChangeText={setEmail}
                     placeholder="seu@email.com"
-                    placeholderTextColor="#9AA79C"
+                    placeholderTextColor={COLORS.faint}
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
                     style={styles.input}
                     {...focusProps('email')}
                   />
-                </View>
+                </Field>
               </View>
 
               <View>
                 <Text style={styles.label}>Telefone</Text>
-                <View style={fieldStyle('phone')}>
-                  <Ionicons name="call-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+                <Field icon="phone" focused={focused === 'phone'}>
                   <TextInput
                     value={phone}
                     onChangeText={setPhone}
                     placeholder="9XX XXX XXX"
-                    placeholderTextColor="#9AA79C"
+                    placeholderTextColor={COLORS.faint}
                     keyboardType="phone-pad"
                     style={styles.input}
                     {...focusProps('phone')}
                   />
-                </View>
+                </Field>
               </View>
 
               <View>
@@ -443,7 +580,7 @@ export default function Register() {
 
               <View>
                 <Text style={styles.label}>{municipalityLabel || 'Município'}</Text>
-                <View style={styles.pickerWrap}>
+                <View style={[styles.pickerWrap, !selectedProvince && { opacity: 0.6 }]}>
                   <Picker
                     enabled={!!selectedProvince}
                     selectedValue={selectedMunicipality}
@@ -456,45 +593,39 @@ export default function Register() {
                   </Picker>
                 </View>
               </View>
-            </View>
+            </Animated.View>
           )}
 
           {/* PASSO 3 */}
           {currentStep === 2 && (
-            <View style={styles.stepBody}>
+            <Animated.View key="step-2" entering={FadeInRight.duration(350)} style={styles.stepBody}>
               <View>
                 <Text style={styles.label}>Senha</Text>
-                <View style={fieldStyle('pass')}>
-                  <Ionicons name="lock-closed-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+                <Field icon="lock" focused={focused === 'pass'}>
                   <TextInput
                     value={password}
                     onChangeText={setPassword}
-                    placeholder="Mínimo 6 caracteres"
-                    placeholderTextColor="#9AA79C"
+                    placeholder={`Mínimo ${MIN_PASSWORD} caracteres`}
+                    placeholderTextColor={COLORS.faint}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     style={styles.input}
                     {...focusProps('pass')}
                   />
                   <TouchableOpacity style={styles.eyeButton} onPress={() => setShowPassword(!showPassword)}>
-                    <Ionicons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={21}
-                      color={COLORS.muted}
-                    />
+                    <Icon name={showPassword ? 'eye-off' : 'eye'} size={19} color={COLORS.muted} />
                   </TouchableOpacity>
-                </View>
+                </Field>
               </View>
 
               <View>
                 <Text style={styles.label}>Confirmar senha</Text>
-                <View style={fieldStyle('confirm')}>
-                  <Ionicons name="lock-closed-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+                <Field icon="lock" focused={focused === 'confirm'}>
                   <TextInput
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     placeholder="Repita a senha"
-                    placeholderTextColor="#9AA79C"
+                    placeholderTextColor={COLORS.faint}
                     secureTextEntry={!showConfirmPassword}
                     autoCapitalize="none"
                     style={styles.input}
@@ -504,13 +635,9 @@ export default function Register() {
                     style={styles.eyeButton}
                     onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                   >
-                    <Ionicons
-                      name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={21}
-                      color={COLORS.muted}
-                    />
+                    <Icon name={showConfirmPassword ? 'eye-off' : 'eye'} size={19} color={COLORS.muted} />
                   </TouchableOpacity>
-                </View>
+                </Field>
               </View>
 
               <View>
@@ -519,10 +646,10 @@ export default function Register() {
                   {(['nao', 'sim'] as const).map((v) => {
                     const active = wasReferred === v;
                     return (
-                      <TouchableOpacity
+                      <PressScale
                         key={v}
                         onPress={() => setWasReferred(v)}
-                        activeOpacity={0.85}
+                        containerStyle={{ flex: 1 }}
                         style={[styles.radioChip, active && styles.radioChipActive]}
                       >
                         <View style={[styles.radioOuter, active && { borderColor: COLORS.primary }]}>
@@ -531,18 +658,17 @@ export default function Register() {
                         <Text style={[styles.radioLabel, active && { color: COLORS.primary }]}>
                           {v === 'nao' ? 'Não' : 'Sim'}
                         </Text>
-                      </TouchableOpacity>
+                      </PressScale>
                     );
                   })}
                 </View>
 
                 {wasReferred === 'sim' && (
-                  <View style={{ marginTop: 14 }}>
-                    <View style={fieldStyle('agent')}>
-                      <Ionicons name="key-outline" size={20} color={COLORS.muted} style={styles.inputIcon} />
+                  <Animated.View entering={FadeInDown.duration(350)} style={{ marginTop: 14 }}>
+                    <Field icon="key" focused={focused === 'agent'}>
                       <TextInput
                         placeholder="Código de 6 dígitos"
-                        placeholderTextColor="#9AA79C"
+                        placeholderTextColor={COLORS.faint}
                         value={agentCode}
                         onChangeText={(v) => {
                           const val = v.toUpperCase().slice(0, 6);
@@ -554,34 +680,37 @@ export default function Register() {
                         style={styles.input}
                         {...focusProps('agent')}
                       />
-                    </View>
+                    </Field>
                     {validatingCode && <ActivityIndicator style={{ marginTop: 8 }} color={COLORS.primary} />}
-                    {agentCodeValid === false && <Text style={styles.invalidCode}>Código inválido</Text>}
-                    {agentCodeValid === true && <Text style={styles.validCode}>Código válido</Text>}
-                  </View>
+                    {agentCodeValid === false && (
+                      <View style={styles.codeRow}>
+                        <Icon name="close-circle" size={15} color={COLORS.danger} />
+                        <Text style={styles.invalidCode}>Código inválido</Text>
+                      </View>
+                    )}
+                    {agentCodeValid === true && (
+                      <View style={styles.codeRow}>
+                        <Icon name="check-circle" size={15} color={COLORS.primary} />
+                        <Text style={styles.validCode}>Código válido</Text>
+                      </View>
+                    )}
+                  </Animated.View>
                 )}
               </View>
-            </View>
+            </Animated.View>
           )}
 
           {/* ACÇÕES */}
           <View style={styles.actionsRow}>
             {currentStep > 0 && (
-              <TouchableOpacity
-                onPress={() => {
-                  setErrorMessage('');
-                  setCurrentStep((s) => s - 1);
-                }}
-                style={styles.prevBtn}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="arrow-back" size={19} color={COLORS.text} />
-              </TouchableOpacity>
+              <PressScale onPress={goPrev} style={styles.prevBtn}>
+                <Icon name="arrow-left" size={19} color={COLORS.text} />
+              </PressScale>
             )}
-            <TouchableOpacity
+            <PressScale
               onPress={handleSubmit}
               disabled={loading}
-              activeOpacity={0.85}
+              containerStyle={{ flex: 1 }}
               style={[styles.submitBtn, loading && styles.disabled]}
             >
               {loading ? (
@@ -591,43 +720,44 @@ export default function Register() {
                   <Text style={styles.submitText}>
                     {currentStep === steps.length - 1 ? 'Criar conta' : 'Continuar'}
                   </Text>
-                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                  <Icon name="arrow-right" size={18} color="#FFFFFF" />
                 </>
               )}
-            </TouchableOpacity>
+            </PressScale>
           </View>
 
           {/* LOGIN */}
           <View style={styles.loginRow}>
             <Text style={styles.loginText}>Já tem uma conta?</Text>
-            <TouchableOpacity onPress={() => router.replace('/login')} disabled={loading}>
+            <TouchableOpacity onPress={() => router.replace('/login')} disabled={loading} hitSlop={8}>
               <Text style={styles.loginLink}>Faça login</Text>
             </TouchableOpacity>
           </View>
 
-          {/* TERMOS E POLÍTICAS */}
-          <Text style={styles.legalText}>
-            Ao criar conta, aceita os nossos{' '}
-            <Text style={styles.legalLink} onPress={() => openLink(TERMS_URL)}>
-              Termos de Utilização
-            </Text>{' '}
-            e a{' '}
-            <Text style={styles.legalLink} onPress={() => openLink(PRIVACY_URL)}>
-              Política de Privacidade
-            </Text>
-            .
-          </Text>
+          <View style={{ flex: 1, minHeight: 24 }} />
 
-          {/* FOOTER */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>© {new Date().getFullYear()} AgriLink</Text>
-            <Text style={styles.footerText}>
-              Desenvolvida pela <Text style={styles.footerBrand}>THE TEAM</Text>
+          {/* TERMOS E FOOTER */}
+          <View style={styles.legalCard}>
+            <Icon name="shield" size={16} color={COLORS.primary} />
+            <Text style={styles.legalText}>
+              Ao criar conta, aceita os nossos{' '}
+              <Text style={styles.legalLink} onPress={() => router.push('/termos')}>
+                Termos de Utilização
+              </Text>{' '}
+              e a{' '}
+              <Text style={styles.legalLink} onPress={() => router.push('/privacidade')}>
+                Política de Privacidade
+              </Text>
+              .
             </Text>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+          <Text style={styles.footerText}>
+            © {new Date().getFullYear()} AgriLink · Desenvolvida pela{' '}
+            <Text style={styles.footerBrand}>THE TEAM</Text>
+          </Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -637,132 +767,100 @@ export default function Register() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
 
-  hero: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: HERO_HEIGHT + 40,
-    overflow: 'hidden',
-    backgroundColor: '#0A2814',
-  },
-  heroImage: { width: '100%', height: '100%' },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10, 40, 20, 0.28)' },
-
-  topBackBtn: {
-    position: 'absolute',
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(10, 40, 20, 0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    zIndex: 10,
-  },
-
-  sheet: {
-    position: 'absolute',
-    top: HERO_HEIGHT,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    shadowColor: '#0A2814',
-    shadowOpacity: 0.15,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: -6 },
-    elevation: 12,
-  },
-
-  logoWrap: {
-    position: 'absolute',
-    top: -LOGO_SIZE / 2,
-    alignSelf: 'center',
-    zIndex: 5,
-    width: LOGO_SIZE,
-    height: LOGO_SIZE,
-    borderRadius: LOGO_SIZE / 2,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: `${COLORS.secondary}55`,
-    shadowColor: '#0A2814',
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
-  logo: { width: LOGO_SIZE - 24, height: LOGO_SIZE - 24 },
-
-  scrollContent: {
-    paddingHorizontal: 26,
-    paddingTop: LOGO_SIZE / 2 + 14,
+  content: {
+    flex: 1,
+    paddingHorizontal: 24,
     width: '100%',
     maxWidth: 520,
     alignSelf: 'center',
   },
 
-  title: { fontSize: 25, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
-  subtitle: { fontSize: 14.5, color: COLORS.muted, textAlign: 'center', marginTop: 6, marginBottom: 20 },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginLeft: -4,
+    paddingVertical: 8,
+    paddingRight: 12,
+    gap: 2,
+  },
+  backText: { fontSize: 15.5, fontWeight: '600', color: COLORS.text },
+
+  header: { alignItems: 'center', marginTop: 4, marginBottom: 24 },
+  logo: { width: 96, height: 96 },
+  title: {
+    marginTop: 14,
+    fontSize: 26,
+    fontWeight: '800',
+    color: COLORS.text,
+    textAlign: 'center',
+    letterSpacing: -0.5,
+  },
+  subtitle: { fontSize: 14.5, color: COLORS.muted, textAlign: 'center', marginTop: 6 },
 
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 14,
+    backgroundColor: COLORS.dangerSoft,
+    borderRadius: 16,
     padding: 12,
     marginBottom: 16,
   },
-  errorText: { color: '#B91C1C', fontSize: 13, fontWeight: '600', flex: 1 },
+  errorText: { color: COLORS.danger, fontSize: 13, fontWeight: '700', flex: 1 },
 
-  progressBlock: { marginBottom: 20 },
-  stepRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  stepTitle: { fontSize: 13, fontWeight: '800', color: COLORS.text },
-  stepBadge: { backgroundColor: COLORS.tint, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
-  stepBadgeText: { fontSize: 10.5, fontWeight: '800', color: COLORS.primary },
+  progressBlock: { marginBottom: 22 },
+  stepper: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  stepperItem: { flex: 1, alignItems: 'center', gap: 6 },
+  stepDot: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.field,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepDotOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  stepDotActive: { ...SHADOW_SOFT, shadowOpacity: 0.18, elevation: 4 },
+  stepDotLabel: { fontSize: 11.5, fontWeight: '700', color: COLORS.faint },
+
   progressTrack: { height: 6, borderRadius: 999, backgroundColor: COLORS.border, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 999, backgroundColor: COLORS.primary },
-  stepHint: { fontSize: 12, color: COLORS.muted, marginTop: 8 },
+  stepRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
+  stepHint: { flex: 1, fontSize: 12.5, color: COLORS.muted },
+  stepBadge: { backgroundColor: COLORS.soft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  stepBadgeText: { fontSize: 10.5, fontWeight: '800', color: COLORS.primary },
 
   stepBody: { gap: 16 },
 
-  label: { fontSize: 13.5, fontWeight: '700', color: COLORS.text, marginBottom: 7 },
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 },
-  optionalBadge: { backgroundColor: COLORS.goldBg, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
+  label: { fontSize: 13.5, fontWeight: '700', color: COLORS.text, marginBottom: 8 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  optionalBadge: { backgroundColor: COLORS.goldSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
   optionalText: { fontSize: 10, fontWeight: '800', color: COLORS.gold },
 
   inputWrapper: {
     height: 54,
     borderWidth: 1.5,
-    borderColor: COLORS.border,
     borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.field,
   },
-  inputFocused: { borderColor: COLORS.primary, backgroundColor: '#FFFFFF' },
-  inputIcon: { marginLeft: 15 },
-  input: { flex: 1, height: '100%', fontSize: 15, color: COLORS.text, paddingHorizontal: 12 },
-  eyeButton: { paddingHorizontal: 15, height: '100%', justifyContent: 'center', alignItems: 'center' },
+  inputIcon: { marginLeft: 16 },
+  input: { flex: 1, height: '100%', fontSize: 15.5, color: COLORS.text, paddingHorizontal: 12 },
+  eyeButton: { paddingHorizontal: 16, height: '100%', justifyContent: 'center', alignItems: 'center' },
 
   hintBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
     marginTop: 10,
     padding: 12,
-    borderRadius: 14,
-    backgroundColor: COLORS.goldBg,
-    borderWidth: 1,
-    borderColor: COLORS.goldBorder,
+    borderRadius: 16,
+    backgroundColor: COLORS.goldSoft,
   },
-  hintText: { fontSize: 11.5, color: COLORS.mid, lineHeight: 17 },
+  hintText: { flex: 1, fontSize: 11.5, color: COLORS.mid, lineHeight: 17 },
 
   pickerWrap: {
     borderWidth: 1.5,
@@ -773,17 +871,17 @@ const styles = StyleSheet.create({
   },
 
   userTypeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
+  userTypeCell: { width: '48%' },
   userTypeBtn: {
-    width: '48%',
     paddingVertical: 14,
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1.5,
     borderColor: COLORS.border,
     backgroundColor: COLORS.field,
     alignItems: 'center',
     gap: 8,
   },
-  userTypeBtnActive: { borderColor: COLORS.primary, backgroundColor: COLORS.tint },
+  userTypeBtnActive: { borderColor: COLORS.primary, backgroundColor: COLORS.soft },
   userTypeIcon: {
     width: 42,
     height: 42,
@@ -798,18 +896,17 @@ const styles = StyleSheet.create({
 
   radioGroup: { flexDirection: 'row', gap: 10, marginTop: 2 },
   radioChip: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 13,
-    borderRadius: 14,
+    paddingVertical: 14,
+    borderRadius: 999,
     borderWidth: 1.5,
     borderColor: COLORS.border,
     backgroundColor: COLORS.field,
   },
-  radioChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.tint },
+  radioChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.soft },
   radioOuter: {
     width: 18,
     height: 18,
@@ -822,14 +919,15 @@ const styles = StyleSheet.create({
   radioInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary },
   radioLabel: { fontSize: 14, fontWeight: '700', color: COLORS.mid },
 
-  invalidCode: { fontSize: 12, fontWeight: '700', color: '#DC2626', marginTop: 8 },
-  validCode: { fontSize: 12, fontWeight: '700', color: COLORS.primary, marginTop: 8 },
+  codeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  invalidCode: { fontSize: 12, fontWeight: '700', color: COLORS.danger },
+  validCode: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
 
   actionsRow: { flexDirection: 'row', gap: 10, marginTop: 26 },
   prevBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 999,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     borderWidth: 1.5,
     borderColor: COLORS.border,
     backgroundColor: '#FFFFFF',
@@ -837,22 +935,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   submitBtn: {
-    flex: 1,
-    height: 56,
+    height: 54,
     borderRadius: 999,
     backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: '#173D24',
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 6,
+    ...SHADOW_SOFT,
   },
   submitText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
-  disabled: { opacity: 0.65 },
+  disabled: { opacity: 0.6 },
 
   loginRow: {
     flexDirection: 'row',
@@ -862,19 +955,20 @@ const styles = StyleSheet.create({
     marginTop: 22,
   },
   loginText: { fontSize: 14, color: COLORS.muted },
-  loginLink: { fontSize: 14, fontWeight: '800', color: COLORS.primary, marginLeft: 5 },
+  loginLink: { fontSize: 14, fontWeight: '800', color: COLORS.primary, marginLeft: 6 },
 
-  legalText: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: COLORS.muted,
-    textAlign: 'center',
-    marginTop: 22,
-    paddingHorizontal: 8,
+  legalCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: COLORS.field,
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
+  legalText: { flex: 1, fontSize: 12, lineHeight: 18, color: COLORS.muted },
   legalLink: { color: COLORS.primary, fontWeight: '700', textDecorationLine: 'underline' },
 
-  footer: { alignItems: 'center', marginTop: 22, gap: 3 },
-  footerText: { fontSize: 11.5, color: '#8A968C' },
+  footerText: { fontSize: 11.5, color: '#8A968C', textAlign: 'center', marginTop: 14 },
   footerBrand: { fontWeight: '800', color: COLORS.dark, letterSpacing: 0.5 },
 });

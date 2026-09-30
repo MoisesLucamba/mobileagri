@@ -1,188 +1,139 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useState,
-  useCallback,
 } from "react";
+import type { User } from "@supabase/supabase-js";
 
 import { supabase } from "../lib/supabase";
-import {
-  normalizeRole,
-  UserRole,
-} from "../constants/roleActions";
+import { normalizeRole, UserRole } from "../constants/roleActions";
 
 interface RoleContextValue {
   role: UserRole | null;
+  isAuthenticated: boolean;
+  /** true só enquanto o PRIMEIRO papel de um utilizador está a ser resolvido */
   loading: boolean;
+  /** volta a ler o papel sem mostrar o estado de loading */
   refresh: () => Promise<void>;
 }
 
 const RoleContext = createContext<RoleContextValue>({
   role: null,
+  isAuthenticated: false,
   loading: true,
   refresh: async () => {},
 });
 
-export function RoleProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+// Colunas onde o papel pode estar guardado
+const pickRole = (source?: Record<string, any> | null) =>
+  source?.user_type ??
+  source?.role ??
+  source?.user_role ??
+  source?.type ??
+  source?.account_type ??
+  null;
+
+export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<UserRole | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const resolveRole = useCallback(async () => {
-    setLoading(true);
+  // Só a resposta do pedido mais recente é aplicada
+  const requestId = useRef(0);
+  // Utilizador cujo papel está atualmente em estado
+  const currentUserId = useRef<string | null>(null);
+
+  const resolveRole = useCallback(async (user: User | null) => {
+    const req = ++requestId.current;
+
+    if (!user) {
+      currentUserId.current = null;
+      setRole(null);
+      setIsAuthenticated(false);
+      setLoading(false);
+      return;
+    }
+
+    setIsAuthenticated(true);
+
+    // Utilizador diferente: descarta o papel anterior já, para o botão
+    // não mostrar a ação de outra conta.
+    if (currentUserId.current !== user.id) {
+      currentUserId.current = user.id;
+      setRole(null);
+      setLoading(true);
+    }
 
     try {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        console.log(
-          "[RoleContext] Erro no Auth:",
-          authError.message
-        );
-      }
-
-      if (!user) {
-        console.log(
-          "[RoleContext] Nenhum utilizador autenticado."
-        );
-
-        setRole(null);
-        return;
-      }
-
-      console.log(
-        "[RoleContext] ID do utilizador:",
-        user.id
-      );
-
-      console.log(
-        "[RoleContext] Metadata:",
-        user.user_metadata
-      );
-
       let profile: Record<string, any> | null = null;
 
-      // PRIMEIRA TENTATIVA: procurar através da coluna id
-      const profileById = await supabase
+      const byId = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
+      profile = byId.data;
 
-      if (profileById.error) {
-        console.log(
-          "[RoleContext] Erro ao procurar por id:",
-          profileById.error.message
-        );
-      }
-
-      profile = profileById.data;
-
-      // SEGUNDA TENTATIVA: procurar através da coluna user_id
       if (!profile) {
-        const profileByUserId = await supabase
+        const byUserId = await supabase
           .from("profiles")
           .select("*")
           .eq("user_id", user.id)
           .maybeSingle();
-
-        if (profileByUserId.error) {
-          console.log(
-            "[RoleContext] Erro ao procurar por user_id:",
-            profileByUserId.error.message
-          );
-        }
-
-        profile = profileByUserId.data;
+        profile = byUserId.data;
       }
 
-      console.log(
-        "[RoleContext] Perfil encontrado:",
-        profile
-      );
+      if (req !== requestId.current) return; // resposta antiga
 
-      // Procura vários nomes possíveis de coluna
-      const profileRole =
-        profile?.user_type ??
-        profile?.role ??
-        profile?.user_role ??
-        profile?.type ??
-        profile?.account_type ??
-        null;
-
-      // Fallback: metadados do utilizador autenticado
-      const metadataRole =
-        user.user_metadata?.user_type ??
-        user.user_metadata?.role ??
-        user.user_metadata?.user_role ??
-        user.user_metadata?.type ??
-        null;
-
-      const rawRole = profileRole ?? metadataRole;
-
-      console.log(
-        "[RoleContext] Tipo original encontrado:",
-        rawRole
-      );
-
-      const normalizedRole = normalizeRole(rawRole);
-
-      console.log(
-        "[RoleContext] Tipo normalizado:",
-        normalizedRole
-      );
-
-      setRole(normalizedRole);
+      const raw = pickRole(profile) ?? pickRole(user.user_metadata);
+      setRole(normalizeRole(raw));
     } catch (error) {
-      console.warn(
-        "[RoleContext] Falha ao resolver o tipo:",
-        error
-      );
-
-      setRole(null);
+      // Erro passageiro (rede): mantém o papel atual em vez de o apagar
+      console.warn("[RoleContext] Falha ao resolver o papel:", error);
     } finally {
-      setLoading(false);
+      if (req === requestId.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    resolveRole();
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) resolveRole(data.session?.user ?? null);
+    });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (
-        event === "SIGNED_IN" ||
-        event === "SIGNED_OUT" ||
-        event === "USER_UPDATED"
-      ) {
-        resolveRole();
-      }
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED") return;
+
+      // Não chamar o Supabase diretamente aqui dentro: pode bloquear o cliente.
+      setTimeout(() => {
+        if (mounted) resolveRole(session?.user ?? null);
+      }, 0);
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, [resolveRole]);
 
-  return (
-    <RoleContext.Provider
-      value={{
-        role,
-        loading,
-        refresh: resolveRole,
-      }}
-    >
-      {children}
-    </RoleContext.Provider>
+  const refresh = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    await resolveRole(data.session?.user ?? null);
+  }, [resolveRole]);
+
+  const value = useMemo(
+    () => ({ role, isAuthenticated, loading, refresh }),
+    [role, isAuthenticated, loading, refresh]
   );
+
+  return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;
 }
 
 export function useUserRole() {

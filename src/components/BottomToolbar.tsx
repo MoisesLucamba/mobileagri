@@ -1,34 +1,34 @@
 import React from "react";
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { usePathname, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserRole } from "../context/RoleContext";
 import { FALLBACK_ACTION, ROLE_ACTIONS } from "../constants/roleActions";
+import Icon, { IconName } from "./Icon";
 
 const COLORS = {
-  surface: "#FFFFFF",
-  border: "#ECE9E0",
   muted: "#A3ADA5",
   primary: "#1F6B3A",
-  primarySoft: "#EAF3EA",
+  white: "#FFFFFF",
 };
 
 type TabIconProps = {
   active: boolean;
-  activeIcon: keyof typeof Ionicons.glyphMap;
-  outlineIcon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   onPress: () => void;
 };
 
-function TabIcon({ active, activeIcon, outlineIcon, onPress }: TabIconProps) {
+function TabIcon({ active, icon, onPress }: TabIconProps) {
   return (
-    <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={styles.item}>
-      <View style={[styles.iconWrap, active && styles.iconWrapActive]}>
-        <Ionicons
-          name={active ? activeIcon : outlineIcon}
+    <TouchableOpacity activeOpacity={0.7} onPress={onPress} className="flex-1 items-center justify-center">
+      <View
+        className={`h-[38px] w-[38px] items-center justify-center rounded-full ${active ? "bg-primary-soft" : ""}`}
+      >
+        <Icon
+          name={icon}
           size={19}
           color={active ? COLORS.primary : COLORS.muted}
+          strokeWidth={active ? 2.4 : 2}
         />
       </View>
     </TouchableOpacity>
@@ -46,92 +46,45 @@ export default function BottomToolbar() {
   const isActive = (path: string) => pathname === path;
 
   return (
-    <View style={[styles.bar, { bottom }]}>
-      <TabIcon
-        active={isActive("/home")}
-        activeIcon="home"
-        outlineIcon="home-outline"
-        onPress={() => router.push("/home")}
-      />
+    <View
+      className="absolute left-5 right-5 z-[100] h-[58px] flex-row items-center justify-around rounded-[29px] border border-[#ECE9E0] bg-white"
+      style={[s.shadow, { bottom }]}
+    >
+      <TabIcon active={isActive("/home")} icon="home" onPress={() => router.push("/home")} />
 
-      <TabIcon
-        active={isActive("/messages")}
-        activeIcon="chatbubble-ellipses"
-        outlineIcon="chatbubble-ellipses-outline"
-        onPress={() => router.push("/messages")}
-      />
+      <TabIcon active={isActive("/messages")} icon="message" onPress={() => router.push("/messages")} />
 
       <TouchableOpacity
         activeOpacity={0.85}
         disabled={loading}
         onPress={() => router.push(action.route as any)}
-        style={styles.item}
+        className="flex-1 items-center justify-center"
       >
         <View
-          style={[
-            styles.centerCircle,
-            { backgroundColor: loading ? COLORS.muted : action.color },
-          ]}
+          className="h-[38px] w-[38px] items-center justify-center rounded-full"
+          style={{ backgroundColor: loading ? COLORS.muted : action.color }}
         >
           {loading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
+            <ActivityIndicator color={COLORS.white} size="small" />
           ) : (
-            <Ionicons name={action.icon} size={19} color="#FFFFFF" />
+            <Icon name={action.icon} size={19} color={COLORS.white} />
           )}
         </View>
       </TouchableOpacity>
 
-      <TabIcon
-        active={isActive("/mapa")}
-        activeIcon="map"
-        outlineIcon="map-outline"
-        onPress={() => router.push("/mapa")}
-      />
+      <TabIcon active={isActive("/mapa")} icon="map" onPress={() => router.push("/mapa")} />
 
-      <TabIcon
-        active={isActive("/profile")}
-        activeIcon="person"
-        outlineIcon="person-outline"
-        onPress={() => router.push("/profile")}
-      />
+      <TabIcon active={isActive("/profile")} icon="user" onPress={() => router.push("/profile")} />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  bar: {
-    position: "absolute",
-    left: 20,
-    right: 20,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    zIndex: 100,
+const s = StyleSheet.create({
+  shadow: {
     shadowColor: "#16231C",
     shadowOpacity: 0.08,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
-  },
-  item: { flex: 1, alignItems: "center", justifyContent: "center" },
-  iconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconWrapActive: { backgroundColor: COLORS.primarySoft },
-  centerCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

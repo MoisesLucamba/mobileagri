@@ -6,14 +6,12 @@ export const PAYMENT_PROVIDERS = [
     id: "multicaixa_reference", // tem de existir em public.payment_providers
     label: "Referência Multicaixa",
     description: "Paga no ATM ou no Multicaixa Express",
-    icon: "card-outline" as const,
     needsPhone: false,
   },
   {
     id: "unitel_money",
     label: "Unitel Money",
     description: "Confirma com o PIN no telemóvel",
-    icon: "phone-portrait-outline" as const,
     needsPhone: true,
   },
 ];
@@ -51,14 +49,22 @@ export async function loadProviderAvailability() {
 }
 
 export async function createOrderPayment(args: {
-  productId: string; quantity: number; location: string;
-  providerId: string; payerPhone: string | null; idempotencyKey: string;
+  productId: string;
+  quantity: number;
+  location: string;
+  deliveryLat: number;
+  deliveryLng: number;
+  providerId: string;
+  payerPhone: string | null;
+  idempotencyKey: string;
 }) {
   const { data, error } = await supabase.functions.invoke("create-order-payment", {
     body: {
       product_id: args.productId,
       quantity: args.quantity,
       location: args.location,
+      delivery_lat: args.deliveryLat,
+      delivery_lng: args.deliveryLng,
       provider_id: args.providerId,
       payer_phone: args.payerPhone,
       idempotency_key: args.idempotencyKey,

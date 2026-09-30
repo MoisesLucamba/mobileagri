@@ -1,132 +1,82 @@
-import React, { useCallback, useMemo, useState } from "react";
-
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
+  Animated,
+  Easing,
   Image,
+  LayoutAnimation,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   SafeAreaView,
   ScrollView,
   StatusBar,
-  StyleSheet,
   Text,
-  TouchableOpacity,
+  UIManager,
   View,
 } from "react-native";
 
 import { useFocusEffect, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../lib/supabase";
 import BottomToolbar from "../components/BottomToolbar";
+import Icon, { IconName } from "../components/Icon";
 import ProductCard, { Product } from "@/components/ProductCard";
 import PaymentSheet from "@/components/PaymentSheet";
 
-const Logo = require("../assets/images/logo.jpeg");
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
-// =====================================================
-// DESIGN TOKENS
-// =====================================================
+const Logo = require("../assets/images/logo.jpeg");
 
 const COLORS = {
   primary: "#1F6B3A",
-  primaryDark: "#123C22",
-  primarySoft: "#EAF3EA",
-  primaryLight: "#D9EEDD",
-
-  selectedGreen: "#CFEAD3",
-  selectedBorder: "#8FCB9B",
-
-  accent: "#E2932F",
-  accentDark: "#B9741A",
-  accentSoft: "#FBEBD3",
-
   text: "#16231C",
   muted: "#78877D",
-  faint: "#AEB8AC",
-
-  canvas: "#FAF8F3",
-  surface: "#FFFFFF",
-  border: "#EAE4D6",
-
-  searchFill: "#F1EFE8",
-
-  red: "#DD5138",
-  blue: "#4C7EDB",
+  white: "#FFFFFF",
 };
-
-const RADIUS = {
-  sm: 10,
-  md: 14,
-  lg: 19,
-  xl: 26,
-};
-
-const SHADOW = {
-  header: {
-    shadowColor: "#16231C",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    elevation: 2,
-  },
-};
-
-// =====================================================
-// PAÍSES
-// =====================================================
 
 const COUNTRIES = [
-  {
-    code: "AO",
-    name: "Angola",
-    flag: "🇦🇴",
-    currency: "Kz",
-  },
-  {
-    code: "CD",
-    name: "RDC",
-    flag: "🇨🇩",
-    currency: "FC",
-  },
+  { code: "AO", name: "Angola", flag: "🇦🇴", currency: "Kz" },
+  { code: "CD", name: "RDC", flag: "🇨🇩", currency: "FC" },
 ];
 
-// =====================================================
-// CATEGORIAS
-// =====================================================
-
-const CATEGORIES = [
-  { id: "all", name: "Todos", icon: "grid-outline" },
-  { id: "frutas", name: "Frutas", icon: "nutrition-outline" },
-  { id: "citrus", name: "Cítricos", icon: "ellipse-outline" },
-  { id: "legumes", name: "Legumes", icon: "leaf-outline" },
-  { id: "verduras", name: "Verduras", icon: "leaf" },
-  { id: "cereais", name: "Cereais", icon: "layers-outline" },
-  { id: "temperos", name: "Temperos", icon: "flask-outline" },
-  { id: "pescado", name: "Pescado", icon: "fish-outline" },
-  { id: "carnes", name: "Carnes", icon: "restaurant-outline" },
-  { id: "ovos", name: "Ovos", icon: "egg-outline" },
-  { id: "paes", name: "Pães", icon: "cafe-outline" },
-  { id: "lacteos", name: "Lácteos", icon: "water-outline" },
-  { id: "bebidas", name: "Bebidas", icon: "wine-outline" },
+const CATEGORIES: { id: string; name: string; icon: IconName }[] = [
+  { id: "all", name: "Todos", icon: "grid" },
+  { id: "frutas", name: "Frutas", icon: "apple" },
+  { id: "citrus", name: "Cítricos", icon: "citrus" },
+  { id: "legumes", name: "Legumes", icon: "leaf" },
+  { id: "verduras", name: "Verduras", icon: "sprout" },
+  { id: "cereais", name: "Cereais", icon: "layers" },
+  { id: "temperos", name: "Temperos", icon: "flask" },
+  { id: "pescado", name: "Pescado", icon: "fish" },
+  { id: "carnes", name: "Carnes", icon: "utensils" },
+  { id: "ovos", name: "Ovos", icon: "egg" },
+  { id: "paes", name: "Pães", icon: "coffee" },
+  { id: "lacteos", name: "Lácteos", icon: "droplet" },
+  { id: "bebidas", name: "Bebidas", icon: "wine" },
 ];
 
-// =====================================================
-// PUBLICAÇÕES MOCKUP
-//
-// IMPORTANTE:
-// Os mocks só aparecem quando NÃO existem produtos
-// reais no Supabase.
-// =====================================================
+const CATEGORY_MAP: Record<string, string[]> = {
+  frutas: ["banana", "maçã", "maca", "manga", "abacaxi", "mamão", "mamao", "goiaba", "melancia", "abacate"],
+  citrus: ["laranja", "limão", "limao", "tangerina", "toranja"],
+  legumes: ["tomate", "cenoura", "mandioca", "batata", "batata-doce", "cebola", "alho", "pepino"],
+  verduras: ["alface", "couve", "espinafre", "repolho", "rúcula", "rucula"],
+  cereais: ["milho", "arroz", "trigo", "feijão", "feijao", "soja"],
+  temperos: ["pimenta", "gengibre", "canela", "cravo"],
+  pescado: ["peixe", "tilápia", "tilapia", "sardinha", "cacusso"],
+  carnes: ["carne", "frango", "boi", "porco", "cabrito"],
+  ovos: ["ovo", "ovos"],
+  paes: ["pão", "pao"],
+  lacteos: ["leite", "queijo", "iogurte"],
+  bebidas: ["sumo", "suco", "água", "agua", "bebida"],
+};
 
+// Os mocks só aparecem quando NÃO existem produtos reais no Supabase.
 const MOCK_PRODUCTS: Product[] = [
   {
     id: "mock-tomate-001",
@@ -238,47 +188,62 @@ const MOCK_PRODUCTS: Product[] = [
   },
 ];
 
-// =====================================================
-// CATEGORIA PILL
-// =====================================================
+/* ------------------------- micro-animação de toque ------------------------- */
 
-type CategoryPillProps = {
-  category: (typeof CATEGORIES)[number];
-  selected: boolean;
-  onPress: () => void;
-};
-
-function CategoryPill({ category, selected, onPress }: CategoryPillProps) {
+function PressableScale({
+  children,
+  onPress,
+  className,
+  scale = 0.95,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+  className?: string;
+  scale?: number;
+}) {
+  const sc = useRef(new Animated.Value(1)).current;
+  const to = (v: number) =>
+    Animated.spring(sc, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
   return (
-    <TouchableOpacity
-      activeOpacity={0.75}
-      onPress={onPress}
-      style={[styles.categoryPill, selected && styles.categoryPillSelected]}
-    >
-      <Ionicons
-        name={category.icon as any}
-        size={14}
-        color={selected ? "#FFFFFF" : COLORS.muted}
-        style={{ marginRight: 6 }}
-      />
-      <Text style={[styles.categoryPillText, selected && styles.categoryPillTextSelected]}>
-        {category.name}
-      </Text>
-    </TouchableOpacity>
+    <Pressable onPress={onPress} onPressIn={() => to(scale)} onPressOut={() => to(1)}>
+      <Animated.View style={{ transform: [{ scale: sc }] }}>
+        <View className={className}>{children}</View>
+      </Animated.View>
+    </Pressable>
   );
 }
 
-// =====================================================
-// HOME SCREEN
-// =====================================================
+/* ------------------------------ categoria pill ------------------------------ */
+
+function CategoryPill({
+  category,
+  selected,
+  onPress,
+}: {
+  category: (typeof CATEGORIES)[number];
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <PressableScale
+      onPress={onPress}
+      className={`h-[36px] flex-row items-center gap-[6px] rounded-full border px-[14px] ${
+        selected ? "border-[#1F6B3A] bg-[#1F6B3A]" : "border-[#EAE4D6] bg-white"
+      }`}
+    >
+      <Icon name={category.icon} size={15} color={selected ? COLORS.white : COLORS.muted} />
+      <Text className={`text-[12.5px] ${selected ? "font-bold text-white" : "font-semibold text-[#16231C]"}`}>
+        {category.name}
+      </Text>
+    </PressableScale>
+  );
+}
+
+/* ================================== HOME ================================== */
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-
-  // ===================================================
-  // ESTADOS
-  // ===================================================
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -291,55 +256,60 @@ export default function HomeScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
-  // ---------------------------------------------------
-  // Pagamento (substitui o antigo fluxo de pré-encomenda)
-  // ---------------------------------------------------
   const [paymentProduct, setPaymentProduct] = useState<Product | null>(null);
   const [paymentVisible, setPaymentVisible] = useState(false);
 
-  // ===================================================
-  // LOGIN
-  // ===================================================
+  // animação do scroll: a sombra do header aparece ao descer
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBorder = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
+
+  // modal dos países
+  const sheetAnim = useRef(new Animated.Value(0)).current;
+  const openCountryModal = () => {
+    setCountryModalVisible(true);
+    sheetAnim.setValue(0);
+    Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 5 }).start();
+  };
+  const closeCountryModal = () => {
+    Animated.timing(sheetAnim, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => setCountryModalVisible(false));
+  };
 
   const requireLogin = useCallback(() => {
     Alert.alert("Autenticação", "Entre na sua conta para continuar.");
     router.push("/login");
   }, [router]);
 
-  // ===================================================
-  // SESSION
-  // ===================================================
-
   const checkSession = async () => {
     const {
       data: { session },
     } = await supabase.auth.getSession();
-
     if (!session) {
       router.replace("/login");
       return;
     }
-
     setCurrentUserId(session.user.id);
   };
-
-  // ===================================================
-  // NOTIFICAÇÕES
-  // ===================================================
 
   const loadUnreadNotifications = useCallback(async (userId: string | null) => {
     if (!userId) {
       setUnreadNotifications(0);
       return;
     }
-
     try {
       const { count, error } = await supabase
         .from("notifications")
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
         .eq("read", false);
-
       if (error) throw error;
       setUnreadNotifications(count || 0);
     } catch (error) {
@@ -347,14 +317,8 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // ===================================================
-  // CARREGAR PRODUTOS
-  // ===================================================
-
   const loadProducts = async () => {
     try {
-      setLoading(true);
-
       const { data: sessionData } = await supabase.auth.getSession();
       const userId = sessionData.session?.user?.id || null;
 
@@ -384,33 +348,28 @@ export default function HomeScreen() {
         user_verified: !!item.user_verified,
       }));
 
-      if (loadedProducts.length > 0) {
-        setHasRealProducts(true);
-      } else {
+      if (loadedProducts.length === 0) {
         setHasRealProducts(false);
         setProducts(MOCK_PRODUCTS);
         return;
       }
+      setHasRealProducts(true);
 
-      // Likes
-      const productIds = loadedProducts.map((product) => product.id);
+      const productIds = loadedProducts.map((p) => p.id);
+      const { data: likes } = await supabase
+        .from("product_likes")
+        .select("product_id, user_id")
+        .in("product_id", productIds);
 
-      if (productIds.length > 0) {
-        const { data: likes } = await supabase
-          .from("product_likes")
-          .select("product_id, user_id")
-          .in("product_id", productIds);
-
-        if (likes) {
-          loadedProducts = loadedProducts.map((product) => {
-            const productLikes = likes.filter((like: any) => like.product_id === product.id);
-            return {
-              ...product,
-              likes_count: productLikes.length,
-              is_liked: !!userId && productLikes.some((like: any) => like.user_id === userId),
-            };
-          });
-        }
+      if (likes) {
+        loadedProducts = loadedProducts.map((product) => {
+          const productLikes = likes.filter((l: any) => l.product_id === product.id);
+          return {
+            ...product,
+            likes_count: productLikes.length,
+            is_liked: !!userId && productLikes.some((l: any) => l.user_id === userId),
+          };
+        });
       }
 
       setProducts(loadedProducts);
@@ -424,10 +383,6 @@ export default function HomeScreen() {
     }
   };
 
-  // ===================================================
-  // FOCUS
-  // ===================================================
-
   useFocusEffect(
     useCallback(() => {
       checkSession();
@@ -435,72 +390,44 @@ export default function HomeScreen() {
     }, [])
   );
 
-  // ===================================================
-  // REFRESH
-  // ===================================================
-
   const onRefresh = async () => {
     setRefreshing(true);
     await loadProducts();
   };
 
-  // ===================================================
-  // UPDATE PRODUCT
-  // ===================================================
-
   const handleProductUpdate = useCallback((updated: Product) => {
-    setProducts((current) => current.map((product) => (product.id === updated.id ? updated : product)));
+    setProducts((current) => current.map((p) => (p.id === updated.id ? updated : p)));
   }, []);
 
-  // ===================================================
-  // FILTROS
-  // ===================================================
+  const selectCategory = (id: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSelectedCategory(id);
+  };
 
   const filteredProducts = useMemo(() => {
     let result = [...products];
 
     if (search.trim()) {
-      const searchText = search.toLowerCase().trim();
-      result = result.filter((product) => {
-        const type = product.product_type?.toLowerCase() || "";
-        const description = product.description?.toLowerCase() || "";
-        const farmer = product.farmer_name?.toLowerCase() || "";
-        return type.includes(searchText) || description.includes(searchText) || farmer.includes(searchText);
+      const text = search.toLowerCase().trim();
+      result = result.filter((p) => {
+        const type = p.product_type?.toLowerCase() || "";
+        const description = p.description?.toLowerCase() || "";
+        const farmer = p.farmer_name?.toLowerCase() || "";
+        return type.includes(text) || description.includes(text) || farmer.includes(text);
       });
     }
 
     if (selectedCategory !== "all") {
-      result = result.filter((product) => {
-        const type = product.product_type?.toLowerCase().trim() || "";
-        const category = selectedCategory.toLowerCase().trim();
-
-        const categoryMap: Record<string, string[]> = {
-          frutas: ["banana", "maçã", "maca", "manga", "abacaxi", "mamão", "mamao", "goiaba", "melancia", "abacate"],
-          citrus: ["laranja", "limão", "limao", "tangerina", "toranja"],
-          legumes: ["tomate", "cenoura", "mandioca", "batata", "batata-doce", "cebola", "alho", "pepino"],
-          verduras: ["alface", "couve", "espinafre", "repolho", "rúcula", "rucula"],
-          cereais: ["milho", "arroz", "trigo", "feijão", "feijao", "soja"],
-          temperos: ["pimenta", "gengibre", "canela", "cravo"],
-          pescado: ["peixe", "tilápia", "tilapia", "sardinha", "cacusso"],
-          carnes: ["carne", "frango", "boi", "porco", "cabrito"],
-          ovos: ["ovo", "ovos"],
-          paes: ["pão", "pao"],
-          lacteos: ["leite", "queijo", "iogurte"],
-          bebidas: ["sumo", "suco", "água", "agua", "bebida"],
-        };
-
-        const words = categoryMap[category];
-        if (!words) return type.includes(category);
-        return words.some((word) => type.includes(word));
+      result = result.filter((p) => {
+        const type = p.product_type?.toLowerCase().trim() || "";
+        const words = CATEGORY_MAP[selectedCategory];
+        if (!words) return type.includes(selectedCategory);
+        return words.some((w) => type.includes(w));
       });
     }
 
     return result;
   }, [products, search, selectedCategory]);
-
-  // ===================================================
-  // ABRIR PAGAMENTO (substitui a antiga pré-encomenda)
-  // ===================================================
 
   const openPayment = (product: Product) => {
     if (product.id.startsWith("mock-")) {
@@ -510,22 +437,15 @@ export default function HomeScreen() {
       );
       return;
     }
-
     if (!currentUserId) {
       requireLogin();
       return;
     }
-
     setPaymentProduct(product);
     setPaymentVisible(true);
   };
 
-  const closePayment = () => {
-    setPaymentVisible(false);
-  };
-
-  const handlePaid = ({ payment, order }: { payment: any; order: any }) => {
-    // Reduz o stock localmente para refletir a compra imediatamente no feed.
+  const handlePaid = ({ order }: { payment: any; order: any }) => {
     if (paymentProduct) {
       setProducts((current) =>
         current.map((p) =>
@@ -541,85 +461,74 @@ export default function HomeScreen() {
     router.push({ pathname: "/historico", params: { intentId, orderId } } as any);
   };
 
-  // ===================================================
-  // PREÇO
-  // ===================================================
-
-  const formatPrice = (price?: number) => {
-    const value = Number(price || 0);
-    return `${value.toLocaleString("pt-AO")} ${selectedCountry.currency}`;
-  };
-
-  // ===================================================
-  // LOADING
-  // ===================================================
+  /* --------------------------------- loading --------------------------------- */
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
-        <View style={styles.loadingLogoWrapper}>
-          <Image source={Logo} style={styles.loadingLogo} resizeMode="contain" />
-          <View style={styles.loadingSpinner}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-          </View>
-        </View>
-        <Text style={styles.loadingText}>A carregar publicações...</Text>
+      <SafeAreaView className="flex-1 items-center justify-center bg-white">
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <Image source={Logo} style={{ width: 200, height: 88 }} resizeMode="contain" />
+        <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 18 }} />
+        <Text className="mt-4 text-[13px] text-[#78877D]">A carregar publicações...</Text>
       </SafeAreaView>
     );
   }
 
-  // ===================================================
-  // RENDER
-  // ===================================================
+  /* ---------------------------------- render ---------------------------------- */
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.canvas} />
+    <SafeAreaView className="flex-1 bg-[#FAF8F3]">
+      <StatusBar barStyle="dark-content" backgroundColor="#FAF8F3" />
 
-      <View style={styles.screen}>
+      <View className="flex-1 bg-[#FAF8F3]">
         {/* HEADER */}
-        <View style={[styles.header, { paddingTop: insets.top + 14, height: 78 + insets.top }]}>
-          <View style={styles.headerLeft}>
-            <Image source={Logo} style={styles.logo} resizeMode="contain" />
-          </View>
+        <View
+          className="z-10 flex-row items-center justify-between rounded-b-[24px] bg-white px-[18px] pb-3"
+          style={{ paddingTop: insets.top + 14, height: 78 + insets.top }}
+        >
+          <Image source={Logo} style={{ width: 138, height: 48 }} resizeMode="contain" />
 
-          <View style={styles.headerRight}>
-            <TouchableOpacity
-              style={styles.countrySelector}
-              onPress={() => setCountryModalVisible(true)}
-              activeOpacity={0.8}
+          <View className="flex-row items-center gap-[10px]">
+            <PressableScale
+              onPress={openCountryModal}
+              className="flex-row items-center gap-2 rounded-[14px] bg-[#EAF3EA] px-[11px] py-[7px]"
             >
-              <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
+              <Text className="text-[20px]">{selectedCountry.flag}</Text>
               <View>
-                <Text style={styles.countryLabel}>País</Text>
-                <Text style={styles.countryName}>{selectedCountry.name}</Text>
+                <Text className="text-[10px] font-semibold text-[#78877D]">País</Text>
+                <Text className="text-[12px] font-extrabold text-[#16231C]">{selectedCountry.name}</Text>
               </View>
-              <Ionicons name="chevron-down" size={16} color={COLORS.text} />
-            </TouchableOpacity>
+              <Icon name="chevron-down" size={16} color={COLORS.text} />
+            </PressableScale>
 
-            <TouchableOpacity
-              style={styles.notificationButton}
-              activeOpacity={0.8}
+            <PressableScale
               onPress={() => router.push("/notifications")}
+              className="h-10 w-10 items-center justify-center rounded-full bg-[#EAF3EA]"
             >
-              <Ionicons name="notifications-outline" size={20} color={COLORS.text} />
-              {unreadNotifications > 0 && (
-                <View style={styles.notificationDot}>
-                  {unreadNotifications <= 9 && (
-                    <Text style={styles.notificationDotText}>{unreadNotifications}</Text>
-                  )}
+              <Icon name="bell" size={20} color={COLORS.text} />
+              {unreadNotifications > 0 ? (
+                <View className="absolute -right-1 -top-1 h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-[#DD5138] px-1">
+                  {unreadNotifications <= 9 ? (
+                    <Text className="text-[10px] font-extrabold text-white">{unreadNotifications}</Text>
+                  ) : null}
                 </View>
-              )}
-            </TouchableOpacity>
+              ) : null}
+            </PressableScale>
           </View>
         </View>
 
+        {/* sombra suave que aparece ao fazer scroll */}
+        <Animated.View
+          pointerEvents="none"
+          className="absolute left-0 right-0 z-[9] h-[14px] bg-[rgba(22,35,28,0.06)]"
+          style={{ top: 78 + insets.top, opacity: headerBorder }}
+        />
+
         {/* FEED */}
-        <FlatList
+        <Animated.FlatList
           data={filteredProducts}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
+          keyExtractor={(item: Product) => String(item.id)}
+          renderItem={({ item }: { item: Product }) => (
             <ProductCard
               product={item}
               currentUserId={currentUserId}
@@ -628,80 +537,95 @@ export default function HomeScreen() {
               onRequireLogin={requireLogin}
             />
           )}
-          contentContainerStyle={[styles.productsContent, { paddingBottom: 120 + insets.bottom }]}
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: 120 + insets.bottom }}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+            useNativeDriver: true,
+          })}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
           ListHeaderComponent={
             <View>
-              <TouchableOpacity style={styles.searchBox} activeOpacity={0.7} onPress={() => router.push("/search")}>
-                <Ionicons name="search" size={17} color={COLORS.muted} />
-                <Text style={styles.searchPlaceholder}>Pesquisar produtos</Text>
-              </TouchableOpacity>
+              {/* Pesquisa */}
+              <PressableScale
+                onPress={() => router.push("/search")}
+                className="mx-[18px] mb-[22px] mt-5 h-[48px] flex-row items-center gap-[10px] rounded-[16px] bg-[#F1EFE8] px-4"
+                scale={0.98}
+              >
+                <Icon name="search" size={17} color={COLORS.muted} />
+                <Text className="text-[15px] text-[#78877D]">Pesquisar produtos</Text>
+              </PressableScale>
 
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Categorias</Text>
-                <Text style={styles.sectionCount}>{CATEGORIES.length - 1} opções</Text>
+              {/* Categorias */}
+              <View className="mb-3 flex-row items-center justify-between px-[18px]">
+                <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">Categorias</Text>
+                <Text className="text-[11px] font-semibold text-[#78877D]">{CATEGORIES.length - 1} opções</Text>
               </View>
 
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoriesContent}
+                contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 4, gap: 8 }}
               >
                 {CATEGORIES.map((category) => (
                   <CategoryPill
                     key={category.id}
                     category={category}
                     selected={selectedCategory === category.id}
-                    onPress={() => setSelectedCategory(category.id)}
+                    onPress={() => selectCategory(category.id)}
                   />
                 ))}
               </ScrollView>
 
-              <View style={[styles.sectionHeader, { marginTop: 24 }]}>
+              {/* Título das publicações */}
+              <View className="mb-3 mt-6 flex-row items-center justify-between px-[18px]">
                 <View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Text style={styles.sectionTitle}>Publicações</Text>
-                    {!hasRealProducts && (
-                      <View style={styles.demoBadge}>
-                        <Text style={styles.demoBadgeText}>DEMO</Text>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">Publicações</Text>
+                    {!hasRealProducts ? (
+                      <View className="rounded-full border border-[#F1D1A5] bg-[#FBEBD3] px-2 py-[3px]">
+                        <Text className="text-[8px] font-black tracking-wider text-[#B9741A]">DEMO</Text>
                       </View>
-                    )}
+                    ) : null}
                   </View>
-                  <Text style={styles.productsSubtitle}>
+                  <Text className="mt-0.5 text-[12px] text-[#78877D]">
                     {hasRealProducts ? "Publicações dos agricultores" : "Exemplos de produtos disponíveis"}
                   </Text>
                 </View>
 
-                <View style={styles.productsCountBadge}>
-                  <Text style={styles.productsCountText}>{filteredProducts.length}</Text>
+                <View className="h-[26px] min-w-[30px] items-center justify-center rounded-full bg-[#D9EEDD] px-[9px]">
+                  <Text className="text-[12px] font-extrabold text-[#1F6B3A]">{filteredProducts.length}</Text>
                 </View>
               </View>
             </View>
           }
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIcon}>
-                <MaterialCommunityIcons name="sprout-outline" size={44} color={COLORS.primary} />
+            <View className="items-center px-[30px] pb-10 pt-[45px]">
+              <View className="h-[86px] w-[86px] items-center justify-center rounded-[28px] bg-[#D9EEDD]">
+                <Icon name="sprout" size={44} color={COLORS.primary} />
               </View>
-              <Text style={styles.emptyTitle}>Nenhum produto encontrado</Text>
-              <Text style={styles.emptyDescription}>Não encontramos produtos para os filtros selecionados.</Text>
-              <TouchableOpacity
-                style={styles.clearFiltersButton}
+              <Text className="mt-[15px] text-center text-[17px] font-extrabold text-[#16231C]">
+                Nenhum produto encontrado
+              </Text>
+              <Text className="mt-[7px] text-center text-[13px] leading-5 text-[#78877D]">
+                Não encontramos produtos para os filtros selecionados.
+              </Text>
+              <PressableScale
                 onPress={() => {
-                  setSelectedCategory("all");
+                  selectCategory("all");
                   setSearch("");
                 }}
+                className="mt-[17px] rounded-[14px] bg-[#D9EEDD] px-5 py-[11px]"
               >
-                <Text style={styles.clearFiltersText}>Limpar filtros</Text>
-              </TouchableOpacity>
+                <Text className="text-[13px] font-extrabold text-[#1F6B3A]">Limpar filtros</Text>
+              </PressableScale>
             </View>
           }
           ListFooterComponent={
             filteredProducts.length > 0 ? (
-              <View style={styles.productsFooter}>
-                <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.primary} />
-                <Text style={styles.productsFooterText}>
+              <View className="flex-row items-center justify-center gap-[7px] py-[25px]">
+                <Icon name="check-circle" size={18} color={COLORS.primary} />
+                <Text className="text-[11px] text-[#78877D]">
                   {hasRealProducts ? "Mostrando publicações reais" : "Publicações de demonstração"}
                 </Text>
               </View>
@@ -713,256 +637,62 @@ export default function HomeScreen() {
       </View>
 
       {/* MODAL PAÍSES */}
-      <Modal
-        visible={countryModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setCountryModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setCountryModalVisible(false)}>
-          <Pressable style={styles.countryModal} onPress={(event) => event.stopPropagation()}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Escolha o país</Text>
-            <Text style={styles.modalSubtitle}>Selecione onde pretende comprar ou vender.</Text>
+      <Modal visible={countryModalVisible} transparent animationType="none" onRequestClose={closeCountryModal}>
+        <Animated.View className="flex-1 justify-end bg-[rgba(15,20,17,0.5)]" style={{ opacity: sheetAnim }}>
+          <Pressable style={{ flex: 1 }} onPress={closeCountryModal} />
+          <Animated.View
+            className="rounded-t-[28px] bg-white px-5 pb-[30px] pt-[13px]"
+            style={{
+              transform: [{ translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [300, 0] }) }],
+            }}
+          >
+            <View className="mb-5 h-[5px] w-10 self-center rounded-full bg-[#EAE4D6]" />
+            <Text className="text-[21px] font-extrabold text-[#16231C]">Escolha o país</Text>
+            <Text className="mb-5 mt-[5px] text-[13px] text-[#78877D]">
+              Selecione onde pretende comprar ou vender.
+            </Text>
 
             {COUNTRIES.map((country) => {
               const selected = country.code === selectedCountry.code;
               return (
-                <TouchableOpacity
+                <PressableScale
                   key={country.code}
-                  style={[styles.countryOption, selected && styles.countryOptionSelected]}
+                  scale={0.98}
                   onPress={() => {
                     setSelectedCountry(country);
-                    setCountryModalVisible(false);
+                    closeCountryModal();
                   }}
-                  activeOpacity={0.8}
+                  className={`mb-[10px] min-h-[70px] flex-row items-center rounded-[19px] border px-3 ${
+                    selected ? "border-[#8FCB9B] bg-[#EAF3EA]" : "border-[#EAE4D6] bg-white"
+                  }`}
                 >
-                  <View style={styles.countryOptionFlag}>
-                    <Text style={styles.countryFlagLarge}>{country.flag}</Text>
+                  <View className="h-[46px] w-[46px] items-center justify-center rounded-[14px] bg-[#FAF8F3]">
+                    <Text className="text-[26px]">{country.flag}</Text>
                   </View>
-                  <View style={styles.countryOptionInfo}>
-                    <Text style={styles.countryOptionName}>{country.name}</Text>
-                    <Text style={styles.countryOptionCurrency}>Moeda: {country.currency}</Text>
+                  <View className="ml-3 flex-1">
+                    <Text className="text-[14px] font-extrabold text-[#16231C]">{country.name}</Text>
+                    <Text className="mt-[3px] text-[11px] text-[#78877D]">Moeda: {country.currency}</Text>
                   </View>
-                  {selected && (
-                    <View style={styles.selectedCountryCheck}>
-                      <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                  {selected ? (
+                    <View className="h-7 w-7 items-center justify-center rounded-full bg-[#1F6B3A]">
+                      <Icon name="check" size={16} color={COLORS.white} strokeWidth={3} />
                     </View>
-                  )}
-                </TouchableOpacity>
+                  ) : null}
+                </PressableScale>
               );
             })}
-          </Pressable>
-        </Pressable>
+          </Animated.View>
+        </Animated.View>
       </Modal>
 
-      {/* PAGAMENTO — substitui o antigo modal de pré-encomenda */}
+      {/* PAGAMENTO */}
       <PaymentSheet
         product={paymentProduct}
         visible={paymentVisible}
-        onClose={closePayment}
+        onClose={() => setPaymentVisible(false)}
         onPaid={handlePaid}
         onViewHistory={handleViewHistory}
       />
     </SafeAreaView>
   );
 }
-
-// =====================================================
-// STYLES
-// =====================================================
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.canvas },
-  screen: { flex: 1, backgroundColor: COLORS.canvas },
-
-  header: {
-    paddingHorizontal: 18,
-    paddingBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: COLORS.surface,
-    borderBottomLeftRadius: 22,
-    borderBottomRightRadius: 22,
-    ...SHADOW.header,
-  },
-  headerLeft: { flex: 1 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
-  logo: { width: 138, height: 48 },
-
-  countrySelector: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primarySoft,
-  },
-  countryFlag: { fontSize: 20 },
-  countryLabel: { fontSize: 10, color: COLORS.muted, fontWeight: "600" },
-  countryName: { fontSize: 12, fontWeight: "800", color: COLORS.text },
-
-  notificationButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.primarySoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  notificationDot: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    paddingHorizontal: 4,
-    backgroundColor: COLORS.red,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: COLORS.surface,
-  },
-  notificationDotText: { fontSize: 10, fontWeight: "800", color: "#FFFFFF" },
-
-  searchBox: {
-    height: 46,
-    marginHorizontal: 18,
-    marginTop: 20,
-    marginBottom: 22,
-    paddingHorizontal: 15,
-    borderRadius: 13,
-    backgroundColor: COLORS.searchFill,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-  },
-  searchPlaceholder: { fontSize: 15, color: COLORS.muted, fontWeight: "400" },
-
-  sectionHeader: {
-    paddingHorizontal: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  sectionTitle: { fontSize: 17, fontWeight: "800", color: COLORS.text, letterSpacing: -0.2 },
-  sectionCount: { fontSize: 11, color: COLORS.muted, fontWeight: "600" },
-  productsSubtitle: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
-
-  demoBadge: {
-    backgroundColor: COLORS.accentSoft,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: "#F1D1A5",
-  },
-  demoBadgeText: { fontSize: 8, fontWeight: "900", color: COLORS.accentDark, letterSpacing: 0.5 },
-
-  productsCountBadge: {
-    minWidth: 30,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 9,
-  },
-  productsCountText: { fontSize: 12, fontWeight: "800", color: COLORS.primary },
-
-  productsContent: { paddingTop: 4, paddingHorizontal: 0 },
-
-  categoriesContent: { paddingHorizontal: 18, paddingBottom: 4, gap: 8 },
-  categoryPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: 34,
-    paddingHorizontal: 13,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
-  },
-  categoryPillSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  categoryPillText: { fontSize: 12.5, fontWeight: "600", color: COLORS.text },
-  categoryPillTextSelected: { color: "#FFFFFF", fontWeight: "700" },
-
-  emptyContainer: { alignItems: "center", paddingHorizontal: 30, paddingTop: 45, paddingBottom: 40 },
-  emptyIcon: {
-    width: 86,
-    height: 86,
-    borderRadius: 28,
-    backgroundColor: COLORS.primaryLight,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyTitle: { fontSize: 17, fontWeight: "800", color: COLORS.text, marginTop: 15, textAlign: "center" },
-  emptyDescription: { fontSize: 13, color: COLORS.muted, textAlign: "center", lineHeight: 20, marginTop: 7 },
-  clearFiltersButton: {
-    marginTop: 17,
-    paddingHorizontal: 20,
-    paddingVertical: 11,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primaryLight,
-  },
-  clearFiltersText: { color: COLORS.primary, fontSize: 13, fontWeight: "800" },
-
-  productsFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 25 },
-  productsFooterText: { fontSize: 11, color: COLORS.muted },
-
-  loadingContainer: { flex: 1, backgroundColor: COLORS.surface, alignItems: "center", justifyContent: "center" },
-  loadingLogoWrapper: { width: 230, height: 130, alignItems: "center", justifyContent: "center" },
-  loadingLogo: { width: 200, height: 88 },
-  loadingSpinner: { position: "absolute", bottom: 0 },
-  loadingText: { fontSize: 13, color: COLORS.muted, marginTop: 20 },
-
-  modalOverlay: { flex: 1, backgroundColor: "rgba(15,20,17,0.5)", justifyContent: "flex-end" },
-  modalHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: COLORS.border, alignSelf: "center", marginBottom: 20 },
-
-  countryModal: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 13,
-    paddingBottom: 30,
-  },
-  modalTitle: { fontSize: 21, fontWeight: "800", color: COLORS.text },
-  modalSubtitle: { fontSize: 13, color: COLORS.muted, marginTop: 5, marginBottom: 20 },
-
-  countryOption: {
-    minHeight: 70,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    marginBottom: 10,
-  },
-  countryOptionSelected: { backgroundColor: COLORS.primarySoft, borderColor: COLORS.selectedBorder },
-  countryOptionFlag: {
-    width: 46,
-    height: 46,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.canvas,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  countryFlagLarge: { fontSize: 26 },
-  countryOptionInfo: { flex: 1, marginLeft: 12 },
-  countryOptionName: { fontSize: 14, fontWeight: "800", color: COLORS.text },
-  countryOptionCurrency: { fontSize: 11, color: COLORS.muted, marginTop: 3 },
-  selectedCountryCheck: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});

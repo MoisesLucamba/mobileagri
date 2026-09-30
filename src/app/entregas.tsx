@@ -9,24 +9,41 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabase } from '../lib/supabase';
 import RoleGuard from '../components/RoleGuard';
+import Icon from '../components/Icon';
 
-const T = {
-  green: '#2c863b',
-  greenPale: '#E8F5E9',
-  ink: '#111714',
-  mid: '#3F4A41',
-  muted: '#6B7C6E',
-  faint: '#A7B3A9',
-  rule: '#E5EDE6',
-  gold: '#B07D0A',
-  white: '#FFFFFF',
-  canvas: '#FAFAF7',
+// Mesma palette da página de Segurança
+const COLORS = {
+  primary: '#1F6B3A',
+  secondary: '#79C267',
+  dark: '#465044',
+  text: '#3D403A',
+  muted: '#77796F',
+  faint: '#A3A398',
+  border: '#E8E5DC',
+  field: '#F5F3EC',
+  background: '#FBFAF6',
+  soft: '#EEF0E9',
+  gold: '#B7833D',
+  goldSoft: '#F5EEDF',
+  blue: '#2F6DB5',
+  blueSoft: '#EDF1F5',
+  danger: '#B95E54',
+  dangerSoft: '#F6ECE9',
+};
+
+const SHADOW_SOFT = {
+  shadowColor: COLORS.dark,
+  shadowOpacity: 0.22,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 5 },
+  elevation: 6,
 };
 
 interface FreightLoad {
@@ -51,11 +68,20 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelada',
 };
 
+const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
+  open: { bg: COLORS.soft, fg: COLORS.primary },
+  accepted: { bg: COLORS.blueSoft, fg: COLORS.blue },
+  in_transit: { bg: COLORS.goldSoft, fg: COLORS.gold },
+  delivered: { bg: COLORS.soft, fg: COLORS.primary },
+  cancelled: { bg: COLORS.dangerSoft, fg: COLORS.danger },
+};
+
 const money = (v: number | null, c: string) =>
   v == null ? '—' : `${new Intl.NumberFormat('pt-AO').format(v)} ${c || 'Kz'}`;
 
 function CargasScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [userId, setUserId] = useState<string | null>(null);
   const [capacity, setCapacity] = useState<number | null>(null);
   const [loads, setLoads] = useState<FreightLoad[]>([]);
@@ -168,215 +194,407 @@ function CargasScreen() {
     tab === 'minhas' ? l.driver_id === userId : l.status === 'open' && !l.driver_id
   );
 
-  return (
-    <View style={{ flex: 1, backgroundColor: T.canvas }}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={20} color={T.mid} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Próximas Cargas</Text>
-          <Text style={styles.headerSubtitle}>
-            {capacity
-              ? `Capacidade: ${new Intl.NumberFormat('pt-AO').format(capacity)} kg`
-              : 'Fretes disponíveis na AgriLink'}
-          </Text>
-        </View>
-      </View>
+  const openCount = loads.filter((l) => l.status === 'open' && !l.driver_id).length;
+  const mineCount = loads.filter((l) => l.driver_id && l.driver_id === userId).length;
 
-      {/* Tabs */}
-      <View style={styles.tabsRow}>
-        {(['disponiveis', 'minhas'] as const).map((k) => {
-          const active = tab === k;
-          return (
-            <TouchableOpacity
-              key={k}
-              onPress={() => setTab(k)}
-              style={[
-                styles.tabBtn,
-                { backgroundColor: active ? T.green : T.white, borderColor: active ? T.green : T.rule },
-              ]}
-            >
-              <Text style={{ color: active ? '#fff' : T.mid, fontWeight: '800', fontSize: 13 }}>
-                {k === 'disponiveis' ? 'Disponíveis' : 'As minhas cargas'}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+  return (
+    <View style={styles.screen}>
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 12 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 40 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+        }
       >
-        {loading && (
-          <View style={{ alignItems: 'center', padding: 48 }}>
-            <ActivityIndicator color={T.green} />
-            <Text style={{ color: T.muted, marginTop: 8, fontSize: 12 }}>A carregar cargas…</Text>
-          </View>
-        )}
+        {/* Header */}
+        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backBtn}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
+          >
+            <Icon name="arrow-left" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            Próximas cargas
+          </Text>
+        </View>
 
-        {!loading && visible.length === 0 && (
-          <View style={styles.emptyCard}>
-            <Ionicons name="cube-outline" size={28} color={T.faint} />
-            <Text style={styles.emptyText}>
-              {tab === 'minhas'
-                ? 'Ainda não aceitaste nenhuma carga.'
-                : 'Sem cargas disponíveis de momento.'}
-            </Text>
+        <View style={styles.body}>
+          {/* Cartão de resumo */}
+          <View style={styles.heroCard}>
+            <View style={styles.heroIcon}>
+              <Icon name="truck" size={28} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroTitle}>
+                {capacity
+                  ? `${new Intl.NumberFormat('pt-AO').format(capacity)} kg de capacidade`
+                  : 'Fretes disponíveis'}
+              </Text>
+              <Text style={styles.heroSub}>
+                {openCount} {openCount === 1 ? 'carga disponível' : 'cargas disponíveis'} agora
+              </Text>
+            </View>
           </View>
-        )}
 
-        {!loading &&
-          visible.map((load) => {
-            const tooHeavy = !!capacity && load.weight_kg > capacity;
-            return (
-              <View key={load.id} style={styles.loadCard}>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-                  <View style={styles.loadIcon}>
-                    <Ionicons name="cube-outline" size={19} color={T.green} />
+          {/* Separadores */}
+          <View style={styles.segment}>
+            {(['disponiveis', 'minhas'] as const).map((k) => {
+              const active = tab === k;
+              const count = k === 'disponiveis' ? openCount : mineCount;
+              return (
+                <TouchableOpacity
+                  key={k}
+                  onPress={() => setTab(k)}
+                  activeOpacity={0.85}
+                  style={[styles.segmentBtn, active && styles.segmentBtnActive]}
+                >
+                  <Text style={[styles.segmentText, active && { color: '#FFFFFF' }]}>
+                    {k === 'disponiveis' ? 'Disponíveis' : 'As minhas cargas'}
+                  </Text>
+                  <View style={[styles.segmentCount, active && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+                    <Text style={[styles.segmentCountText, active && { color: '#FFFFFF' }]}>{count}</Text>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.loadTitle}>{load.product_name}</Text>
-                    <View style={styles.statusPill}>
-                      <Text style={styles.statusPillText}>
-                        {STATUS_LABEL[load.status] || load.status}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {loading && (
+            <View style={{ alignItems: 'center', padding: 48 }}>
+              <ActivityIndicator color={COLORS.primary} />
+              <Text style={{ color: COLORS.muted, marginTop: 8, fontSize: 12 }}>A carregar cargas…</Text>
+            </View>
+          )}
+
+          {!loading && visible.length === 0 && (
+            <View style={styles.emptyCard}>
+              <View style={styles.emptyIcon}>
+                <Icon name="package" size={26} color={COLORS.faint} />
+              </View>
+              <Text style={styles.emptyText}>
+                {tab === 'minhas'
+                  ? 'Ainda não aceitaste nenhuma carga.'
+                  : 'Sem cargas disponíveis de momento.'}
+              </Text>
+              <Text style={styles.emptySub}>Puxa para baixo para atualizar.</Text>
+            </View>
+          )}
+
+          {!loading &&
+            visible.map((load) => {
+              const tooHeavy = !!capacity && load.weight_kg > capacity;
+              const st = STATUS_STYLE[load.status] || STATUS_STYLE.open;
+              return (
+                <View key={load.id} style={styles.loadCard}>
+                  <View style={styles.loadTop}>
+                    <View style={styles.loadIcon}>
+                      <Icon name="package" size={20} color={COLORS.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.loadTitle} numberOfLines={1}>
+                        {load.product_name}
                       </Text>
+                      <View style={[styles.statusPill, { backgroundColor: st.bg }]}>
+                        <Text style={[styles.statusPillText, { color: st.fg }]}>
+                          {STATUS_LABEL[load.status] || load.status}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.priceLabel}>Oferta</Text>
+                      <Text style={styles.loadPrice}>{money(load.offered_price, load.currency)}</Text>
                     </View>
                   </View>
-                  <Text style={styles.loadPrice}>{money(load.offered_price, load.currency)}</Text>
-                </View>
 
-                <View style={{ marginTop: 14, gap: 8 }}>
-                  <View style={styles.infoRow}>
-                    <Ionicons name="location-outline" size={15} color={T.faint} />
-                    <Text style={styles.infoText}>
-                      {load.origin_label} → {load.destination_label}
-                    </Text>
+                  {/* Rota origem → destino */}
+                  <View style={styles.route}>
+                    <View style={styles.routeRail}>
+                      <View style={styles.dotOrigin} />
+                      <View style={styles.routeLine} />
+                      <View style={styles.dotDest} />
+                    </View>
+                    <View style={{ flex: 1, gap: 14 }}>
+                      <View>
+                        <Text style={styles.routeLabel}>Origem</Text>
+                        <Text style={styles.routeText} numberOfLines={2}>
+                          {load.origin_label}
+                        </Text>
+                      </View>
+                      <View>
+                        <Text style={styles.routeLabel}>Destino</Text>
+                        <Text style={styles.routeText} numberOfLines={2}>
+                          {load.destination_label}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
-                  <View style={styles.infoRow}>
-                    <Ionicons name="barbell-outline" size={15} color={T.faint} />
-                    <Text style={[styles.infoText, tooHeavy && { color: T.gold }]}>
-                      {new Intl.NumberFormat('pt-AO').format(load.weight_kg)} kg
-                      {tooHeavy ? ' · acima da sua capacidade' : ''}
-                    </Text>
-                  </View>
-                  {load.pickup_date && (
-                    <View style={styles.infoRow}>
-                      <Ionicons name="calendar-outline" size={15} color={T.faint} />
-                      <Text style={styles.infoText}>
-                        Recolha: {new Date(load.pickup_date).toLocaleDateString('pt-AO')}
+
+                  {/* Detalhes */}
+                  <View style={styles.chipsRow}>
+                    <View style={[styles.chip, tooHeavy && { backgroundColor: COLORS.goldSoft }]}>
+                      <Icon name="layers" size={14} color={tooHeavy ? COLORS.gold : COLORS.muted} />
+                      <Text style={[styles.chipText, tooHeavy && { color: COLORS.gold }]}>
+                        {new Intl.NumberFormat('pt-AO').format(load.weight_kg)} kg
                       </Text>
+                    </View>
+                    {load.pickup_date && (
+                      <View style={styles.chip}>
+                        <Icon name="clock" size={14} color={COLORS.muted} />
+                        <Text style={styles.chipText}>
+                          Recolha {new Date(load.pickup_date).toLocaleDateString('pt-AO')}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {tooHeavy && (
+                    <View style={styles.warnBox}>
+                      <Icon name="alert-circle" size={15} color={COLORS.gold} />
+                      <Text style={styles.warnText}>Acima da sua capacidade de carga.</Text>
                     </View>
                   )}
+
+                  {!!load.notes && <Text style={styles.notes}>{load.notes}</Text>}
+
+                  {tab === 'disponiveis' ? (
+                    <TouchableOpacity
+                      disabled={busyId === load.id || tooHeavy}
+                      onPress={() => accept(load)}
+                      activeOpacity={0.85}
+                      style={[styles.actionBtn, tooHeavy && styles.actionBtnDisabled]}
+                    >
+                      {busyId === load.id ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <>
+                          <Text style={[styles.actionText, tooHeavy && { color: COLORS.muted }]}>
+                            {tooHeavy ? 'Capacidade insuficiente' : 'Aceitar carga'}
+                          </Text>
+                          {!tooHeavy && <Icon name="arrow-right" size={18} color="#FFFFFF" />}
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  ) : load.status === 'accepted' || load.status === 'in_transit' ? (
+                    <TouchableOpacity
+                      disabled={busyId === load.id}
+                      onPress={() => advance(load)}
+                      activeOpacity={0.85}
+                      style={[styles.actionBtn, styles.actionBtnOutline]}
+                    >
+                      {busyId === load.id ? (
+                        <ActivityIndicator color={COLORS.primary} />
+                      ) : (
+                        <>
+                          <Icon
+                            name={load.status === 'accepted' ? 'navigation' : 'check-circle'}
+                            size={17}
+                            color={COLORS.primary}
+                          />
+                          <Text style={[styles.actionText, { color: COLORS.primary }]}>
+                            {load.status === 'accepted' ? 'Iniciar transporte' : 'Marcar como entregue'}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
-
-                {!!load.notes && <Text style={styles.notes}>{load.notes}</Text>}
-
-                {tab === 'disponiveis' ? (
-                  <TouchableOpacity
-                    disabled={busyId === load.id || tooHeavy}
-                    onPress={() => accept(load)}
-                    style={[
-                      styles.actionBtn,
-                      { backgroundColor: tooHeavy ? T.rule : T.green },
-                    ]}
-                  >
-                    {busyId === load.id ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={{ color: tooHeavy ? T.muted : '#fff', fontWeight: '800', fontSize: 14 }}>
-                        {tooHeavy ? 'Capacidade insuficiente' : 'Aceitar carga'}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                ) : load.status === 'accepted' || load.status === 'in_transit' ? (
-                  <TouchableOpacity
-                    disabled={busyId === load.id}
-                    onPress={() => advance(load)}
-                    style={[styles.actionBtn, styles.actionBtnOutline]}
-                  >
-                    {busyId === load.id ? (
-                      <ActivityIndicator color={T.green} />
-                    ) : (
-                      <Text style={{ color: T.green, fontWeight: '800', fontSize: 14 }}>
-                        {load.status === 'accepted' ? 'Iniciar transporte' : 'Marcar como entregue'}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            );
-          })}
+              );
+            })}
+        </View>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.background },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 54,
-    paddingBottom: 14,
-    backgroundColor: T.white,
-    borderBottomWidth: 1,
-    borderBottomColor: T.rule,
+    paddingHorizontal: 22,
+    paddingBottom: 18,
   },
-  backBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: T.ink },
-  headerSubtitle: { fontSize: 11, fontWeight: '600', color: T.muted, marginTop: 1 },
-  tabsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 14 },
-  tabBtn: { paddingVertical: 9, paddingHorizontal: 16, borderRadius: 999, borderWidth: 1.5 },
-  emptyCard: {
-    backgroundColor: T.white,
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
     borderWidth: 1,
-    borderColor: T.rule,
-    borderRadius: 18,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  headerTitle: { flex: 1, fontSize: 21, fontWeight: '800', color: COLORS.text },
+
+  body: { paddingHorizontal: 22, gap: 14 },
+
+  heroCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 18,
+    borderRadius: 24,
+    backgroundColor: COLORS.primary,
+    ...SHADOW_SOFT,
+  },
+  heroIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
+  heroSub: { fontSize: 12.5, color: 'rgba(255,255,255,0.8)', marginTop: 3 },
+
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.field,
+    borderRadius: 999,
+    padding: 4,
+    gap: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    height: 42,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  segmentBtnActive: { backgroundColor: COLORS.primary },
+  segmentText: { fontSize: 13, fontWeight: '800', color: COLORS.text },
+  segmentCount: {
+    minWidth: 22,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    backgroundColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentCountText: { fontSize: 11, fontWeight: '800', color: COLORS.muted },
+
+  emptyCard: {
+    backgroundColor: COLORS.field,
+    borderRadius: 22,
     padding: 32,
     alignItems: 'center',
   },
-  emptyText: { marginTop: 12, fontSize: 14, fontWeight: '700', color: T.mid, textAlign: 'center' },
+  emptyIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: { marginTop: 14, fontSize: 14.5, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
+  emptySub: { marginTop: 4, fontSize: 12.5, color: COLORS.muted, textAlign: 'center' },
+
   loadCard: {
-    backgroundColor: T.white,
-    borderWidth: 1,
-    borderColor: T.rule,
-    borderRadius: 18,
+    backgroundColor: COLORS.field,
+    borderRadius: 22,
     padding: 16,
   },
+  loadTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   loadIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: T.greenPale,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.soft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  loadTitle: { fontSize: 15.5, fontWeight: '800', color: T.ink },
+  loadTitle: { fontSize: 15.5, fontWeight: '800', color: COLORS.text },
   statusPill: {
     alignSelf: 'flex-start',
-    marginTop: 4,
+    marginTop: 5,
     paddingVertical: 3,
-    paddingHorizontal: 9,
+    paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: T.greenPale,
   },
-  statusPillText: { fontSize: 11, fontWeight: '800', color: T.green },
-  loadPrice: { fontSize: 15, fontWeight: '800', color: T.green },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  infoText: { fontSize: 13, fontWeight: '600', color: T.mid },
-  notes: { marginTop: 10, fontSize: 12.5, color: T.muted, lineHeight: 18 },
-  actionBtn: {
-    marginTop: 14,
-    height: 48,
+  statusPillText: { fontSize: 11, fontWeight: '800' },
+  priceLabel: { fontSize: 10.5, fontWeight: '700', color: COLORS.muted },
+  loadPrice: { fontSize: 15.5, fontWeight: '800', color: COLORS.primary, marginTop: 1 },
+
+  route: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+  },
+  routeRail: { alignItems: 'center', paddingTop: 4 },
+  dotOrigin: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 3,
+    borderColor: COLORS.primary,
+    backgroundColor: '#FFFFFF',
+  },
+  routeLine: { flex: 1, width: 2, backgroundColor: COLORS.border, marginVertical: 3 },
+  dotDest: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.primary },
+  routeLabel: { fontSize: 11, fontWeight: '700', color: COLORS.faint },
+  routeText: { fontSize: 14, fontWeight: '700', color: COLORS.text, marginTop: 1 },
+
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+  },
+  chipText: { fontSize: 12.5, fontWeight: '700', color: COLORS.text },
+
+  warnBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    padding: 10,
     borderRadius: 14,
+    backgroundColor: COLORS.goldSoft,
+  },
+  warnText: { flex: 1, fontSize: 12, fontWeight: '600', color: COLORS.text },
+
+  notes: { marginTop: 12, fontSize: 12.5, color: COLORS.muted, lineHeight: 18 },
+
+  actionBtn: {
+    marginTop: 16,
+    height: 52,
+    borderRadius: 999,
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    ...SHADOW_SOFT,
   },
-  actionBtnOutline: { borderWidth: 1.5, borderColor: T.green, backgroundColor: T.white },
+  actionBtnDisabled: { backgroundColor: COLORS.border, shadowOpacity: 0, elevation: 0 },
+  actionBtnOutline: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  actionText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
 });
 
 export default function CargasRoute() {

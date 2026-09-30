@@ -17,12 +17,12 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
 
 import { supabase } from "../lib/supabase";
+import Icon, { IconName } from "../components/Icon";
 
 const { height: SCREEN_H } = Dimensions.get("window");
 const AVATAR = 92;
@@ -129,11 +129,11 @@ function StatsRow({ items }: { items: { value: number | string; label: string; c
   );
 }
 
-function InfoRow({ icon, value }: { icon: keyof typeof Ionicons.glyphMap; value: string }) {
+function InfoRow({ icon, value }: { icon: IconName; value: string }) {
   return (
     <View style={styles.infoRow}>
       <View style={styles.infoIcon}>
-        <Ionicons name={icon} size={15} color={COLORS.primary} />
+        <Icon name={icon} size={15} color={COLORS.primary} />
       </View>
       <Text style={styles.infoValue} numberOfLines={1}>{value || "—"}</Text>
     </View>
@@ -141,7 +141,7 @@ function InfoRow({ icon, value }: { icon: keyof typeof Ionicons.glyphMap; value:
 }
 
 function TabChip({ active, onPress, icon, label, badge }: {
-  active: boolean; onPress: () => void; icon: keyof typeof Ionicons.glyphMap;
+  active: boolean; onPress: () => void; icon: IconName;
   label: string; badge?: number;
 }) {
   return (
@@ -150,7 +150,7 @@ function TabChip({ active, onPress, icon, label, badge }: {
       activeOpacity={0.85}
       style={[styles.tabChip, active && styles.tabChipActive]}
     >
-      <Ionicons name={icon} size={15} color={active ? "#FFFFFF" : COLORS.muted} />
+      <Icon name={icon} size={15} color={active ? "#FFFFFF" : COLORS.muted} />
       <Text style={[styles.tabChipText, active && { color: "#FFFFFF" }]}>{label}</Text>
       {!!badge && badge > 0 && (
         <View style={styles.tabBadge}>
@@ -180,12 +180,12 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function EmptyState({ icon, message, sub }: {
-  icon: keyof typeof Ionicons.glyphMap; message: string; sub?: string;
+  icon: IconName; message: string; sub?: string;
 }) {
   return (
     <View style={styles.emptyState}>
       <View style={styles.emptyIcon}>
-        <Ionicons name={icon} size={26} color={COLORS.primary} />
+        <Icon name={icon} size={26} color={COLORS.primary} />
       </View>
       <Text style={styles.emptyMessage}>{message}</Text>
       {sub && <Text style={styles.emptySub}>{sub}</Text>}
@@ -221,25 +221,25 @@ function Field({ label, value, onChangeText, keyboardType, required }: {
 // COMPONENTE PRINCIPAL
 // =====================================================
 
-const TABS_BY_ROLE: Record<string, { id: string; label: string; icon: keyof typeof Ionicons.glyphMap }[]> = {
+const TABS_BY_ROLE: Record<string, { id: string; label: string; icon: IconName }[]> = {
   comprador: [
-    { id: "products", label: "Fichas", icon: "clipboard-outline" },
-    { id: "sourcing", label: "Sourcing", icon: "search-outline" },
-    { id: "statistics", label: "Estatísticas", icon: "bar-chart-outline" },
+    { id: "products", label: "Fichas", icon: "clipboard" },
+    { id: "sourcing", label: "Sourcing", icon: "search" },
+    { id: "statistics", label: "Estatísticas", icon: "bar-chart" },
   ],
   agricultor: [
-    { id: "products", label: "Produtos", icon: "cube-outline" },
-    { id: "orders", label: "Encomendas", icon: "cart-outline" },
-    { id: "statistics", label: "Estatísticas", icon: "bar-chart-outline" },
+    { id: "products", label: "Produtos", icon: "package" },
+    { id: "orders", label: "Encomendas", icon: "cart" },
+    { id: "statistics", label: "Estatísticas", icon: "bar-chart" },
   ],
   agente: [
-    { id: "products", label: "Produtos", icon: "cube-outline" },
-    { id: "orders", label: "Encomendas", icon: "cart-outline" },
-    { id: "referrals", label: "Indicações", icon: "people-outline" },
-    { id: "statistics", label: "Estatísticas", icon: "bar-chart-outline" },
+    { id: "products", label: "Produtos", icon: "package" },
+    { id: "orders", label: "Encomendas", icon: "cart" },
+    { id: "referrals", label: "Indicações", icon: "users" },
+    { id: "statistics", label: "Estatísticas", icon: "bar-chart" },
   ],
   motorista: [
-    { id: "statistics", label: "Estatísticas", icon: "bar-chart-outline" },
+    { id: "statistics", label: "Estatísticas", icon: "bar-chart" },
   ],
 };
 
@@ -635,7 +635,7 @@ export default function ProfileScreen() {
   if (!authUser) {
     return (
       <SafeAreaView style={styles.centerScreen}>
-        <Ionicons name="person-circle-outline" size={68} color={COLORS.primary} />
+        <Icon name="user" size={68} color={COLORS.primary} />
         <Text style={styles.emptyMessage}>Sessão não encontrada</Text>
         <TouchableOpacity style={[styles.pillButton, { paddingHorizontal: 32 }]} onPress={() => router.replace("/login")}>
           <Text style={styles.pillButtonText}>Iniciar sessão</Text>
@@ -673,20 +673,20 @@ export default function ProfileScreen() {
               accessibilityRole="button"
               accessibilityLabel="Voltar"
             >
-              <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+              <Icon name="arrow-left" size={20} color="#FFFFFF" />
             </TouchableOpacity>
             <Text style={styles.headerTitle} numberOfLines={1}>O meu perfil</Text>
           </View>
           <View style={{ flexDirection: "row", gap: 10 }}>
             <TouchableOpacity style={styles.headerBtn} onPress={() => setSettingsOpen(true)} activeOpacity={0.8}>
-              <Ionicons name="settings-outline" size={19} color="#FFFFFF" />
+              <Icon name="settings" size={19} color="#FFFFFF" />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerBtn}
               activeOpacity={0.8}
               onPress={async () => { await supabase.auth.signOut(); router.replace("/login"); }}
             >
-              <Ionicons name="log-out-outline" size={19} color="#FFFFFF" />
+              <Icon name="log-out" size={19} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
@@ -702,13 +702,13 @@ export default function ProfileScreen() {
             <View style={styles.avatarEdit}>
               {avatarLoading
                 ? <ActivityIndicator size="small" color="#FFFFFF" />
-                : <Ionicons name="camera" size={13} color="#FFFFFF" />}
+                : <Icon name="camera" size={13} color="#FFFFFF" />}
             </View>
           </TouchableOpacity>
 
           <View style={styles.nameRow}>
             <Text style={styles.memberName} numberOfLines={1}>{profileName}</Text>
-            {userProfile?.verified && <Ionicons name="checkmark-circle" size={18} color={COLORS.primary} />}
+            {userProfile?.verified && <Icon name="check-circle" size={18} color={COLORS.primary} />}
           </View>
 
           <View style={[styles.rolePill, { backgroundColor: `${roleAccent}1A` }]}>
@@ -719,19 +719,19 @@ export default function ProfileScreen() {
           {!editMode ? (
             <>
               <View style={styles.infoBlock}>
-                <InfoRow icon="mail-outline" value={profileData.email} />
-                <InfoRow icon="call-outline" value={profileData.phone} />
-                <InfoRow icon="location-outline" value={userProfile?.province_id || "Angola"} />
+                <InfoRow icon="mail" value={profileData.email} />
+                <InfoRow icon="phone" value={profileData.phone} />
+                <InfoRow icon="pin" value={userProfile?.province_id || "Angola"} />
               </View>
 
               <View style={styles.memberActions}>
                 <TouchableOpacity style={[styles.pillButton, { flex: 1 }]} onPress={() => setEditMode(true)} activeOpacity={0.85}>
-                  <Ionicons name="create-outline" size={17} color="#FFFFFF" />
+                  <Icon name="edit" size={17} color="#FFFFFF" />
                   <Text style={styles.pillButtonText}>Editar perfil</Text>
                 </TouchableOpacity>
                 {isAgente && (
                   <TouchableOpacity style={styles.roundOutline} onPress={shareAgentCode} activeOpacity={0.85}>
-                    <Ionicons name="share-social-outline" size={20} color={COLORS.primary} />
+                    <Icon name="share" size={20} color={COLORS.primary} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -743,13 +743,13 @@ export default function ProfileScreen() {
                 accessibilityLabel="Abrir histórico de compras e pagamentos"
               >
                 <View style={styles.historyLinkIcon}>
-                  <Ionicons name="receipt-outline" size={19} color={COLORS.primary} />
+                  <Icon name="receipt" size={19} color={COLORS.primary} />
                 </View>
                 <View style={styles.historyLinkTextBlock}>
                   <Text style={styles.historyLinkTitle}>Histórico de compras e pagamentos</Text>
                   <Text style={styles.historyLinkSubtitle}>Pedidos e movimentos da carteira</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={COLORS.faint} />
+                <Icon name="chevron-right" size={18} color={COLORS.faint} />
               </TouchableOpacity>
             </>
           ) : (
@@ -769,7 +769,7 @@ export default function ProfileScreen() {
           )}
 
           <TouchableOpacity style={styles.codeChip} onPress={copyMemberCode} activeOpacity={0.8}>
-            <Ionicons name="copy-outline" size={13} color={COLORS.muted} />
+            <Icon name="copy" size={13} color={COLORS.muted} />
             <Text style={styles.codeChipLabel}>Rede AgriLink</Text>
             <Text style={styles.codeChipValue}>#{memberCode}</Text>
           </TouchableOpacity>
@@ -806,7 +806,7 @@ export default function ProfileScreen() {
           {activeTab === "products" && (
             isComprador ? (
               fichasRecebimento.length === 0 ? (
-                <EmptyState icon="clipboard-outline" message="Ainda não criaste fichas de recebimento" />
+                <EmptyState icon="clipboard" message="Ainda não criaste fichas de recebimento" />
               ) : (
                 <View style={{ gap: 10 }}>
                   {fichasRecebimento.map((f) => (
@@ -820,7 +820,7 @@ export default function ProfileScreen() {
               )
             ) : (
               userProducts.length === 0 ? (
-                <EmptyState icon="cube-outline" message="Ainda não publicaste produtos" />
+                <EmptyState icon="package" message="Ainda não publicaste produtos" />
               ) : (
                 <View style={{ gap: 10 }}>
                   {userProducts.map((p) => (
@@ -833,9 +833,9 @@ export default function ProfileScreen() {
                       <View style={[styles.rowBetween, { marginTop: 8 }]}>
                         <Text style={styles.listCardPrice}>{p.price.toLocaleString()} Kz/kg</Text>
                         <View style={styles.interactionsRow}>
-                          <Ionicons name="chatbubble-outline" size={12} color={COLORS.muted} />
+                          <Icon name="message" size={12} color={COLORS.muted} />
                           <Text style={styles.interactionsText}>{productStats[p.id]?.comments || 0}</Text>
-                          <Ionicons name="heart-outline" size={12} color={COLORS.muted} />
+                          <Icon name="heart" size={12} color={COLORS.muted} />
                           <Text style={styles.interactionsText}>{productStats[p.id]?.likes || 0}</Text>
                         </View>
                       </View>
@@ -882,7 +882,7 @@ export default function ProfileScreen() {
               )}
 
               {sourcingRequests.length === 0 ? (
-                <EmptyState icon="search-outline" message="Ainda não fizeste pedidos de sourcing" />
+                <EmptyState icon="search" message="Ainda não fizeste pedidos de sourcing" />
               ) : (
                 <View style={{ gap: 10 }}>
                   {sourcingRequests.map((r) => (
@@ -902,7 +902,7 @@ export default function ProfileScreen() {
           {/* ENCOMENDAS RECEBIDAS */}
           {activeTab === "orders" && (isAgricultor || isAgente) && (
             receivedOrders.length === 0 ? (
-              <EmptyState icon="cart-outline" message="Ainda não recebeste encomendas" sub="Vão aparecer aqui assim que alguém pré-encomendar um dos teus produtos." />
+              <EmptyState icon="cart" message="Ainda não recebeste encomendas" sub="Vão aparecer aqui assim que alguém pré-encomendar um dos teus produtos." />
             ) : (
               <View style={{ gap: 10 }}>
                 {receivedOrders.map((o) => (
@@ -922,17 +922,17 @@ export default function ProfileScreen() {
                       {o.status === "pending" && (
                         <>
                           <TouchableOpacity style={[styles.smallActionBtn, { backgroundColor: COLORS.soft }]} onPress={() => acceptOrder(o.id)}>
-                            <Ionicons name="checkmark" size={15} color={COLORS.primary} />
+                            <Icon name="check" size={15} color={COLORS.primary} />
                             <Text style={[styles.smallActionText, { color: COLORS.primary }]}>Aceitar</Text>
                           </TouchableOpacity>
                           <TouchableOpacity style={[styles.smallActionBtn, { backgroundColor: COLORS.dangerSoft }]} onPress={() => rejectOrder(o.id)}>
-                            <Ionicons name="close" size={15} color={COLORS.danger} />
+                            <Icon name="close" size={15} color={COLORS.danger} />
                             <Text style={[styles.smallActionText, { color: COLORS.danger }]}>Rejeitar</Text>
                           </TouchableOpacity>
                         </>
                       )}
                       <TouchableOpacity style={[styles.smallActionBtn, { backgroundColor: COLORS.blueSoft }]} onPress={() => contactBuyer(o)}>
-                        <Ionicons name="chatbubble-outline" size={14} color={COLORS.blue} />
+                        <Icon name="message" size={14} color={COLORS.blue} />
                         <Text style={[styles.smallActionText, { color: COLORS.blue }]}>Contactar</Text>
                       </TouchableOpacity>
                     </View>
@@ -945,20 +945,20 @@ export default function ProfileScreen() {
           {/* INDICAÇÕES */}
           {activeTab === "referrals" && isAgente && (
             agentStats.recentReferrals.length === 0 ? (
-              <EmptyState icon="people-outline" message="Ainda não tens indicações" sub="Partilha o teu código para começares a ganhar pontos." />
+              <EmptyState icon="users" message="Ainda não tens indicações" sub="Partilha o teu código para começares a ganhar pontos." />
             ) : (
               <View style={{ gap: 10 }}>
                 {agentStats.recentReferrals.map((r: any, i: number) => (
                   <View key={`${r.user_name}-${i}`} style={[styles.listCard, styles.referralCard]}>
                     <View style={styles.referralAvatar}>
-                      <Ionicons name="person" size={15} color={COLORS.primary} />
+                      <Icon name="user" size={15} color={COLORS.primary} />
                     </View>
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={styles.listCardTitle}>{r.user_name}</Text>
                       <Text style={styles.listCardSub}>{formatDate(r.created_at)}</Text>
                     </View>
                     <View style={styles.referralPoints}>
-                      <Ionicons name="star" size={12} color={COLORS.gold} />
+                      <Icon name="star" size={12} color={COLORS.gold} filled />
                       <Text style={styles.referralPointsText}>+{r.points}</Text>
                     </View>
                   </View>
@@ -1024,18 +1024,18 @@ export default function ProfileScreen() {
 
             <TouchableOpacity style={styles.settingsRow} activeOpacity={0.8} onPress={() => { setSettingsOpen(false); router.push("/notificacoes"); }}>
               <View style={styles.settingsIcon}>
-                <Ionicons name="notifications-outline" size={18} color={COLORS.primary} />
+                <Icon name="bell" size={18} color={COLORS.primary} />
               </View>
               <Text style={styles.settingsRowText}>Notificações</Text>
-              <Ionicons name="chevron-forward" size={16} color={COLORS.faint} />
+              <Icon name="chevron-right" size={16} color={COLORS.faint} />
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.settingsRow} activeOpacity={0.8} onPress={() => { setSettingsOpen(false); router.push("/seguranca"); }}>
               <View style={styles.settingsIcon}>
-                <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.primary} />
+                <Icon name="shield" size={18} color={COLORS.primary} />
               </View>
               <Text style={styles.settingsRowText}>Segurança e privacidade</Text>
-              <Ionicons name="chevron-forward" size={16} color={COLORS.faint} />
+              <Icon name="chevron-right" size={16} color={COLORS.faint} />
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.pillOutline, { marginTop: 8 }]} onPress={() => setSettingsOpen(false)} activeOpacity={0.85}>

@@ -27,10 +27,10 @@ import {
 import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../lib/supabase";
+import Icon, { IconName } from "../components/Icon";
 
 // Mesmo logo e mesma pasta usados no ecrã de login
 const LOGO = require("../../assets/images/Agrilink_SD.png");
@@ -38,17 +38,17 @@ const LOGO = require("../../assets/images/Agrilink_SD.png");
 const { height: SCREEN_H } = Dimensions.get("window");
 
 /* =====================================================================
-   BRANDING — tokens iguais aos do ecrã de login
+   BRANDING — mesma palette da página de Segurança
    ===================================================================== */
 
 const COLORS = {
-  // Fundo marfim igual ao perfil; verde original mantido nos botões.
   primary: "#1F6B3A",
   secondary: "#79C267",
   dark: "#465044",
   deep: "#343B32",
   text: "#3D403A",
   muted: "#77796F",
+  faint: "#A3A398",
   border: "#E8E5DC",
   field: "#F5F3EC",
   background: "#FBFAF6",
@@ -74,6 +74,14 @@ const SHADOW_SOFT = {
   shadowRadius: 10,
   shadowOffset: { width: 0, height: 5 },
   elevation: 6,
+};
+
+const SHADOW_FLOAT = {
+  shadowColor: COLORS.deep,
+  shadowOpacity: 0.16,
+  shadowRadius: 14,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 8,
 };
 
 /* =====================================================================
@@ -108,16 +116,29 @@ type RouteResult = {
 
 type LocStatus = "idle" | "granted" | "denied" | "off";
 
-const LAYERS: { kind: Kind; label: string; emoji: string; color: string }[] = [
-  { kind: "produto", label: "Produtos", emoji: "🌿", color: COLORS.primary },
-  { kind: "motorista", label: "Motoristas", emoji: "🚚", color: COLORS.blue },
-  { kind: "agente", label: "Agentes", emoji: "🎒", color: COLORS.accent },
-  { kind: "agricultor", label: "Agricultores", emoji: "🌾", color: COLORS.dark },
+const LAYERS: { kind: Kind; label: string; icon: IconName; color: string }[] = [
+  { kind: "produto", label: "Produtos", icon: "leaf", color: COLORS.primary },
+  { kind: "motorista", label: "Motoristas", icon: "truck", color: COLORS.blue },
+  { kind: "agente", label: "Agentes", icon: "users", color: COLORS.accent },
+  { kind: "agricultor", label: "Agricultores", icon: "sprout", color: COLORS.dark },
 ];
 
 const LAYER_BY_KIND = Object.fromEntries(
   LAYERS.map((l) => [l.kind, l]),
 ) as Record<Kind, (typeof LAYERS)[number]>;
+
+// Mesmos desenhos do Icon.tsx, em SVG, para usar dentro dos pinos do mapa
+const PIN_SVG: Record<string, string> = {
+  produto:
+    '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>',
+  motorista:
+    '<rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>',
+  agente:
+    '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  agricultor:
+    '<path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>',
+  pick: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+};
 
 /* =====================================================================
    HELPERS
@@ -218,6 +239,8 @@ const MAP_HTML = `<!DOCTYPE html>
 <div id="map"></div>
 <script>
 (function () {
+  var SVG = ${JSON.stringify(PIN_SVG)};
+
   function post(type, payload) {
     if (window.ReactNativeWebView) {
       window.ReactNativeWebView.postMessage(JSON.stringify({ type: type, payload: payload || {} }));
@@ -259,14 +282,16 @@ const MAP_HTML = `<!DOCTYPE html>
     var animTimer = null;
     var pickMode = false, pickMarker = null;
 
-    function pinHtml(color, emoji, selected) {
+    function pinHtml(color, kind, selected) {
       var size = selected ? 44 : 36;
-      var inner = selected ? 19 : 16;
+      var inner = selected ? 20 : 17;
+      var svg = '<svg width="' + inner + '" height="' + inner + '" viewBox="0 0 24 24" fill="none" stroke="#fff" ' +
+        'stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">' + (SVG[kind] || '') + '</svg>';
       return '<div style="width:' + size + 'px;height:' + size + 'px;background:' + color +
         ';border:2.5px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);' +
         'display:flex;align-items:center;justify-content:center;' +
         'box-shadow:0 5px 14px rgba(0,0,0,0.32);">' +
-        '<div style="transform:rotate(45deg);font-size:' + inner + 'px;line-height:1;">' + emoji + '</div></div>';
+        '<div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;">' + svg + '</div></div>';
     }
 
     function clearRoute() {
@@ -285,7 +310,7 @@ const MAP_HTML = `<!DOCTYPE html>
           var sel = item.id === selectedId;
           var icon = L.divIcon({
             className: 'al-pin',
-            html: pinHtml(item.color, item.emoji, sel),
+            html: pinHtml(item.color, item.kind, sel),
             iconSize: sel ? [44, 44] : [36, 36],
             iconAnchor: sel ? [22, 44] : [18, 36]
           });
@@ -372,7 +397,7 @@ const MAP_HTML = `<!DOCTYPE html>
       if (pickMarker) { try { map.removeLayer(pickMarker); } catch (e) {} }
       var icon = L.divIcon({
         className: 'al-pin',
-        html: pinHtml('#E2932F', '📍', true),
+        html: pinHtml('#E2932F', 'pick', true),
         iconSize: [44, 44], iconAnchor: [22, 44]
       });
       pickMarker = L.marker(ev.latlng, { icon: icon }).addTo(map);
@@ -661,7 +686,7 @@ export default function MapaScreen() {
         lat: e.lat,
         lng: e.lng,
         title: e.title,
-        emoji: LAYER_BY_KIND[e.kind].emoji,
+        kind: e.kind,
         color: LAYER_BY_KIND[e.kind].color,
       })),
       selectedId,
@@ -888,6 +913,46 @@ export default function MapaScreen() {
         ? "O GPS está desligado. Ligue-o para ver a sua posição."
         : null;
 
+  const timeline: {
+    state: "done" | "active" | "pending";
+    icon: IconName;
+    title: string;
+    detail: string;
+  }[] = tracked
+    ? [
+        {
+          state: "done",
+          icon: "leaf",
+          title: "Colhido",
+          detail: tracked.harvest_date
+            ? new Date(tracked.harvest_date).toLocaleDateString("pt-AO")
+            : "Data por confirmar",
+        },
+        {
+          state: "done",
+          icon: "user",
+          title: "Recolhido pelo agente",
+          detail: "Local de recolha confirmado",
+        },
+        {
+          state: arrived ? "done" : "active",
+          icon: "package",
+          title: "Em trânsito",
+          detail: arrived
+            ? "Chegou ao destino"
+            : routeInfo
+              ? `${routeInfo.km} km · ${formatDuration(routeInfo.duration)}`
+              : "A calcular rota...",
+        },
+        {
+          state: arrived ? "active" : "pending",
+          icon: "check-circle",
+          title: "Entrega",
+          detail: arrived ? "A confirmar entrega" : "Por concluir",
+        },
+      ]
+    : [];
+
   /* =====================================================================
      RENDER
      ===================================================================== */
@@ -913,22 +978,25 @@ export default function MapaScreen() {
         setSupportMultipleWindows={false}
       />
 
-      {/* ================= HEADER ================= */}
-      <View style={[styles.headerWrap, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.header}>
+      {/* ================= HEADER FLUTUANTE ================= */}
+      <View
+        style={[styles.headerWrap, { paddingTop: insets.top + 8 }]}
+        pointerEvents="box-none"
+      >
+        <View style={styles.topCard}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => router.back()}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
           >
-            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+            <Icon name="arrow-left" size={19} color="#FFFFFF" />
           </TouchableOpacity>
 
-          <View style={styles.logoWrap}>
-            <Image source={LOGO} style={styles.logo} resizeMode="contain" />
-          </View>
+          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
 
-          <View style={{ flex: 1, marginLeft: 10 }}>
+          <View style={{ flex: 1, marginLeft: 8 }}>
             <Text style={styles.headerTitle} numberOfLines={1}>
               Mapa de rastreio
             </Text>
@@ -938,30 +1006,32 @@ export default function MapaScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.backBtn, pickMode && styles.backBtnActive]}
+            style={[styles.iconBtn, pickMode && styles.iconBtnActive]}
             onPress={() => setPickMode((c) => !c)}
             activeOpacity={0.8}
+            accessibilityLabel="Escolher local no mapa"
           >
-            <Ionicons name="location-outline" size={20} color="#FFFFFF" />
+            <Icon name="pin" size={18} color={pickMode ? "#FFFFFF" : COLORS.primary} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.backBtn, { marginLeft: 8 }]}
+            style={[styles.iconBtn, { marginLeft: 8 }]}
             onPress={loadEntities}
             activeOpacity={0.8}
+            accessibilityLabel="Atualizar"
           >
-            <Ionicons name="refresh" size={19} color="#FFFFFF" />
+            <Icon name="refresh" size={18} color={COLORS.primary} />
           </TouchableOpacity>
         </View>
 
         <View style={styles.searchBox}>
-          <Ionicons name="search-outline" size={19} color={COLORS.muted} />
+          <Icon name="search" size={18} color={COLORS.muted} />
           <TextInput
             style={styles.searchInput}
             value={search}
             onChangeText={runSearch}
             placeholder="Pesquisar local em Angola"
-            placeholderTextColor="#A3A398"
+            placeholderTextColor={COLORS.faint}
             returnKeyType="search"
             autoCorrect={false}
           />
@@ -972,8 +1042,9 @@ export default function MapaScreen() {
                 setSearch("");
                 setSearchResults([]);
               }}
+              hitSlop={8}
             >
-              <Ionicons name="close-circle" size={19} color={COLORS.muted} />
+              <Icon name="close-circle" size={18} color={COLORS.muted} />
             </TouchableOpacity>
           )}
         </View>
@@ -994,7 +1065,7 @@ export default function MapaScreen() {
                 }}
               >
                 <View style={styles.searchIcon}>
-                  <Ionicons name="location-outline" size={16} color={COLORS.primary} />
+                  <Icon name="pin" size={15} color={COLORS.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.searchTitle} numberOfLines={1}>
@@ -1012,6 +1083,7 @@ export default function MapaScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.layerScroll}
           contentContainerStyle={styles.layerRow}
         >
           {LAYERS.map((layer) => {
@@ -1022,15 +1094,16 @@ export default function MapaScreen() {
                 key={layer.kind}
                 style={[
                   styles.layerChip,
-                  active && {
-                    backgroundColor: layer.color,
-                    borderColor: "rgba(255,255,255,0.7)",
-                  },
+                  active && { backgroundColor: layer.color, borderColor: layer.color },
                 ]}
                 onPress={() => toggleLayer(layer.kind)}
                 activeOpacity={0.85}
               >
-                <Text style={{ fontSize: 13 }}>{layer.emoji}</Text>
+                <Icon
+                  name={layer.icon}
+                  size={15}
+                  color={active ? "#FFFFFF" : layer.color}
+                />
                 <Text style={[styles.layerText, active && { color: "#FFFFFF" }]}>
                   {layer.label}
                 </Text>
@@ -1055,11 +1128,11 @@ export default function MapaScreen() {
       {/* Aviso de localização */}
       {!!locBanner && (
         <TouchableOpacity
-          style={[styles.locBanner, { top: insets.top + 214 }]}
+          style={[styles.locBanner, { top: insets.top + 204 }]}
           onPress={recenter}
           activeOpacity={0.9}
         >
-          <Ionicons name="navigate-circle-outline" size={20} color={COLORS.accent} />
+          <Icon name="navigation" size={19} color={COLORS.accent} />
           <Text style={styles.locBannerText}>{locBanner}</Text>
           <Text style={styles.locBannerAction}>Ativar</Text>
         </TouchableOpacity>
@@ -1071,7 +1144,7 @@ export default function MapaScreen() {
           <View style={styles.sheetHandle} />
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <View style={styles.pickIcon}>
-              <Ionicons name="pin-outline" size={20} color={COLORS.accent} />
+              <Icon name="pin" size={20} color={COLORS.accent} />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.cardTitle}>
@@ -1102,7 +1175,7 @@ export default function MapaScreen() {
             }}
           >
             <Text style={styles.pillButtonText}>Usar este local</Text>
-            <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+            <Icon name="arrow-right" size={18} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       )}
@@ -1111,9 +1184,9 @@ export default function MapaScreen() {
       {!pickMode && (
         <View style={[styles.fabColumn, { bottom: fabBottom }]}>
           <TouchableOpacity style={styles.fab} onPress={recenter} activeOpacity={0.85}>
-            <Ionicons
-              name={userLocation ? "locate" : "locate-outline"}
-              size={21}
+            <Icon
+              name="locate"
+              size={20}
               color={userLocation ? COLORS.primary : COLORS.muted}
             />
           </TouchableOpacity>
@@ -1122,7 +1195,7 @@ export default function MapaScreen() {
             onPress={fitAll}
             activeOpacity={0.85}
           >
-            <MaterialCommunityIcons name="arrow-expand-all" size={20} color={COLORS.primary} />
+            <Icon name="maximize" size={19} color={COLORS.primary} />
           </TouchableOpacity>
         </View>
       )}
@@ -1136,7 +1209,7 @@ export default function MapaScreen() {
             <View
               style={[styles.badge, { backgroundColor: LAYER_BY_KIND[selected.kind].color }]}
             >
-              <Text style={{ fontSize: 19 }}>{LAYER_BY_KIND[selected.kind].emoji}</Text>
+              <Icon name={LAYER_BY_KIND[selected.kind].icon} size={21} color="#FFFFFF" />
             </View>
 
             <View style={{ flex: 1, marginLeft: 12 }}>
@@ -1150,7 +1223,7 @@ export default function MapaScreen() {
             </View>
 
             <TouchableOpacity style={styles.closeChip} onPress={closeSelection}>
-              <Ionicons name="close" size={18} color={COLORS.text} />
+              <Icon name="close" size={17} color={COLORS.text} />
             </TouchableOpacity>
           </View>
 
@@ -1171,7 +1244,7 @@ export default function MapaScreen() {
 
           {!!distanceLabel(selected) && (
             <View style={styles.distancePill}>
-              <Ionicons name="navigate" size={15} color={COLORS.blue} />
+              <Icon name="navigation" size={14} color={COLORS.blue} />
               <Text style={styles.distanceText}>
                 A {distanceLabel(selected)} de si
               </Text>
@@ -1184,7 +1257,7 @@ export default function MapaScreen() {
               onPress={() => startTracking(selected)}
               activeOpacity={0.85}
             >
-              <Ionicons name="navigate-outline" size={18} color="#FFFFFF" />
+              <Icon name="navigation" size={17} color="#FFFFFF" />
               <Text style={styles.pillButtonText}>Rastrear</Text>
             </TouchableOpacity>
 
@@ -1194,7 +1267,7 @@ export default function MapaScreen() {
                 onPress={() => Linking.openURL(`tel:${selected.phone}`)}
                 activeOpacity={0.85}
               >
-                <Ionicons name="call-outline" size={19} color={COLORS.primary} />
+                <Icon name="phone" size={18} color={COLORS.primary} />
               </TouchableOpacity>
             )}
 
@@ -1206,7 +1279,7 @@ export default function MapaScreen() {
                 }
                 activeOpacity={0.85}
               >
-                <Ionicons name="information-circle-outline" size={20} color={COLORS.primary} />
+                <Icon name="info" size={19} color={COLORS.primary} />
               </TouchableOpacity>
             )}
           </View>
@@ -1226,43 +1299,12 @@ export default function MapaScreen() {
               </Text>
             </View>
             <TouchableOpacity style={styles.closeChip} onPress={stopTracking}>
-              <Ionicons name="close" size={18} color={COLORS.text} />
+              <Icon name="close" size={17} color={COLORS.text} />
             </TouchableOpacity>
           </View>
 
           <View style={{ marginTop: 16 }}>
-            {[
-              {
-                state: "done",
-                icon: "leaf-outline",
-                title: "Colhido",
-                detail: tracked.harvest_date
-                  ? new Date(tracked.harvest_date).toLocaleDateString("pt-AO")
-                  : "Data por confirmar",
-              },
-              {
-                state: "done",
-                icon: "person-outline",
-                title: "Recolhido pelo agente",
-                detail: "Local de recolha confirmado",
-              },
-              {
-                state: arrived ? "done" : "active",
-                icon: "cube-outline",
-                title: "Em trânsito",
-                detail: arrived
-                  ? "Chegou ao destino"
-                  : routeInfo
-                    ? `${routeInfo.km} km · ${formatDuration(routeInfo.duration)}`
-                    : "A calcular rota...",
-              },
-              {
-                state: arrived ? "active" : "pending",
-                icon: "checkmark-circle-outline",
-                title: "Entrega",
-                detail: arrived ? "A confirmar entrega" : "Por concluir",
-              },
-            ].map((step, i, all) => (
+            {timeline.map((step, i, all) => (
               <View key={step.title} style={styles.stepRow}>
                 {i < all.length - 1 && (
                   <View
@@ -1285,8 +1327,8 @@ export default function MapaScreen() {
                     },
                   ]}
                 >
-                  <Ionicons
-                    name={step.icon as any}
+                  <Icon
+                    name={step.icon}
                     size={14}
                     color={
                       step.state === "done"
@@ -1328,7 +1370,7 @@ export default function MapaScreen() {
           onPress={() => setListOpen(true)}
           activeOpacity={0.9}
         >
-          <Ionicons name="list" size={19} color="#FFFFFF" />
+          <Icon name="list" size={18} color="#FFFFFF" />
           <Text style={styles.pillButtonText}>Ver lista ({visible.length})</Text>
         </TouchableOpacity>
       )}
@@ -1369,7 +1411,11 @@ export default function MapaScreen() {
                     {item.image_url ? (
                       <Image source={{ uri: item.image_url }} style={styles.listThumbImage} />
                     ) : (
-                      <Text style={{ fontSize: 20 }}>{LAYER_BY_KIND[item.kind].emoji}</Text>
+                      <Icon
+                        name={LAYER_BY_KIND[item.kind].icon}
+                        size={20}
+                        color={LAYER_BY_KIND[item.kind].color}
+                      />
                     )}
                   </View>
 
@@ -1415,7 +1461,7 @@ export default function MapaScreen() {
       {mapFailed && (
         <View style={styles.overlay}>
           <View style={styles.overlayCard}>
-            <Ionicons name="cloud-offline-outline" size={34} color={COLORS.danger} />
+            <Icon name="cloud-off" size={34} color={COLORS.danger} />
             <Text style={styles.overlayTitle}>Não foi possível carregar o mapa</Text>
             <Text style={styles.overlaySub}>Verifique a ligação à internet.</Text>
             <TouchableOpacity
@@ -1454,29 +1500,24 @@ const styles = StyleSheet.create({
   rowDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
   disabled: { opacity: 0.55 },
 
-  // HEADER
+  // HEADER FLUTUANTE (o mapa continua visível por baixo)
   headerWrap: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: COLORS.background,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    paddingBottom: 14,
-    shadowColor: COLORS.deep,
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  header: {
-    minHeight: 48,
     paddingHorizontal: 16,
+    gap: 10,
+  },
+  topCard: {
     flexDirection: "row",
     alignItems: "center",
+    padding: 8,
+    borderRadius: 999,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW_FLOAT,
   },
   backBtn: {
     width: 40,
@@ -1485,48 +1526,41 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.primary,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
   },
-  backBtnActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
-  logoWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    marginLeft: 10,
-    backgroundColor: "#FFFFFF",
+  logo: { width: 28, height: 28, marginLeft: 10 },
+  headerTitle: { fontSize: 15.5, fontWeight: "800", color: COLORS.text },
+  headerSubtitle: { fontSize: 11.5, color: COLORS.muted, marginTop: 1 },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 2.5,
-    borderColor: `${COLORS.secondary}88`,
+    backgroundColor: COLORS.soft,
   },
-  logo: { width: 28, height: 28 },
-  headerTitle: { fontSize: 16, fontWeight: "800", color: COLORS.text },
-  headerSubtitle: { fontSize: 11.5, color: COLORS.muted, marginTop: 1 },
+  iconBtnActive: { backgroundColor: COLORS.accent },
 
   // PESQUISA
   searchBox: {
-    marginHorizontal: 16,
-    marginTop: 10,
     height: 50,
-    borderRadius: 14,
-    backgroundColor: COLORS.field,
-    borderWidth: 1.5,
+    borderRadius: 999,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
     borderColor: COLORS.border,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
+    paddingHorizontal: 18,
     gap: 10,
+    ...SHADOW_FLOAT,
   },
   searchInput: { flex: 1, fontSize: 15, color: COLORS.text, padding: 0 },
   searchResults: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 14,
+    borderRadius: 22,
     backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.border,
     overflow: "hidden",
+    ...SHADOW_FLOAT,
   },
   searchRow: { flexDirection: "row", alignItems: "center", padding: 12, gap: 10 },
   searchIcon: {
@@ -1541,7 +1575,8 @@ const styles = StyleSheet.create({
   searchSub: { fontSize: 11.5, color: COLORS.muted, marginTop: 2 },
 
   // CAMADAS
-  layerRow: { paddingHorizontal: 16, paddingTop: 12, gap: 8 },
+  layerScroll: { marginHorizontal: -16 },
+  layerRow: { paddingHorizontal: 16, gap: 8, paddingBottom: 6 },
   layerChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -1552,6 +1587,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderWidth: 1.5,
     borderColor: COLORS.border,
+    ...SHADOW_FLOAT,
+    shadowOpacity: 0.1,
+    elevation: 4,
   },
   layerText: { fontSize: 12.5, fontWeight: "700", color: COLORS.text },
   layerCount: {
@@ -1574,7 +1612,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     padding: 12,
-    borderRadius: 14,
+    borderRadius: 18,
     backgroundColor: COLORS.background,
     borderWidth: 1.5,
     borderColor: COLORS.accent,
@@ -1592,20 +1630,20 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: COLORS.border,
-    ...SHADOW_SOFT,
+    ...SHADOW_FLOAT,
   },
 
-  // FOLHAS (mesma linguagem do painel do login)
+  // FOLHAS
   sheet: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
     backgroundColor: COLORS.background,
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     paddingHorizontal: 22,
     paddingTop: 12,
     ...SHADOW_UP,
@@ -1613,8 +1651,8 @@ const styles = StyleSheet.create({
   pickSheet: { borderTopWidth: 3, borderTopColor: COLORS.accent },
   sheetModal: {
     backgroundColor: COLORS.background,
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     paddingHorizontal: 22,
     paddingTop: 12,
   },
@@ -1639,8 +1677,6 @@ const styles = StyleSheet.create({
     borderRadius: 23,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 3,
-    borderColor: `${COLORS.secondary}55`,
   },
   pickIcon: {
     width: 46,
@@ -1657,8 +1693,6 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 17,
     backgroundColor: COLORS.field,
-    borderWidth: 1,
-    borderColor: COLORS.border,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1667,10 +1701,8 @@ const styles = StyleSheet.create({
   metricBox: {
     flex: 1,
     padding: 12,
-    borderRadius: 14,
+    borderRadius: 18,
     backgroundColor: COLORS.field,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
   },
   metricLabel: { fontSize: 12, fontWeight: "700", color: COLORS.muted },
   metricValue: { fontSize: 16, fontWeight: "800", color: COLORS.text, marginTop: 3 },
@@ -1680,7 +1712,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginTop: 12,
-    paddingVertical: 10,
+    paddingVertical: 9,
     paddingHorizontal: 14,
     borderRadius: 999,
     backgroundColor: COLORS.blueSoft,
@@ -1703,9 +1735,7 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
+    backgroundColor: COLORS.soft,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1762,10 +1792,8 @@ const styles = StyleSheet.create({
 
   progressBox: {
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 18,
     backgroundColor: COLORS.field,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
   },
   progressHeader: {
     flexDirection: "row",
@@ -1788,9 +1816,9 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     padding: 16,
-    borderRadius: 14,
+    borderRadius: 22,
     backgroundColor: COLORS.background,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOW_SOFT,
   },

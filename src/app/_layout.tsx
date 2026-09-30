@@ -20,6 +20,7 @@ export default function RootLayout() {
         <Stack.Screen name="conversations" />
         <Stack.Screen name="messages" />
         <Stack.Screen name="onboarding" />
+        <Stack.Screen name="seguranca" />
         <Stack.Screen name="historicopagamentos" />
       </Stack>
     </RoleProvider>

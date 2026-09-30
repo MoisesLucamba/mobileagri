@@ -14,9 +14,9 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { supabase } from '../lib/supabase';
+import Icon, { IconName } from '../components/Icon';
 import ProductCard, { Product as CardProduct } from '@/components/ProductCard';
 import PaymentSheet from '@/components/PaymentSheet';
 
@@ -107,8 +107,7 @@ type TabOption = 'all' | 'products' | 'users';
 interface Category {
   id: string;
   name: string;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  color: string;
+  icon: IconName;
 }
 
 /* =========================================================
@@ -116,11 +115,24 @@ interface Category {
 ========================================================= */
 
 const productCategories: Category[] = [
-  { id: 'all', name: 'Todos', icon: 'view-grid-outline', color: T.g700 },
-  { id: 'cereais', name: 'Cereais', icon: 'barley', color: T.goldL },
-  { id: 'frutas', name: 'Frutas', icon: 'fruit-cherries', color: T.red },
-  { id: 'legumes', name: 'Legumes', icon: 'carrot', color: T.orange },
-  { id: 'verduras', name: 'Verduras', icon: 'leaf', color: T.g600 },
+  { id: 'all', name: 'Todos', icon: 'grid' },
+  { id: 'cereais', name: 'Cereais', icon: 'layers' },
+  { id: 'frutas', name: 'Frutas', icon: 'apple' },
+  { id: 'legumes', name: 'Legumes', icon: 'leaf' },
+  { id: 'verduras', name: 'Verduras', icon: 'sprout' },
+];
+
+const SORT_OPTIONS: { value: SortOption; label: string; icon: IconName }[] = [
+  { value: 'recent', label: 'Recentes', icon: 'clock' },
+  { value: 'popular', label: 'Populares', icon: 'trending-up' },
+  { value: 'price_asc', label: 'Menor preço', icon: 'arrow-down' },
+  { value: 'price_desc', label: 'Maior preço', icon: 'arrow-up' },
+];
+
+const TABS: { id: TabOption; label: string; icon: IconName }[] = [
+  { id: 'all', label: 'Tudo', icon: 'grid' },
+  { id: 'products', label: 'Produtos', icon: 'package' },
+  { id: 'users', label: 'Pessoas', icon: 'users' },
 ];
 
 const angolaProvinces = [
@@ -197,9 +209,7 @@ export default function SearchPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // ---------------------------------------------------
   // Pagamento (substitui o antigo modal de pré-compra)
-  // ---------------------------------------------------
   const [paymentProduct, setPaymentProduct] = useState<CardProduct | null>(null);
   const [paymentVisible, setPaymentVisible] = useState(false);
 
@@ -600,7 +610,7 @@ export default function SearchPage() {
           <Text style={styles.userType}>{item.user_type || 'membro'}</Text>
         </View>
 
-        <Ionicons name="chevron-forward" size={20} color={T.faint} />
+        <Icon name="chevron-right" size={20} color={T.faint} />
       </Pressable>
     );
   };
@@ -614,11 +624,11 @@ export default function SearchPage() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={23} color={T.g700} />
+            <Icon name="chevron-left" size={23} color={T.g700} />
           </Pressable>
 
           <View style={styles.searchBox}>
-            <Ionicons name="search" size={19} color={T.muted} />
+            <Icon name="search" size={19} color={T.muted} />
 
             <TextInput
               value={searchTerm}
@@ -636,7 +646,7 @@ export default function SearchPage() {
 
             {searchTerm.length > 0 ? (
               <Pressable onPress={() => setSearchTerm('')} hitSlop={8}>
-                <Ionicons name="close-circle" size={18} color={T.faint} />
+                <Icon name="close-circle" size={18} color={T.faint} />
               </Pressable>
             ) : null}
           </View>
@@ -645,7 +655,7 @@ export default function SearchPage() {
             style={[styles.filterButton, showFilters && styles.filterButtonActive]}
             onPress={() => setShowFilters(!showFilters)}
           >
-            <Ionicons name="options-outline" size={21} color={showFilters ? '#fff' : T.g700} />
+            <Icon name="sliders" size={21} color={showFilters ? '#fff' : T.g700} />
           </Pressable>
         </View>
 
@@ -669,11 +679,7 @@ export default function SearchPage() {
                     { backgroundColor: active ? '#FFFFFF' : T.g100 },
                   ]}
                 >
-                  <MaterialCommunityIcons
-                    name={category.icon}
-                    size={17}
-                    color={T.g700}
-                  />
+                  <Icon name={category.icon} size={15} color={T.g700} />
                 </View>
 
                 <Text style={[styles.categoryText, active && styles.categoryTextActive]}>
@@ -700,21 +706,16 @@ export default function SearchPage() {
           <Text style={styles.filterLabel}>Ordenar por</Text>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sortScroll}>
-            {[
-              { value: 'recent', label: 'Recentes', icon: 'time-outline' },
-              { value: 'popular', label: 'Populares', icon: 'trending-up' },
-              { value: 'price_asc', label: 'Menor preço', icon: 'arrow-down' },
-              { value: 'price_desc', label: 'Maior preço', icon: 'arrow-up' },
-            ].map((option) => {
+            {SORT_OPTIONS.map((option) => {
               const active = sortBy === option.value;
 
               return (
                 <Pressable
                   key={option.value}
-                  onPress={() => setSortBy(option.value as SortOption)}
+                  onPress={() => setSortBy(option.value)}
                   style={[styles.sortPill, active && styles.sortPillActive]}
                 >
-                  <Ionicons name={option.icon as any} size={15} color={active ? '#fff' : T.mid} />
+                  <Icon name={option.icon} size={15} color={active ? '#fff' : T.mid} />
                   <Text style={[styles.sortText, active && styles.sortTextActive]}>
                     {option.label}
                   </Text>
@@ -735,7 +736,7 @@ export default function SearchPage() {
                   onPress={() => setSelectedProvince(active ? '' : province.id)}
                   style={[styles.provincePill, active && styles.provincePillActive]}
                 >
-                  {active ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+                  {active ? <Icon name="check" size={14} color="#fff" strokeWidth={3} /> : null}
                   <Text style={[styles.provinceText, active && styles.provinceTextActive]}>
                     {province.name}
                   </Text>
@@ -754,20 +755,16 @@ export default function SearchPage() {
 
   const renderTabs = () => (
     <View style={styles.tabsContainer}>
-      {[
-        { id: 'all', label: 'Tudo', icon: 'apps-outline' },
-        { id: 'products', label: 'Produtos', icon: 'cube-outline' },
-        { id: 'users', label: 'Pessoas', icon: 'people-outline' },
-      ].map((tab) => {
+      {TABS.map((tab) => {
         const active = activeTab === tab.id;
 
         return (
           <Pressable
             key={tab.id}
-            onPress={() => setActiveTab(tab.id as TabOption)}
+            onPress={() => setActiveTab(tab.id)}
             style={[styles.tab, active && styles.tabActive]}
           >
-            <Ionicons name={tab.icon as any} size={17} color={active ? T.g700 : T.muted} />
+            <Icon name={tab.icon} size={17} color={active ? T.g700 : T.muted} />
             <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label}</Text>
           </Pressable>
         );
@@ -813,14 +810,14 @@ export default function SearchPage() {
               {/* Diagnóstico: mostra a mensagem real do Supabase */}
               {productError ? (
                 <View style={styles.errorBox}>
-                  <Ionicons name="alert-circle-outline" size={18} color={T.red} />
+                  <Icon name="alert-circle" size={18} color={T.red} />
                   <Text style={styles.errorText}>Produtos: {productError}</Text>
                 </View>
               ) : null}
 
               {userError ? (
                 <View style={styles.errorBox}>
-                  <Ionicons name="alert-circle-outline" size={18} color={T.red} />
+                  <Icon name="alert-circle" size={18} color={T.red} />
                   <Text style={styles.errorText}>Pessoas: {userError}</Text>
                 </View>
               ) : null}
@@ -830,7 +827,7 @@ export default function SearchPage() {
                 <View style={styles.section}>
                   <View style={styles.sectionTitleRow}>
                     <View style={styles.sectionIcon}>
-                      <Ionicons name="people" size={17} color={T.g700} />
+                      <Icon name="users" size={17} color={T.g700} />
                     </View>
 
                     <Text style={styles.sectionTitle}>Agricultores e agentes</Text>
@@ -856,7 +853,7 @@ export default function SearchPage() {
                 <View style={styles.sectionHeaderProducts}>
                   <View style={styles.sectionTitleRow}>
                     <View style={[styles.sectionIcon, { backgroundColor: T.g100 }]}>
-                      <MaterialCommunityIcons name="sprout" size={18} color={T.g700} />
+                      <Icon name="sprout" size={18} color={T.g700} />
                     </View>
 
                     <Text style={styles.sectionTitle}>Produtos disponíveis</Text>
@@ -880,7 +877,7 @@ export default function SearchPage() {
               {nothingFound ? (
                 <View style={styles.emptyBox}>
                   <View style={styles.emptyIcon}>
-                    <Ionicons name="search" size={42} color={T.g700} />
+                    <Icon name="search" size={42} color={T.g700} />
                   </View>
 
                   <Text style={styles.emptyTitle}>Nada encontrado</Text>
