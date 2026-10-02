@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StatusBar, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StatusBar, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -18,7 +18,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon, { IconName } from '../components/Icon';
 
 // Ficheiros em: agrilink/assets/images/
-const LOGO = require('../../assets/images/Agrilink_SD.png');
 const IMG_INFORMAL = require('../../assets/images/agricultor.jpg');
 const IMG_FORMAL = require('../../assets/images/agrilink-community-conference.jpg');
 
@@ -229,7 +228,9 @@ export default function OnboardingScreen() {
 
         <View style={styles.topBar}>
           <View style={styles.logoPill}>
-            <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+            <View style={styles.logoMark}>
+              <Icon name="leaf" size={17} color={COLORS.ink} />
+            </View>
             <Text style={styles.brand}>AgriLink</Text>
           </View>
 
@@ -319,14 +320,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingLeft: 8,
-    paddingRight: 14,
   },
-  logo: { width: 26, height: 26 },
-  brand: { fontSize: 14, fontWeight: '800', color: COLORS.primary, letterSpacing: 0.2 },
+  logoMark: {
+    width: 32,
+    height: 32,
+    borderRadius: 11,
+    backgroundColor: COLORS.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brand: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
 
   glassPill: {
     flexDirection: 'row',

@@ -17,14 +17,11 @@ import {
     ViewStyle,
 } from 'react-native';
 import Animated, {
-    Easing,
     FadeIn,
     FadeInDown,
     interpolateColor,
     useAnimatedStyle,
     useSharedValue,
-    withRepeat,
-    withSequence,
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
@@ -35,20 +32,17 @@ import Icon, { IconName } from '../components/Icon';
 import { signInWithGoogle } from '../lib/googleAuth';
 import { supabase } from '../lib/supabase';
 
-const LOGO = require('../../assets/images/Agrilink_SD.png');
-
-// Mesma palette da página de Segurança
 const COLORS = {
-  primary: '#1F6B3A',
-  secondary: '#79C267',
-  dark: '#465044',
-  text: '#3D403A',
-  muted: '#77796F',
-  faint: '#A3A398',
-  border: '#E8E5DC',
-  field: '#F5F3EC',
-  background: '#FBFAF6',
-  soft: '#EEF0E9',
+  primary: '#16834A',
+  secondary: '#C7F16B',
+  dark: '#143529',
+  text: '#1C3428',
+  muted: '#687A6C',
+  faint: '#9AA99D',
+  border: '#DCE8DD',
+  field: '#FFFFFF',
+  background: '#F4F9F2',
+  soft: '#EAF5E8',
 };
 
 const SHADOW_SOFT = {
@@ -163,28 +157,6 @@ export default function LoginScreen() {
   const [focused, setFocused] = useState<'email' | 'password' | null>(null);
 
   const busy = loading || googleLoading;
-
-  // Logo: entra com mola e depois flutua suavemente
-  const logoScale = useSharedValue(0.6);
-  const logoOpacity = useSharedValue(0);
-  const logoFloat = useSharedValue(0);
-
-  useEffect(() => {
-    logoOpacity.value = withTiming(1, { duration: 500 });
-    logoScale.value = withSpring(1, { damping: 10, stiffness: 110 });
-    logoFloat.value = withRepeat(
-      withSequence(
-        withTiming(-6, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1,
-    );
-  }, []);
-
-  const logoStyle = useAnimatedStyle(() => ({
-    opacity: logoOpacity.value,
-    transform: [{ scale: logoScale.value }, { translateY: logoFloat.value }],
-  }));
 
   // ================================
   // GOOGLE
@@ -321,7 +293,12 @@ export default function LoginScreen() {
 
           {/* Logo */}
           <View style={styles.header}>
-            <Animated.Image source={LOGO} style={[styles.logo, logoStyle]} resizeMode="contain" />
+            <View style={styles.brandLockup}>
+              <View style={styles.brandMark}>
+                <Icon name="leaf" size={23} color="#FFFFFF" />
+              </View>
+              <Text style={styles.brand}>AgriLink</Text>
+            </View>
             <Animated.Text entering={enter(250)} style={styles.title}>
               Bem-vindo de volta
             </Animated.Text>
@@ -495,9 +472,18 @@ const styles = StyleSheet.create({
   backText: { fontSize: 15.5, fontWeight: '600', color: COLORS.text },
 
   header: { alignItems: 'center', marginTop: 8, marginBottom: 30 },
-  logo: { width: 112, height: 112 },
+  brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  brandMark: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brand: { fontSize: 18, fontWeight: '800', color: COLORS.primary },
   title: {
-    marginTop: 18,
+    marginTop: 20,
     fontSize: 28,
     fontWeight: '800',
     color: COLORS.text,
@@ -577,8 +563,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: COLORS.field,
-    borderRadius: 18,
+    backgroundColor: COLORS.soft,
+    borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
   },
