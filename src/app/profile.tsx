@@ -1022,7 +1022,7 @@ export default function ProfileScreen() {
             <View style={styles.sheetHandle} />
             <Text style={styles.settingsTitle}>Definições</Text>
 
-            <TouchableOpacity style={styles.settingsRow} activeOpacity={0.8} onPress={() => { setSettingsOpen(false); router.push("/notificacoes"); }}>
+            <TouchableOpacity style={styles.settingsRow} activeOpacity={0.8} onPress={() => { setSettingsOpen(false); router.push("/notifications"); }}>
               <View style={styles.settingsIcon}>
                 <Icon name="bell" size={18} color={COLORS.primary} />
               </View>
