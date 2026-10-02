@@ -1,22 +1,25 @@
 // app/cargas.tsx
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-  StatusBar,
-} from 'react-native';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Linking,
+    RefreshControl,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { supabase } from '../lib/supabase';
-import RoleGuard from '../components/RoleGuard';
 import Icon from '../components/Icon';
+import MapViewer, { MapViewerCoords } from '../components/MapViewer';
+import RoleGuard from '../components/RoleGuard';
+import { supabase } from '../lib/supabase';
 
 // Mesma palette da página de Segurança
 const COLORS = {
@@ -58,6 +61,10 @@ interface FreightLoad {
   status: string;
   driver_id: string | null;
   notes: string | null;
+  origin_lat?: number | null;
+  origin_lng?: number | null;
+  destination_lat?: number | null;
+  destination_lng?: number | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -79,12 +86,36 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
 const money = (v: number | null, c: string) =>
   v == null ? '—' : `${new Intl.NumberFormat('pt-AO').format(v)} ${c || 'Kz'}`;
 
+const toCoords = (lat?: number | null, lng?: number | null): MapViewerCoords | null => {
+  if (lat == null || lng == null) return null;
+  const coords = { lat: Number(lat), lng: Number(lng) };
+  return Number.isFinite(coords.lat) && Number.isFinite(coords.lng) &&
+    coords.lat >= -90 && coords.lat <= 90 && coords.lng >= -180 && coords.lng <= 180
+    ? coords
+    : null;
+};
+
+const distanceKm = (a: MapViewerCoords, b: MapViewerCoords) => {
+  const radians = (value: number) => (value * Math.PI) / 180;
+  const latDelta = radians(b.lat - a.lat);
+  const lngDelta = radians(b.lng - a.lng);
+  const arc =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(radians(a.lat)) * Math.cos(radians(b.lat)) * Math.sin(lngDelta / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(arc), Math.sqrt(1 - arc));
+};
+
 function CargasScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [userId, setUserId] = useState<string | null>(null);
   const [capacity, setCapacity] = useState<number | null>(null);
   const [loads, setLoads] = useState<FreightLoad[]>([]);
+  const [driverLocation, setDriverLocation] = useState<MapViewerCoords | null>(null);
+  const [routeLoad, setRouteLoad] = useState<FreightLoad | null>(null);
+  const [locationStatus, setLocationStatus] = useState<'loading' | 'ready' | 'denied' | 'disabled' | 'unavailable'>('loading');
+  const [locationCanAskAgain, setLocationCanAskAgain] = useState(true);
+  const [locationAttempt, setLocationAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -127,7 +158,9 @@ function CargasScreen() {
         .select('load_capacity_kg')
         .eq('id', user.id)
         .maybeSingle();
-      setCapacity(profile?.load_capacity_kg ?? null);
+      const rawCapacity = profile?.load_capacity_kg ?? user.user_metadata?.load_capacity_kg;
+      const parsedCapacity = Number(rawCapacity);
+      setCapacity(Number.isFinite(parsedCapacity) && parsedCapacity > 0 ? parsedCapacity : null);
     }
 
     await fetchLoads();
@@ -138,21 +171,95 @@ function CargasScreen() {
     bootstrap();
   }, [bootstrap]);
 
+  useEffect(() => {
+    let active = true;
+    let subscription: Location.LocationSubscription | null = null;
+    const applyLocation = (position: Location.LocationObject) => {
+      if (!active) return;
+      setDriverLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+      setLocationStatus('ready');
+    };
+
+    const trackLocation = async () => {
+      setLocationStatus('loading');
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!active) return;
+      if (!permission.granted) {
+        setLocationCanAskAgain(permission.canAskAgain);
+        setLocationStatus('denied');
+        return;
+      }
+      if (!(await Location.hasServicesEnabledAsync())) {
+        setLocationStatus('disabled');
+        return;
+      }
+
+      const lastKnown = await Location.getLastKnownPositionAsync();
+      if (lastKnown) applyLocation(lastKnown);
+
+      try {
+        applyLocation(await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+      } catch {
+        // Keep the last known location when a fresh fix is unavailable.
+      }
+
+      if (!active) return;
+      subscription = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 100, timeInterval: 30000 },
+        applyLocation,
+      );
+    };
+
+    trackLocation().catch((error) => {
+      console.warn('Não foi possível obter a localização do motorista:', error);
+      if (active) setLocationStatus('unavailable');
+    });
+    return () => {
+      active = false;
+      subscription?.remove();
+    };
+  }, [locationAttempt]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('driver-freight-loads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'freight_loads' }, () => {
+        fetchLoads();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchLoads]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchLoads();
     setRefreshing(false);
   };
 
+  const handleLocationNotice = () => {
+    if (locationStatus === 'denied' && !locationCanAskAgain) {
+      Linking.openSettings().catch(() => {});
+      return;
+    }
+    setLocationAttempt((attempt) => attempt + 1);
+  };
+
   const accept = async (load: FreightLoad) => {
     if (!requireAuth('aceitar uma carga')) return;
-    if (capacity && load.weight_kg > capacity) {
+    if (capacity == null) {
+      Alert.alert('Capacidade em falta', 'O perfil não tem uma capacidade de carga válida. Atualiza os dados do motorista antes de aceitar fretes.');
+      return;
+    }
+    if (load.weight_kg > capacity) {
       Alert.alert('Capacidade insuficiente', `Esta carga excede a sua capacidade (${capacity} kg).`);
       return;
     }
 
     setBusyId(load.id);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('freight_loads')
       .update({
         driver_id: userId,
@@ -160,11 +267,15 @@ function CargasScreen() {
         accepted_at: new Date().toISOString(),
       })
       .eq('id', load.id)
-      .is('driver_id', null);
+      .eq('status', 'open')
+      .is('driver_id', null)
+      .lte('weight_kg', capacity)
+      .select('id')
+      .maybeSingle();
     setBusyId(null);
 
-    if (error) {
-      Alert.alert('Erro', 'Não foi possível aceitar esta carga.');
+    if (error || !data) {
+      Alert.alert('Carga indisponível', 'Esta carga já foi aceite ou não corresponde à capacidade do seu veículo. Atualize a lista e tente outra.');
       return;
     }
     Alert.alert('Carga aceite', 'Boa viagem!');
@@ -193,8 +304,19 @@ function CargasScreen() {
   const visible = loads.filter((l) =>
     tab === 'minhas' ? l.driver_id === userId : l.status === 'open' && !l.driver_id
   );
+  const visibleLoads = driverLocation
+    ? [...visible].sort((a, b) => {
+        const aOrigin = toCoords(a.origin_lat, a.origin_lng);
+        const bOrigin = toCoords(b.origin_lat, b.origin_lng);
+        const aDistance = aOrigin ? distanceKm(driverLocation, aOrigin) : Number.POSITIVE_INFINITY;
+        const bDistance = bOrigin ? distanceKm(driverLocation, bOrigin) : Number.POSITIVE_INFINITY;
+        return aDistance - bDistance;
+      })
+    : visible;
 
-  const openCount = loads.filter((l) => l.status === 'open' && !l.driver_id).length;
+  const openCount = loads.filter(
+    (l) => l.status === 'open' && !l.driver_id && capacity != null && l.weight_kg <= capacity,
+  ).length;
   const mineCount = loads.filter((l) => l.driver_id && l.driver_id === userId).length;
 
   return (
@@ -242,6 +364,24 @@ function CargasScreen() {
             </View>
           </View>
 
+          {locationStatus !== 'ready' && locationStatus !== 'loading' && (
+            <View style={styles.locationNotice}>
+              <Icon name="pin" size={17} color={COLORS.gold} />
+              <Text style={styles.locationNoticeText}>
+                {locationStatus === 'denied'
+                  ? 'Ative a localização para ordenar as cargas mais próximas.'
+                  : locationStatus === 'disabled'
+                    ? 'A localização do dispositivo está desligada.'
+                    : 'Não foi possível obter a localização para ordenar as cargas.'}
+              </Text>
+              <TouchableOpacity onPress={handleLocationNotice} hitSlop={8}>
+                <Text style={styles.locationNoticeAction}>
+                  {locationStatus === 'denied' && !locationCanAskAgain ? 'Definições' : 'Tentar novamente'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Separadores */}
           <View style={styles.segment}>
             {(['disponiveis', 'minhas'] as const).map((k) => {
@@ -287,8 +427,13 @@ function CargasScreen() {
           )}
 
           {!loading &&
-            visible.map((load) => {
-              const tooHeavy = !!capacity && load.weight_kg > capacity;
+            visibleLoads.map((load) => {
+              const capacityMissing = capacity == null;
+              const tooHeavy = capacity != null && load.weight_kg > capacity;
+              const origin = toCoords(load.origin_lat, load.origin_lng);
+              const destination = toCoords(load.destination_lat, load.destination_lng);
+              const route = origin && destination ? { origin, destination } : null;
+              const distanceToOrigin = driverLocation && origin ? distanceKm(driverLocation, origin) : null;
               const st = STATUS_STYLE[load.status] || STATUS_STYLE.open;
               return (
                 <View key={load.id} style={styles.loadCard}>
@@ -335,8 +480,25 @@ function CargasScreen() {
                     </View>
                   </View>
 
+                  {route && (
+                    <TouchableOpacity
+                      style={styles.mapRouteButton}
+                      activeOpacity={0.8}
+                      onPress={() => setRouteLoad(load)}
+                    >
+                      <Icon name="map" size={16} color={COLORS.primary} />
+                      <Text style={styles.mapRouteText}>Ver rota no mapa</Text>
+                    </TouchableOpacity>
+                  )}
+
                   {/* Detalhes */}
                   <View style={styles.chipsRow}>
+                    {distanceToOrigin != null && (
+                      <View style={styles.chip}>
+                        <Icon name="navigation" size={14} color={COLORS.primary} />
+                        <Text style={styles.chipText}>≈ {distanceToOrigin.toFixed(1)} km da origem</Text>
+                      </View>
+                    )}
                     <View style={[styles.chip, tooHeavy && { backgroundColor: COLORS.goldSoft }]}>
                       <Icon name="layers" size={14} color={tooHeavy ? COLORS.gold : COLORS.muted} />
                       <Text style={[styles.chipText, tooHeavy && { color: COLORS.gold }]}>
@@ -353,10 +515,12 @@ function CargasScreen() {
                     )}
                   </View>
 
-                  {tooHeavy && (
+                  {(capacityMissing || tooHeavy) && (
                     <View style={styles.warnBox}>
                       <Icon name="alert-circle" size={15} color={COLORS.gold} />
-                      <Text style={styles.warnText}>Acima da sua capacidade de carga.</Text>
+                      <Text style={styles.warnText}>
+                        {capacityMissing ? 'Defina a capacidade do veículo para aceitar esta carga.' : 'Acima da sua capacidade de carga.'}
+                      </Text>
                     </View>
                   )}
 
@@ -364,19 +528,19 @@ function CargasScreen() {
 
                   {tab === 'disponiveis' ? (
                     <TouchableOpacity
-                      disabled={busyId === load.id || tooHeavy}
+                      disabled={busyId === load.id || tooHeavy || capacityMissing}
                       onPress={() => accept(load)}
                       activeOpacity={0.85}
-                      style={[styles.actionBtn, tooHeavy && styles.actionBtnDisabled]}
+                      style={[styles.actionBtn, (tooHeavy || capacityMissing) && styles.actionBtnDisabled]}
                     >
                       {busyId === load.id ? (
                         <ActivityIndicator color="#fff" />
                       ) : (
                         <>
                           <Text style={[styles.actionText, tooHeavy && { color: COLORS.muted }]}>
-                            {tooHeavy ? 'Capacidade insuficiente' : 'Aceitar carga'}
+                            {capacityMissing ? 'Capacidade em falta' : tooHeavy ? 'Capacidade insuficiente' : 'Aceitar carga'}
                           </Text>
-                          {!tooHeavy && <Icon name="arrow-right" size={18} color="#FFFFFF" />}
+                          {!tooHeavy && !capacityMissing && <Icon name="arrow-right" size={18} color="#FFFFFF" />}
                         </>
                       )}
                     </TouchableOpacity>
@@ -408,6 +572,17 @@ function CargasScreen() {
             })}
         </View>
       </ScrollView>
+      <MapViewer
+        visible={routeLoad != null}
+        coords={null}
+        route={routeLoad ? {
+          origin: toCoords(routeLoad.origin_lat, routeLoad.origin_lng)!,
+          destination: toCoords(routeLoad.destination_lat, routeLoad.destination_lng)!,
+        } : undefined}
+        title={routeLoad?.product_name}
+        subtitle={routeLoad ? `${routeLoad.origin_label} → ${routeLoad.destination_label}` : undefined}
+        onClose={() => setRouteLoad(null)}
+      />
     </View>
   );
 }
@@ -455,6 +630,18 @@ const styles = StyleSheet.create({
   },
   heroTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
   heroSub: { fontSize: 12.5, color: 'rgba(255,255,255,0.8)', marginTop: 3 },
+
+  locationNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    borderRadius: 14,
+    paddingVertical: 11,
+    paddingHorizontal: 13,
+    backgroundColor: COLORS.goldSoft,
+  },
+  locationNoticeText: { flex: 1, color: COLORS.text, fontSize: 12, lineHeight: 17 },
+  locationNoticeAction: { color: COLORS.primary, fontSize: 12, fontWeight: '800' },
 
   segment: {
     flexDirection: 'row',
@@ -551,6 +738,18 @@ const styles = StyleSheet.create({
   routeText: { fontSize: 14, fontWeight: '700', color: COLORS.text, marginTop: 1 },
 
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  mapRouteButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  mapRouteText: { color: COLORS.primary, fontSize: 12.5, fontWeight: '800' },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',

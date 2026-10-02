@@ -48,8 +48,8 @@ export function normalizeRole(raw: unknown): UserRole | null {
 export const ROLE_ACTIONS: Record<UserRole, RoleAction> = {
   agricultor: { route: "/publicar-produto", icon: "plus", color: "#1F6B3A", label: "Publicar produto" },
   agente: { route: "/publicar-produto", icon: "plus", color: "#B7833D", label: "Registar produto" },
-  comprador: { route: "/carrinho", icon: "cart", color: "#2F6DB5", label: "Carrinho" },
-  motorista: { route: "/cargas", icon: "truck", color: "#1F6B3A", label: "Cargas" },
+  comprador: { route: "/search", icon: "cart", color: "#2F6DB5", label: "Comprar produtos" },
+  motorista: { route: "/entregas", icon: "truck", color: "#1F6B3A", label: "Cargas" },
 };
 
 export const FALLBACK_ACTION: RoleAction = {

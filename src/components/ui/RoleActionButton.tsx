@@ -1,21 +1,20 @@
-import React from "react";
 
 import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 import { useUserRole } from "../../context/RoleContext";
+import Icon from "../Icon";
 
 import {
-  FALLBACK_ACTION,
-  ROLE_ACTIONS,
+    FALLBACK_ACTION,
+    ROLE_ACTIONS,
 } from "../../constants/roleActions";
 
 interface RoleActionButtonProps {
@@ -67,7 +66,7 @@ export default function RoleActionButton({
             size="small"
           />
         ) : (
-          <Ionicons
+          <Icon
             name={action.icon}
             size={compact ? 20 : 26}
             color="#FFFFFF"

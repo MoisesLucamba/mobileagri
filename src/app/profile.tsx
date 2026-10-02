@@ -1,4 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import * as Clipboard from "expo-clipboard";
+import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,13 +19,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Clipboard from "expo-clipboard";
 
-import { supabase } from "../lib/supabase";
 import Icon, { IconName } from "../components/Icon";
+import { supabase } from "../lib/supabase";
 
 const { height: SCREEN_H } = Dimensions.get("window");
 const AVATAR = 92;
@@ -526,7 +526,7 @@ export default function ProfileScreen() {
         .limit(1);
 
       if (existing && existing.length > 0) {
-        router.push({ pathname: "/messages/[id]", params: { id: existing[0].id } });
+        router.push({ pathname: "/messages", params: { id: existing[0].id } });
         return;
       }
 
@@ -537,7 +537,7 @@ export default function ProfileScreen() {
         .single();
 
       if (error) throw error;
-      router.push({ pathname: "/messages/[id]", params: { id: newConv.id } });
+      router.push({ pathname: "/messages", params: { id: newConv.id } });
     } catch (e) {
       console.log(e);
     }

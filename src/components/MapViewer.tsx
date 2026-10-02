@@ -1,15 +1,15 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Animated,
-  Linking,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Animated,
+    Linking,
+    Modal,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import Icon from "./Icon";
@@ -25,10 +25,12 @@ const COLORS = {
 };
 
 export type MapViewerCoords = { lat: number; lng: number };
+export type MapViewerRoute = { origin: MapViewerCoords; destination: MapViewerCoords };
 
 type Props = {
   visible: boolean;
   coords: MapViewerCoords | null;
+  route?: MapViewerRoute;
   title?: string;
   subtitle?: string;
   onClose: () => void;
@@ -62,8 +64,62 @@ function buildMapHtml(lat: number, lng: number) {
 </html>`;
 }
 
-export default function MapViewer({ visible, coords, title, subtitle, onClose }: Props) {
+function buildRouteHtml({ origin, destination }: MapViewerRoute, roadCoords: [number, number][] | null) {
+  const originPair = JSON.stringify([origin.lat, origin.lng]);
+  const destinationPair = JSON.stringify([destination.lat, destination.lng]);
+  const roadGeometry = JSON.stringify(roadCoords);
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; background: #FAF8F3; }
+    .leaflet-control-attribution { font-size: 9px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    var origin = ${originPair};
+    var destination = ${destinationPair};
+    var map = L.map('map', { zoomControl: true });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+    function endpoint(point, label, color) {
+      var icon = L.divIcon({
+        className: 'route-endpoint',
+        html: '<div style="width:34px;height:34px;border-radius:50%;border:3px solid #fff;background:' + color + ';color:#fff;display:flex;align-items:center;justify-content:center;font:bold 14px sans-serif;box-shadow:0 2px 9px #0005">' + label + '</div>',
+        iconSize: [34, 34],
+        iconAnchor: [17, 17]
+      });
+      L.marker(point, { icon: icon, zIndexOffset: 1000 }).addTo(map);
+    }
+    endpoint(origin, 'A', '#1F6B3A');
+    endpoint(destination, 'B', '#E2932F');
+    var fallback = L.polyline([origin, destination], { color: '#1F6B3A', weight: 5, dashArray: '8 9', opacity: 0.8 }).addTo(map);
+    map.fitBounds(L.latLngBounds([origin, destination]), { padding: [42, 42] });
+    var road = ${roadGeometry};
+    if (road && road.length > 1) {
+      map.removeLayer(fallback);
+      L.polyline(road, { color: '#FFFFFF', weight: 10, opacity: 0.9 }).addTo(map);
+      L.polyline(road, { color: '#1F6B3A', weight: 5, opacity: 0.95 }).addTo(map);
+      map.fitBounds(L.latLngBounds(road), { padding: [42, 42] });
+    }
+    setTimeout(function () { map.invalidateSize(); }, 300);
+  </script>
+</body>
+</html>`;
+}
+
+export default function MapViewer({ visible, coords, route, title, subtitle, onClose }: Props) {
   const enter = useRef(new Animated.Value(0)).current;
+  const [roadCoords, setRoadCoords] = useState<[number, number][] | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -72,11 +128,50 @@ export default function MapViewer({ visible, coords, title, subtitle, onClose }:
     }
   }, [visible]);
 
-  const html = useMemo(() => (coords ? buildMapHtml(coords.lat, coords.lng) : ""), [coords?.lat, coords?.lng]);
+  useEffect(() => {
+    if (!route) {
+      setRoadCoords(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 9000);
+    setRoadCoords(null);
+
+    const url =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${route.origin.lng},${route.origin.lat};${route.destination.lng},${route.destination.lat}` +
+      `?overview=full&geometries=geojson`;
+
+    fetch(url, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => {
+        const coordinates = data?.routes?.[0]?.geometry?.coordinates;
+        if (data?.code === "Ok" && coordinates?.length > 1 && !controller.signal.aborted) {
+          setRoadCoords(coordinates.map(([lng, lat]: [number, number]) => [lat, lng]));
+        }
+      })
+      .catch(() => {})
+      .finally(() => clearTimeout(timeout));
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [route?.origin.lat, route?.origin.lng, route?.destination.lat, route?.destination.lng]);
+
+  const html = useMemo(() => {
+    if (route) return buildRouteHtml(route, roadCoords);
+    return coords ? buildMapHtml(coords.lat, coords.lng) : "";
+  }, [coords?.lat, coords?.lng, route?.origin.lat, route?.origin.lng, route?.destination.lat, route?.destination.lng, roadCoords]);
 
   const openExternalMaps = () => {
-    if (!coords) return;
-    const url = `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`;
+    const url = route
+      ? `https://www.google.com/maps/dir/?api=1&origin=${route.origin.lat},${route.origin.lng}&destination=${route.destination.lat},${route.destination.lng}&travelmode=driving`
+      : coords
+        ? `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`
+        : null;
+    if (!url) return;
     Linking.openURL(url).catch(() => Alert.alert("Erro", "Não foi possível abrir o mapa."));
   };
 
@@ -102,7 +197,7 @@ export default function MapViewer({ visible, coords, title, subtitle, onClose }:
                 <Icon name="map" size={18} color={COLORS.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.title}>Localização do produto</Text>
+                <Text style={styles.title}>{route ? "Rota da entrega" : "Localização do produto"}</Text>
                 {subtitle || title ? (
                   <Text style={styles.subtitle} numberOfLines={1}>
                     {[title, subtitle].filter(Boolean).join(" · ")}
@@ -115,7 +210,7 @@ export default function MapViewer({ visible, coords, title, subtitle, onClose }:
             </View>
 
             <View style={styles.mapWrap}>
-              {coords && html ? (
+              {html ? (
                 <WebView
                   originWhitelist={["*"]}
                   source={{ html, baseUrl: "https://www.openstreetmap.org" }}
@@ -137,7 +232,7 @@ export default function MapViewer({ visible, coords, title, subtitle, onClose }:
             </View>
 
             <View style={styles.footer}>
-              <TouchableOpacity style={styles.openBtn} onPress={openExternalMaps} disabled={!coords}>
+              <TouchableOpacity style={styles.openBtn} onPress={openExternalMaps} disabled={!coords && !route}>
                 <Icon name="navigation" size={16} color="#FFFFFF" />
                 <Text style={styles.openText}>Abrir no Maps</Text>
               </TouchableOpacity>

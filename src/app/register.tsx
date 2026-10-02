@@ -1,24 +1,23 @@
 // src/app/register.tsx
+import { Picker } from '@react-native-picker/picker';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Pressable,
-  ScrollView,
-  StyleSheet,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  ScrollView,
   StatusBar,
-  ViewStyle,
   StyleProp,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  ViewStyle,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   FadeIn,
@@ -32,9 +31,11 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { supabase } from '../lib/supabase';
-import { getProvincesForCountry, getProvinceLabel, getMunicipalityLabel } from '../data/country-locations';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon, { IconName } from '../components/Icon';
+import { getMunicipalityLabel, getProvinceLabel, getProvincesForCountry } from '../data/country-locations';
+import { signInWithGoogle } from '../lib/googleAuth';
+import { supabase } from '../lib/supabase';
 
 const LOGO = require('../../assets/images/Agrilink_SD.png');
 
@@ -164,6 +165,7 @@ export default function Register() {
 
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [focused, setFocused] = useState<string | null>(null);
 
@@ -190,6 +192,7 @@ export default function Register() {
   const municipalityLabel = getMunicipalityLabel(countryCode);
   const availableMunicipalities =
     availableProvinces.find((p) => p.id === selectedProvince)?.municipalities || [];
+  const busy = loading || googleLoading;
 
   // Logo: entra com mola e flutua suavemente
   const logoScale = useSharedValue(0.6);
@@ -329,6 +332,24 @@ export default function Register() {
     setCurrentStep((s) => Math.max(s - 1, 0));
   };
 
+  const handleGoogleRegister = async () => {
+    if (!userType) {
+      setErrorMessage('Escolha o tipo de conta antes de continuar com o Google.');
+      return;
+    }
+
+    try {
+      setGoogleLoading(true);
+      setErrorMessage('');
+      const session = await signInWithGoogle(userType);
+      if (session) router.replace('/home');
+    } catch (error: any) {
+      setErrorMessage(error?.message || 'Não foi possível criar a conta com o Google.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
   const handleTopBack = () => {
     if (currentStep > 0) goPrev();
     else router.replace('/login');
@@ -459,6 +480,22 @@ export default function Register() {
                   })}
                 </View>
               </View>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleGoogleRegister}
+                disabled={busy}
+                style={[styles.googleButton, busy && styles.disabled]}
+              >
+                {googleLoading ? (
+                  <ActivityIndicator size="small" color={COLORS.dark} />
+                ) : (
+                  <>
+                    <Text style={styles.googleMark}>G</Text>
+                    <Text style={styles.googleButtonText}>Continuar com o Google</Text>
+                  </>
+                )}
+              </TouchableOpacity>
 
               <View>
                 <Text style={styles.label}>Nome completo</Text>
@@ -893,6 +930,20 @@ const styles = StyleSheet.create({
   userTypeIconActive: { backgroundColor: COLORS.primary },
   userTypeLabel: { fontSize: 12.5, fontWeight: '700', color: COLORS.mid },
   userTypeLabelActive: { color: COLORS.primary },
+
+  googleButton: {
+    minHeight: 50,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  googleMark: { fontSize: 18, fontWeight: '800', color: '#4285F4' },
+  googleButtonText: { fontSize: 14, fontWeight: '700', color: COLORS.text },
 
   radioGroup: { flexDirection: 'row', gap: 10, marginTop: 2 },
   radioChip: {

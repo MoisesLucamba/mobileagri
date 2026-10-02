@@ -1,8 +1,11 @@
-import React, { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import { useEffect } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 
 import { supabase } from '../../lib/supabase';
+
+WebBrowser.maybeCompleteAuthSession();
 
 // Rota de retorno do login com Google (agrilink://auth/callback).
 // A sessão é criada no ecrã de login; aqui só se espera por ela

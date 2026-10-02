@@ -1,41 +1,39 @@
+import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Pressable,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
-  StatusBar,
-  ViewStyle,
-  StyleProp,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    StatusBar,
+    StyleProp,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+    ViewStyle,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import Animated, {
+    Easing,
+    FadeIn,
+    FadeInDown,
+    interpolateColor,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withSequence,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
-import Animated, {
-  Easing,
-  FadeIn,
-  FadeInDown,
-  interpolateColor,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 
-import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
-
-import { supabase } from '../lib/supabase';
 import Icon, { IconName } from '../components/Icon';
+import { signInWithGoogle } from '../lib/googleAuth';
+import { supabase } from '../lib/supabase';
 
 const LOGO = require('../../assets/images/Agrilink_SD.png');
 
@@ -62,50 +60,6 @@ const SHADOW_SOFT = {
 };
 
 const enter = (delay: number) => FadeInDown.delay(delay).springify().damping(18).stiffness(140);
-
-WebBrowser.maybeCompleteAuthSession();
-
-// ================================
-// OAUTH
-// ================================
-const parseUrlParams = (url: string) => {
-  const out: Record<string, string> = {};
-  const [beforeHash, hash = ''] = url.split('#');
-  const query = beforeHash.split('?')[1] ?? '';
-
-  [query, hash].forEach((part) =>
-    new URLSearchParams(part).forEach((value, key) => {
-      out[key] = value;
-    })
-  );
-
-  return out;
-};
-
-const createSessionFromUrl = async (url: string) => {
-  const p = parseUrlParams(url);
-
-  if (p.error || p.error_description) {
-    throw new Error(p.error_description || p.error);
-  }
-
-  if (p.code) {
-    const { data, error } = await supabase.auth.exchangeCodeForSession(p.code);
-    if (error) throw error;
-    return data.session;
-  }
-
-  if (p.access_token && p.refresh_token) {
-    const { data, error } = await supabase.auth.setSession({
-      access_token: p.access_token,
-      refresh_token: p.refresh_token,
-    });
-    if (error) throw error;
-    return data.session;
-  }
-
-  return null;
-};
 
 // ================================
 // COMPONENTES
@@ -238,35 +192,8 @@ export default function LoginScreen() {
   const handleGoogleLogin = async () => {
     try {
       setGoogleLoading(true);
-
-      const redirectTo = makeRedirectUri({
-        scheme: 'agrilink',
-        path: 'auth/callback',
-      });
-
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo,
-          skipBrowserRedirect: true,
-          queryParams: { prompt: 'select_account' },
-        },
-      });
-
-      if (error) throw error;
-      if (!data?.url) throw new Error('Não foi possível iniciar o Google.');
-
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-
-      if (result.type !== 'success') return;
-
-      const session = await createSessionFromUrl(result.url);
-
-      if (session) {
-        router.replace('/home');
-      } else {
-        Alert.alert('Erro', 'Não foi possível concluir a sessão com o Google.');
-      }
+      const session = await signInWithGoogle();
+      if (session) router.replace('/home');
     } catch (error: any) {
       console.log('Erro Google:', error);
       Alert.alert(
