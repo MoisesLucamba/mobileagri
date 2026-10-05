@@ -31,26 +31,26 @@ type HistoryItem = {
   isDemo?: boolean;
 };
 
+// Mesma paleta do ProductCard
 const COLORS = {
-  primary: "#1F6B3A",
-  secondary: "#79C267",
-  deep: "#343B32",
-  text: "#3D403A",
-  muted: "#77796F",
-  faint: "#A3A398",
-  border: "#E8E5DC",
-  field: "#F5F3EC",
-  background: "#FBFAF6",
-  soft: "#EEF0E9",
-  gold: "#B7833D",
-  goldSoft: "#F5EEDF",
-  blue: "#637F9C",
-  blueSoft: "#EDF1F5",
+  primary: "#2E8B4F",
+  primaryDark: "#25703F",
+  tint: "#E9F5EC",
+  text: "#16231C",
+  muted: "#78877D",
+  faint: "#AEB8AC",
+  line: "#E8ECE6",
+  field: "#F4F6F2",
+  background: "#F9FAF8",
+  white: "#FFFFFF",
+  gold: "#B9741A",
+  goldSoft: "#FBEBD3",
+  blue: "#2F6DB5",
+  blueSoft: "#E8EFF8",
   orange: "#DB6B1F",
   orangeSoft: "#F8EEE5",
-  danger: "#B95E54",
-  dangerSoft: "#F6ECE9",
-  white: "#FFFFFF",
+  danger: "#DD5138",
+  dangerSoft: "#FBEAE6",
 };
 
 const ROLE_INFO: Record<
@@ -69,7 +69,7 @@ const ROLE_INFO: Record<
     activity: "Vendas",
     icon: "leaf-outline",
     accent: COLORS.primary,
-    soft: COLORS.soft,
+    soft: COLORS.tint,
   },
   agente: {
     label: "Agente",
@@ -495,12 +495,12 @@ export default function HistoryPurchasesPaymentsScreen() {
         <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
         <View style={styles.header}>
           <Pressable onPress={goBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Voltar">
-            <Ionicons name="arrow-back" size={20} color={COLORS.text} />
+            <Ionicons name="arrow-back" size={19} color={COLORS.text} />
           </Pressable>
           <Text style={styles.headerTitle}>Histórico</Text>
         </View>
         <View style={styles.loadingState}>
-          <View style={styles.emptyIcon}><Ionicons name="person-circle-outline" size={30} color={COLORS.primary} /></View>
+          <View style={styles.emptyIcon}><Ionicons name="person-circle-outline" size={28} color={COLORS.primary} /></View>
           <Text style={styles.emptyTitle}>Perfil sem função</Text>
           <Text style={styles.mutedText}>O histórico está disponível para comprador, agricultor, agente e motorista.</Text>
         </View>
@@ -514,7 +514,7 @@ export default function HistoryPurchasesPaymentsScreen() {
 
       <View style={styles.header}>
         <Pressable onPress={goBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Voltar">
-          <Ionicons name="arrow-back" size={20} color={COLORS.text} />
+          <Ionicons name="arrow-back" size={19} color={COLORS.text} />
         </Pressable>
         <View style={styles.headerTextBlock}>
           <Text style={styles.headerTitle}>Histórico</Text>
@@ -526,7 +526,7 @@ export default function HistoryPurchasesPaymentsScreen() {
           accessibilityRole="button"
           accessibilityLabel="Atualizar histórico"
         >
-          {refreshing ? <ActivityIndicator size="small" color={COLORS.primary} /> : <Ionicons name="refresh-outline" size={20} color={COLORS.primary} />}
+          {refreshing ? <ActivityIndicator size="small" color={COLORS.primary} /> : <Ionicons name="refresh-outline" size={19} color={COLORS.primary} />}
         </Pressable>
       </View>
 
@@ -566,7 +566,7 @@ export default function HistoryPurchasesPaymentsScreen() {
         <View style={styles.summaryCard}>
           <View style={styles.summaryTopRow}>
             <View style={styles.summaryIcon}>
-              <Ionicons name="wallet-outline" size={19} color={COLORS.primary} />
+              <Ionicons name="wallet-outline" size={18} color={COLORS.primary} />
             </View>
             <Text style={styles.summaryLabel}>{isDemo ? "Movimento de exemplo" : "Movimento registado"}</Text>
           </View>
@@ -607,7 +607,7 @@ export default function HistoryPurchasesPaymentsScreen() {
               return (
                 <View key={`${item.kind}-${item.id}`} style={styles.historyCard}>
                   <View style={[styles.itemIcon, item.kind === "payment" ? styles.paymentIcon : styles.activityIcon]}>
-                    <Ionicons name={itemIcon(item.kind)} size={19} color={COLORS.primary} />
+                    <Ionicons name={itemIcon(item.kind)} size={19} color={item.kind === "payment" ? COLORS.gold : COLORS.primary} />
                   </View>
                   <View style={styles.itemMain}>
                     <View style={styles.itemTitleRow}>
@@ -629,7 +629,7 @@ export default function HistoryPurchasesPaymentsScreen() {
           </View>
         ) : (
           <View style={styles.emptyCard}>
-            <View style={styles.emptyIcon}><Ionicons name={filter === "payments" ? "card-outline" : "receipt-outline"} size={28} color={COLORS.primary} /></View>
+            <View style={styles.emptyIcon}><Ionicons name={filter === "payments" ? "card-outline" : "receipt-outline"} size={26} color={COLORS.primary} /></View>
             <Text style={styles.emptyTitle}>Ainda sem registos</Text>
             <Text style={styles.emptyBody}>Quando houver um movimento real nesta categoria, ele aparecerá aqui.</Text>
           </View>
@@ -641,6 +641,15 @@ export default function HistoryPurchasesPaymentsScreen() {
   );
 }
 
+// Cartão plano: borda fina e sombra quase nula, igual ao ProductCard
+const FLAT = {
+  shadowColor: "#16231C",
+  shadowOpacity: 0.04,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 1 },
+  elevation: 1,
+};
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: COLORS.background },
   header: {
@@ -650,89 +659,112 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 14,
     backgroundColor: COLORS.background,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
   },
+  // Mesmo botão do ícone de mapa do ProductCard
   backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.field,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    backgroundColor: COLORS.tint,
     marginRight: 12,
   },
   headerTextBlock: { flex: 1 },
-  headerTitle: { color: COLORS.text, fontSize: 21, fontWeight: "800" },
+  headerTitle: { color: COLORS.text, fontSize: 19, fontWeight: "900" },
   headerSubtitle: { color: COLORS.muted, fontSize: 12, marginTop: 2 },
   refreshButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.soft,
+    backgroundColor: COLORS.tint,
     marginLeft: 10,
   },
-  content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 32 },
-  roleRow: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
-  roleIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  content: { paddingHorizontal: 18, paddingTop: 4, paddingBottom: 32 },
+  roleRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  roleIcon: { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   roleTextBlock: { flex: 1, marginLeft: 10 },
   roleCaption: { color: COLORS.muted, fontSize: 11 },
-  roleName: { color: COLORS.text, fontSize: 14, fontWeight: "800", marginTop: 1 },
-  demoBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 12, backgroundColor: COLORS.goldSoft },
+  roleName: { color: COLORS.text, fontSize: 14, fontWeight: "900", marginTop: 1 },
+  demoBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: COLORS.goldSoft },
   demoBadgeText: { color: COLORS.gold, fontSize: 9, fontWeight: "900", letterSpacing: 0.3 },
-  liveBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 12, backgroundColor: COLORS.soft },
+  liveBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6, backgroundColor: COLORS.tint },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primary },
-  liveBadgeText: { color: COLORS.primary, fontSize: 9, fontWeight: "900", letterSpacing: 0.3 },
-  notice: { flexDirection: "row", alignItems: "center", gap: 8, padding: 11, borderRadius: 14, marginBottom: 14 },
+  liveBadgeText: { color: COLORS.primaryDark, fontSize: 9, fontWeight: "900", letterSpacing: 0.3 },
+  notice: { flexDirection: "row", alignItems: "center", gap: 8, padding: 10, borderRadius: 10, marginBottom: 12 },
   noticeDemo: { backgroundColor: COLORS.goldSoft },
-  noticeInfo: { backgroundColor: COLORS.soft },
+  noticeInfo: { backgroundColor: COLORS.tint },
   noticeText: { flex: 1, color: COLORS.muted, fontSize: 11, lineHeight: 16 },
-  summaryCard: { padding: 17, borderRadius: 20, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, marginBottom: 22 },
+  summaryCard: {
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    marginBottom: 20,
+    ...FLAT,
+  },
   summaryTopRow: { flexDirection: "row", alignItems: "center", gap: 9 },
-  summaryIcon: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.soft },
+  summaryIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.tint },
   summaryLabel: { color: COLORS.muted, fontSize: 12, fontWeight: "700" },
-  summaryAmount: { color: COLORS.text, fontSize: 25, fontWeight: "900", marginTop: 10 },
+  summaryAmount: { color: COLORS.text, fontSize: 24, fontWeight: "900", marginTop: 10 },
   summaryFoot: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
   sectionHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  sectionTitle: { color: COLORS.text, fontSize: 17, fontWeight: "800" },
+  sectionTitle: { color: COLORS.text, fontSize: 16, fontWeight: "900" },
   sectionSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
-  countBadge: { minWidth: 28, height: 28, paddingHorizontal: 7, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.soft },
-  countText: { color: COLORS.primary, fontSize: 11, fontWeight: "900" },
+  countBadge: { minWidth: 28, height: 24, paddingHorizontal: 7, borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.tint },
+  countText: { color: COLORS.primaryDark, fontSize: 11, fontWeight: "900" },
   filterRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-  filterChip: { paddingHorizontal: 14, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.field, borderWidth: 1, borderColor: COLORS.border },
+  filterChip: { paddingHorizontal: 14, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.line },
   filterChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  filterChipText: { color: COLORS.muted, fontSize: 12, fontWeight: "700" },
+  filterChipText: { color: COLORS.text, fontSize: 12, fontWeight: "800" },
   filterChipTextActive: { color: COLORS.white },
-  list: { gap: 9 },
-  historyCard: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 17, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
-  itemIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  activityIcon: { backgroundColor: COLORS.soft },
+  list: { gap: 10 },
+  historyCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    ...FLAT,
+  },
+  itemIcon: { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  activityIcon: { backgroundColor: COLORS.tint },
   paymentIcon: { backgroundColor: COLORS.goldSoft },
   itemMain: { flex: 1, minWidth: 0, marginLeft: 10, marginRight: 8 },
   itemTitleRow: { flexDirection: "row", alignItems: "center", gap: 5 },
-  itemTitle: { flexShrink: 1, color: COLORS.text, fontSize: 13, fontWeight: "800" },
+  itemTitle: { flexShrink: 1, color: COLORS.text, fontSize: 13.5, fontWeight: "900" },
   miniDemo: { color: COLORS.gold, fontSize: 8, fontWeight: "900" },
-  itemSubtitle: { color: COLORS.muted, fontSize: 10, marginTop: 3 },
+  itemSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
   itemMetaRow: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 6 },
-  itemDate: { color: COLORS.faint, fontSize: 9 },
-  statusPill: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
-  statusComplete: { backgroundColor: COLORS.soft },
+  itemDate: { color: COLORS.faint, fontSize: 10 },
+  statusPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  statusComplete: { backgroundColor: COLORS.tint },
   statusPending: { backgroundColor: COLORS.goldSoft },
   statusCancelled: { backgroundColor: COLORS.dangerSoft },
-  statusText: { fontSize: 9, fontWeight: "800" },
-  statusCompleteText: { color: COLORS.primary },
+  statusText: { fontSize: 10, fontWeight: "800" },
+  statusCompleteText: { color: COLORS.primaryDark },
   statusPendingText: { color: COLORS.gold },
   statusCancelledText: { color: COLORS.danger },
-  itemAmount: { color: COLORS.text, fontSize: 11, fontWeight: "900", textAlign: "right" },
-  emptyCard: { alignItems: "center", paddingHorizontal: 24, paddingVertical: 34, borderRadius: 20, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
-  emptyIcon: { width: 58, height: 58, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.soft, marginBottom: 12 },
-  emptyTitle: { color: COLORS.text, fontSize: 16, fontWeight: "800", textAlign: "center" },
+  itemAmount: { color: COLORS.text, fontSize: 12, fontWeight: "900", textAlign: "right" },
+  emptyCard: {
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    ...FLAT,
+  },
+  emptyIcon: { width: 56, height: 56, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.tint, marginBottom: 12 },
+  emptyTitle: { color: COLORS.text, fontSize: 15, fontWeight: "900", textAlign: "center" },
   emptyBody: { color: COLORS.muted, fontSize: 12, textAlign: "center", lineHeight: 18, marginTop: 6 },
-  footerNote: { color: COLORS.faint, fontSize: 10, lineHeight: 15, textAlign: "center", marginTop: 17 },
+  footerNote: { color: COLORS.faint, fontSize: 10, lineHeight: 15, textAlign: "center", marginTop: 16 },
   loadingState: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   mutedText: { color: COLORS.muted, fontSize: 13, textAlign: "center", lineHeight: 19, marginTop: 8 },
 });

@@ -5,7 +5,6 @@ import {
   Dimensions,
   Easing,
   Image,
-  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -19,10 +18,13 @@ import Icon from "./Icon";
 import MapViewer from "./MapViewer";
 
 const COLORS = {
-  primary: "#1F6B3A",
+  primary: "#2E8B4F",
+  primaryDark: "#25703F",
+  tint: "#E9F5EC",
   text: "#16231C",
   muted: "#78877D",
   faint: "#AEB8AC",
+  line: "#E8ECE6",
   red: "#DD5138",
   white: "#FFFFFF",
 };
@@ -36,6 +38,7 @@ export type Comment = {
   comment_text: string;
   created_at: string;
   user_name?: string;
+  user_avatar?: string | null;
 };
 
 export type Product = {
@@ -43,11 +46,13 @@ export type Product = {
   product_type: string;
   description?: string | null;
   quantity: number;
-  harvest_date: string;
+  harvest_date?: string | null;
   price: number;
   province_id: string;
   municipality_id: string;
   farmer_name: string;
+  /** URL da foto de perfil do produtor (opcional) */
+  user_avatar?: string | null;
   contact: string;
   photos: string[];
   status: string;
@@ -75,6 +80,14 @@ function formatKz(price?: number) {
   return `${value.toLocaleString("pt-AO")} Kz`;
 }
 
+function formatHarvestDate(value?: string | null) {
+  if (!value) return null;
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Intl.DateTimeFormat('pt-AO', { day: '2-digit', month: 'short', year: 'numeric' })
+    .format(new Date(year, month - 1, day));
+}
+
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diffMs / 60000);
@@ -85,6 +98,51 @@ function timeAgo(iso: string) {
   const days = Math.floor(hours / 24);
   if (days < 7) return `há ${days} d`;
   return new Date(iso).toLocaleDateString("pt-AO");
+}
+
+function initialsOf(name?: string) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  const first = parts[0][0] || "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toUpperCase();
+}
+
+/* ------------------------------- avatar -------------------------------- */
+
+function Avatar({ uri, name, size = 40 }: { uri?: string | null; name?: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const showImage = !!uri && !failed;
+  const initials = initialsOf(name);
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        overflow: "hidden",
+        backgroundColor: COLORS.tint,
+        borderWidth: 1,
+        borderColor: COLORS.line,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {showImage ? (
+        <Image
+          source={{ uri: uri as string }}
+          style={{ width: "100%", height: "100%" }}
+          resizeMode="cover"
+          onError={() => setFailed(true)}
+        />
+      ) : initials ? (
+        <Text style={{ color: COLORS.primaryDark, fontWeight: "800", fontSize: size * 0.36 }}>{initials}</Text>
+      ) : (
+        <Icon name="leaf" size={size * 0.45} color={COLORS.primary} />
+      )}
+    </View>
+  );
 }
 
 /* ---------------------------- micro-animação ---------------------------- */
@@ -101,7 +159,7 @@ function PressableScale({ children, className, onPress, disabled }: PressableSca
   const to = (v: number) =>
     Animated.spring(sc, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
   return (
-    <Pressable onPress={onPress} disabled={disabled} onPressIn={() => to(0.94)} onPressOut={() => to(1)}>
+    <Pressable onPress={onPress} disabled={disabled} onPressIn={() => to(0.95)} onPressOut={() => to(1)}>
       <Animated.View style={{ transform: [{ scale: sc }] }}>
         <View className={className}>{children}</View>
       </Animated.View>
@@ -130,7 +188,7 @@ export default function ProductCard({
   useEffect(() => {
     Animated.timing(enter, {
       toValue: 1,
-      duration: 420,
+      duration: 380,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
@@ -250,59 +308,51 @@ export default function ProductCard({
     }
   };
 
-  const callFarmer = () => {
-    if (!product.contact) return;
-    Linking.openURL(`tel:${product.contact.replace(/\s/g, "")}`).catch(() => {});
-  };
-
   const canSend = commentText.trim().length > 0 && !sendingComment;
 
   return (
     <>
       <Animated.View
         style={[
-          s.cardShadow,
+          s.card,
           {
             opacity: enter,
-            transform: [
-              { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) },
-              { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1] }) },
-            ],
+            transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
           },
         ]}
       >
-        <View className="overflow-hidden rounded-[22px] bg-white">
-          {/* Cabeçalho: produtor */}
-          <View className="flex-row items-center gap-[10px] p-3">
-            <View className="h-9 w-9 items-center justify-center rounded-full bg-[#EAF3EA]">
-              <Icon name="leaf" size={18} color={COLORS.primary} />
-            </View>
+        <View className="overflow-hidden rounded-[12px] bg-white">
+          {/* Cabeçalho: foto + nome do produtor */}
+          <View className="flex-row items-center gap-[10px] px-3 pb-[10px] pt-3">
+            <Avatar uri={product.user_avatar} name={product.farmer_name} size={40} />
 
             <View className="flex-1">
               <View className="flex-row items-center gap-1">
-                <Text className="shrink text-[13.5px] font-extrabold text-[#16231C]" numberOfLines={1}>
+                <Text className="shrink text-[14px] font-extrabold text-[#16231C]" numberOfLines={1}>
                   {product.farmer_name}
                 </Text>
                 {product.user_verified ? <Icon name="check-circle" size={14} color={COLORS.primary} /> : null}
+                {isMock ? (
+                  <View className="ml-1 rounded-[4px] bg-[#FBEBD3] px-[6px] py-[2px]">
+                    <Text className="text-[9px] font-black text-[#B9741A]">DEMO</Text>
+                  </View>
+                ) : null}
               </View>
-              <Text className="mt-px text-[11px] text-[#78877D]" numberOfLines={1}>
-                {product.municipality_id}, {product.province_id} · {timeAgo(product.created_at)}
-              </Text>
+              <View className="mt-[2px] flex-row items-center gap-1">
+                <Icon name="pin" size={11} color={COLORS.faint} />
+                <Text className="shrink text-[11.5px] text-[#78877D]" numberOfLines={1}>
+                  {product.municipality_id}, {product.province_id} · {timeAgo(product.created_at)}
+                </Text>
+              </View>
             </View>
 
-            <PressableScale className="h-8 w-8 items-center justify-center rounded-full bg-[#FAF8F3]" onPress={openMap}>
-              <Icon name="map" size={16} color={hasLocation ? COLORS.primary : COLORS.faint} />
+            <PressableScale className="h-9 w-9 items-center justify-center rounded-[10px] bg-[#E9F5EC]" onPress={openMap}>
+              <Icon name="map" size={17} color={hasLocation ? COLORS.primary : COLORS.faint} />
             </PressableScale>
-
-            {isMock ? (
-              <View className="ml-1.5 rounded-full bg-[#FBEBD3] px-2 py-[3px]">
-                <Text className="text-[9px] font-black text-[#B9741A]">DEMO</Text>
-              </View>
-            ) : null}
           </View>
 
           {/* Imagens */}
-          <View className="w-full bg-[#FAF8F3]" style={{ aspectRatio: 4 / 3 }}>
+          <View className="mx-3 overflow-hidden rounded-[8px] bg-[#F4F6F2]" style={{ aspectRatio: 4 / 3 }}>
             {photos.length > 0 ? (
               <Image source={{ uri: photos[photoIndex] }} className="h-full w-full" resizeMode="cover" />
             ) : (
@@ -314,13 +364,13 @@ export default function ProductCard({
             {photos.length > 1 ? (
               <>
                 <TouchableOpacity
-                  className="absolute left-[10px] top-1/2 -mt-4 h-8 w-8 items-center justify-center rounded-full bg-[rgba(22,35,28,0.45)]"
+                  className="absolute left-2 top-1/2 -mt-4 h-8 w-8 items-center justify-center rounded-[8px] bg-[rgba(22,35,28,0.45)]"
                   onPress={prevPhoto}
                 >
                   <Icon name="chevron-left" size={18} color={COLORS.white} />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className="absolute right-[10px] top-1/2 -mt-4 h-8 w-8 items-center justify-center rounded-full bg-[rgba(22,35,28,0.45)]"
+                  className="absolute right-2 top-1/2 -mt-4 h-8 w-8 items-center justify-center rounded-[8px] bg-[rgba(22,35,28,0.45)]"
                   onPress={nextPhoto}
                 >
                   <Icon name="chevron-right" size={18} color={COLORS.white} />
@@ -331,8 +381,8 @@ export default function ProductCard({
                       key={i}
                       className={
                         i === photoIndex
-                          ? "h-[6px] w-4 rounded-full bg-white"
-                          : "h-[6px] w-[6px] rounded-full bg-[rgba(255,255,255,0.5)]"
+                          ? "h-[5px] w-4 rounded-full bg-white"
+                          : "h-[5px] w-[5px] rounded-full bg-[rgba(255,255,255,0.55)]"
                       }
                     />
                   ))}
@@ -340,21 +390,33 @@ export default function ProductCard({
               </>
             ) : null}
 
-            <View className="absolute left-[10px] top-[10px] rounded-[10px] bg-[rgba(22,35,28,0.55)] px-2 py-1">
+            {/* Quantidade */}
+            <View className="absolute left-2 top-2 rounded-[6px] bg-[rgba(22,35,28,0.6)] px-2 py-1">
               <Text className="text-[10.5px] font-bold text-white">
                 {Number(product.quantity).toLocaleString("pt-AO")} kg disponíveis
               </Text>
             </View>
+
+            {/* Contador de fotos */}
+            {photos.length > 1 ? (
+              <View className="absolute right-2 top-2 rounded-[6px] bg-[rgba(22,35,28,0.6)] px-2 py-1">
+                <Text className="text-[10.5px] font-bold text-white">
+                  {photoIndex + 1}/{photos.length}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Info */}
-          <View className="p-[14px]">
+          <View className="px-3 pb-3 pt-3">
             <View className="flex-row items-center justify-between">
               <Text className="mr-[10px] shrink text-[17px] font-black text-[#16231C]">{product.product_type}</Text>
-              <Text className="text-base font-black text-[#1F6B3A]">
-                {formatKz(product.price)}
-                <Text className="text-[11px] font-semibold text-[#78877D]">/kg</Text>
-              </Text>
+              <View className="rounded-[8px] bg-[#E9F5EC] px-[10px] py-[5px]">
+                <Text className="text-[14px] font-black text-[#25703F]">
+                  {formatKz(product.price)}
+                  <Text className="text-[11px] font-semibold text-[#5B7A66]"> /kg</Text>
+                </Text>
+              </View>
             </View>
 
             {product.description ? (
@@ -363,25 +425,30 @@ export default function ProductCard({
               </Text>
             ) : null}
 
+            {formatHarvestDate(product.harvest_date) ? (
+              <View className="mt-2 flex-row items-center gap-[6px]">
+                <Icon name="clock" size={14} color={COLORS.primary} />
+                <Text className="text-[11.5px] font-semibold text-[#5B7A66]">
+                  Colheita prevista: {formatHarvestDate(product.harvest_date)}
+                </Text>
+              </View>
+            ) : null}
+
             {/* Ações */}
-            <View className="mt-3 flex-row items-center gap-4">
-              <PressableScale className="flex-row items-center gap-1" onPress={toggleLike} disabled={liking}>
+            <View className="mt-3 flex-row items-center gap-[18px] border-t border-[#E8ECE6] pt-3">
+              <PressableScale className="flex-row items-center gap-[5px]" onPress={toggleLike} disabled={liking}>
                 <Icon
                   name="heart"
-                  size={19}
+                  size={20}
                   filled={product.is_liked}
                   color={product.is_liked ? COLORS.red : COLORS.muted}
                 />
-                <Text className="text-xs font-bold text-[#78877D]">{product.likes_count}</Text>
+                <Text className="text-[12.5px] font-bold text-[#78877D]">{product.likes_count}</Text>
               </PressableScale>
 
-              <PressableScale className="flex-row items-center gap-1" onPress={loadComments}>
-                <Icon name="message" size={17} color={COLORS.muted} />
-                <Text className="text-xs font-bold text-[#78877D]">{product.comments?.length ?? 0}</Text>
-              </PressableScale>
-
-              <PressableScale className="flex-row items-center gap-1" onPress={callFarmer}>
-                <Icon name="phone" size={17} color={COLORS.muted} />
+              <PressableScale className="flex-row items-center gap-[5px]" onPress={loadComments}>
+                <Icon name="message" size={18} color={showComments ? COLORS.primary : COLORS.muted} />
+                <Text className="text-[12.5px] font-bold text-[#78877D]">{product.comments?.length ?? 0}</Text>
               </PressableScale>
 
               <TouchableOpacity activeOpacity={0.85} onPress={() => onOpenPreOrder(product)} style={s.buyBtn}>
@@ -392,21 +459,29 @@ export default function ProductCard({
 
             {/* Comentários */}
             {showComments ? (
-              <View className="mt-3 border-t border-[#EAE4D6] pt-[10px]">
+              <View className="mt-3 border-t border-[#E8ECE6] pt-3">
                 {(product.comments || []).length === 0 ? (
                   <Text className="mb-2 text-xs italic text-[#AEB8AC]">Sê o primeiro a comentar.</Text>
                 ) : (
                   product.comments.map((c) => (
-                    <View key={c.id} className="mb-2">
-                      <Text className="text-[12.5px] text-[#16231C]">{c.comment_text}</Text>
-                      <Text className="mt-px text-[10px] text-[#AEB8AC]">{timeAgo(c.created_at)}</Text>
+                    <View key={c.id} className="mb-[10px] flex-row items-start gap-2">
+                      <Avatar uri={c.user_avatar} name={c.user_name} size={28} />
+                      <View className="flex-1 rounded-[8px] bg-[#F4F7F3] px-[10px] py-[7px]">
+                        {c.user_name ? (
+                          <Text className="text-[11.5px] font-extrabold text-[#16231C]" numberOfLines={1}>
+                            {c.user_name}
+                          </Text>
+                        ) : null}
+                        <Text className="text-[12.5px] text-[#16231C]">{c.comment_text}</Text>
+                        <Text className="mt-px text-[10px] text-[#AEB8AC]">{timeAgo(c.created_at)}</Text>
+                      </View>
                     </View>
                   ))
                 )}
 
                 <View className="mt-1 flex-row items-center gap-2">
                   <TextInput
-                    className="h-10 flex-1 rounded-full border border-[#EAE4D6] bg-[#FAF8F3] px-[14px] text-[13px] text-[#16231C]"
+                    className="h-10 flex-1 rounded-[10px] border border-[#E8ECE6] bg-[#F9FAF8] px-3 text-[13px] text-[#16231C]"
                     value={commentText}
                     onChangeText={setCommentText}
                     placeholder="Escreve um comentário..."
@@ -448,19 +523,21 @@ export default function ProductCard({
   );
 }
 
-// Estilos nativos: sombras e botões verdes principais.
+// Estilos nativos: cartão plano (borda fina, sombra quase nula) e botões verdes.
 const s = StyleSheet.create({
-  cardShadow: {
+  card: {
     width: CARD_WIDTH,
     alignSelf: "center",
-    marginBottom: 18,
-    borderRadius: 22,
+    marginBottom: 14,
+    borderRadius: 12,
     backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: COLORS.line,
     shadowColor: "#16231C",
-    shadowOpacity: 0.07,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
   buyBtn: {
     marginLeft: "auto",
@@ -469,20 +546,15 @@ const s = StyleSheet.create({
     gap: 6,
     height: 38,
     paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: "#1F6B3A",
-    shadowColor: "#1F6B3A",
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
   },
   buyText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   sendBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
-    backgroundColor: "#1F6B3A",
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
   },

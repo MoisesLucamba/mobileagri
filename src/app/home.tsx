@@ -1,31 +1,33 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Easing,
-  Image,
-  LayoutAnimation,
-  Modal,
-  Platform,
-  Pressable,
-  RefreshControl,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  Text,
-  UIManager,
-  View,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Easing,
+    Image,
+    LayoutAnimation,
+    Modal,
+    Platform,
+    Pressable,
+    RefreshControl,
+    SafeAreaView,
+    ScrollView,
+    StatusBar,
+    Text,
+    UIManager,
+    View,
 } from "react-native";
 
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { supabase } from "../lib/supabase";
+import PaymentSheet from "@/components/PaymentSheet";
+import ProductCard, { Product } from "@/components/ProductCard";
+import AgrilinkAdCard from "../components/AgrilinkAdCard";
 import BottomToolbar from "../components/BottomToolbar";
 import Icon, { IconName } from "../components/Icon";
-import ProductCard, { Product } from "@/components/ProductCard";
-import PaymentSheet from "@/components/PaymentSheet";
+import { AgrilinkAd, isAgrilinkAdmin, loadAgrilinkAds, rateAgrilinkAd } from "../lib/agrilinkAds";
+import { supabase } from "../lib/supabase";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -33,10 +35,15 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 
 const Logo = require("../assets/images/logo.jpeg");
 
+// Paleta partilhada com o ProductCard (verde um pouco mais claro)
 const COLORS = {
-  primary: "#1F6B3A",
+  primary: "#2E8B4F",
+  primaryDark: "#25703F",
+  tint: "#E9F5EC",
   text: "#16231C",
   muted: "#78877D",
+  line: "#E8ECE6",
+  bg: "#F6F8F5",
   white: "#FFFFFF",
 };
 
@@ -194,7 +201,7 @@ function PressableScale({
   children,
   onPress,
   className,
-  scale = 0.95,
+  scale = 0.96,
 }: {
   children: React.ReactNode;
   onPress?: () => void;
@@ -227,8 +234,8 @@ function CategoryPill({
   return (
     <PressableScale
       onPress={onPress}
-      className={`h-[36px] flex-row items-center gap-[6px] rounded-full border px-[14px] ${
-        selected ? "border-[#1F6B3A] bg-[#1F6B3A]" : "border-[#EAE4D6] bg-white"
+      className={`h-[36px] flex-row items-center gap-[6px] rounded-[10px] border px-[12px] ${
+        selected ? "border-[#2E8B4F] bg-[#2E8B4F]" : "border-[#E8ECE6] bg-white"
       }`}
     >
       <Icon name={category.icon} size={15} color={selected ? COLORS.white : COLORS.muted} />
@@ -241,11 +248,17 @@ function CategoryPill({
 
 /* ================================== HOME ================================== */
 
+type HomeFeedItem =
+  | { key: string; type: 'product'; product: Product }
+  | { key: string; type: 'ad'; ad: AgrilinkAd };
+
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [ads, setAds] = useState<AgrilinkAd[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasRealProducts, setHasRealProducts] = useState(false);
@@ -325,6 +338,16 @@ export default function HomeScreen() {
       setCurrentUserId(userId);
       await loadUnreadNotifications(userId);
 
+      const [adminAllowed, activeAds] = await Promise.all([
+        userId ? isAgrilinkAdmin().catch(() => false) : Promise.resolve(false),
+        loadAgrilinkAds({ activeOnly: true, userId }).catch((adsError) => {
+          console.warn('Não foi possível carregar publicidade:', adsError);
+          return [] as AgrilinkAd[];
+        }),
+      ]);
+      setIsAdmin(adminAllowed);
+      setAds(activeAds);
+
       const { data, error } = await supabase
         .from("products")
         .select("*")
@@ -354,6 +377,30 @@ export default function HomeScreen() {
         return;
       }
       setHasRealProducts(true);
+
+      // Fotos de perfil dos produtores (tabela "users", coluna "avatar_url" —
+      // a mesma que o ecrã de perfil atualiza). Falha em silêncio e o cartão
+      // mostra as iniciais.
+      try {
+        const userIds = Array.from(new Set(loadedProducts.map((p) => p.user_id).filter(Boolean)));
+        if (userIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("users")
+            .select("id, avatar_url")
+            .in("id", userIds);
+          if (profiles) {
+            const avatarById = new Map<string, string | null>(
+              profiles.map((p: any) => [p.id, p.avatar_url ?? null])
+            );
+            loadedProducts = loadedProducts.map((p) => ({
+              ...p,
+              user_avatar: p.user_avatar ?? avatarById.get(p.user_id) ?? null,
+            }));
+          }
+        }
+      } catch (avatarError) {
+        console.log("Erro ao carregar fotos de perfil:", avatarError);
+      }
 
       const productIds = loadedProducts.map((p) => p.id);
       const { data: likes } = await supabase
@@ -399,6 +446,14 @@ export default function HomeScreen() {
     setProducts((current) => current.map((p) => (p.id === updated.id ? updated : p)));
   }, []);
 
+  const handleAdRating = useCallback(async (adId: string, rating: number) => {
+    const result = await rateAgrilinkAd(adId, rating);
+    if (!result) return;
+    setAds((current) => current.map((ad) => ad.id === adId
+      ? { ...ad, current_rating: rating, rating_average: result.rating_average, rating_count: result.rating_count }
+      : ad));
+  }, []);
+
   const selectCategory = (id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelectedCategory(id);
@@ -428,6 +483,34 @@ export default function HomeScreen() {
 
     return result;
   }, [products, search, selectedCategory]);
+
+  const feedItems = useMemo<HomeFeedItem[]>(() => {
+    const includeAds = selectedCategory === 'all' && !search.trim();
+    const rankedAds = includeAds
+      ? [...ads].sort((a, b) => {
+          const scoreA = Number(a.rating_average || 0) + Math.log2(Number(a.rating_count || 0) + 1) * 0.025;
+          const scoreB = Number(b.rating_average || 0) + Math.log2(Number(b.rating_count || 0) + 1) * 0.025;
+          return scoreB - scoreA || b.created_at.localeCompare(a.created_at);
+        })
+      : [];
+    const rotation = rankedAds.length > 1
+      ? Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000)) % rankedAds.length
+      : 0;
+    const rotatedAds = rankedAds.slice(rotation).concat(rankedAds.slice(0, rotation));
+    const items: HomeFeedItem[] = [];
+    let adIndex = 0;
+
+    filteredProducts.forEach((product, index) => {
+      items.push({ key: `product:${product.id}`, type: 'product', product });
+      const isSlot = (index + 1) % 4 === 0 || (index === filteredProducts.length - 1 && filteredProducts.length < 4);
+      if (isSlot && adIndex < rotatedAds.length) {
+        const ad = rotatedAds[adIndex++];
+        items.push({ key: `ad:${ad.id}`, type: 'ad', ad });
+      }
+    });
+
+    return items;
+  }, [ads, filteredProducts, search, selectedCategory]);
 
   const openPayment = (product: Product) => {
     if (product.id.startsWith("mock-")) {
@@ -477,23 +560,23 @@ export default function HomeScreen() {
   /* ---------------------------------- render ---------------------------------- */
 
   return (
-    <SafeAreaView className="flex-1 bg-[#FAF8F3]">
-      <StatusBar barStyle="dark-content" backgroundColor="#FAF8F3" />
+    <SafeAreaView className="flex-1 bg-[#F6F8F5]">
+      <StatusBar barStyle="dark-content" backgroundColor="#F6F8F5" />
 
-      <View className="flex-1 bg-[#FAF8F3]">
+      <View className="flex-1 bg-[#F6F8F5]">
         {/* HEADER */}
         <View
-          className="z-10 flex-row items-center justify-between rounded-b-[24px] bg-white px-[18px] pb-3"
+          className="z-10 flex-row items-center justify-between border-b border-[#E8ECE6] bg-white px-[18px] pb-3"
           style={{ paddingTop: insets.top + 14, height: 78 + insets.top }}
         >
           <Image source={Logo} style={{ width: 138, height: 48 }} resizeMode="contain" />
 
-          <View className="flex-row items-center gap-[10px]">
+          <View className="flex-row items-center gap-2">
             <PressableScale
               onPress={openCountryModal}
-              className="flex-row items-center gap-2 rounded-[14px] bg-[#EAF3EA] px-[11px] py-[7px]"
+              className="flex-row items-center gap-2 rounded-[10px] bg-[#E9F5EC] px-[10px] py-[6px]"
             >
-              <Text className="text-[20px]">{selectedCountry.flag}</Text>
+              <Text className="text-[19px]">{selectedCountry.flag}</Text>
               <View>
                 <Text className="text-[10px] font-semibold text-[#78877D]">País</Text>
                 <Text className="text-[12px] font-extrabold text-[#16231C]">{selectedCountry.name}</Text>
@@ -503,7 +586,7 @@ export default function HomeScreen() {
 
             <PressableScale
               onPress={() => router.push("/notifications")}
-              className="h-10 w-10 items-center justify-center rounded-full bg-[#EAF3EA]"
+              className="h-10 w-10 items-center justify-center rounded-[10px] bg-[#E9F5EC]"
             >
               <Icon name="bell" size={20} color={COLORS.text} />
               {unreadNotifications > 0 ? (
@@ -520,21 +603,28 @@ export default function HomeScreen() {
         {/* sombra suave que aparece ao fazer scroll */}
         <Animated.View
           pointerEvents="none"
-          className="absolute left-0 right-0 z-[9] h-[14px] bg-[rgba(22,35,28,0.06)]"
+          className="absolute left-0 right-0 z-[9] h-[10px] bg-[rgba(22,35,28,0.05)]"
           style={{ top: 78 + insets.top, opacity: headerBorder }}
         />
 
         {/* FEED */}
         <Animated.FlatList
-          data={filteredProducts}
-          keyExtractor={(item: Product) => String(item.id)}
-          renderItem={({ item }: { item: Product }) => (
+          data={feedItems}
+          keyExtractor={(item: HomeFeedItem) => item.key}
+          renderItem={({ item }: { item: HomeFeedItem }) => item.type === 'product' ? (
             <ProductCard
-              product={item}
+              product={item.product}
               currentUserId={currentUserId}
               onProductUpdate={handleProductUpdate}
               onOpenPreOrder={openPayment}
               onRequireLogin={requireLogin}
+            />
+          ) : (
+            <AgrilinkAdCard
+              ad={item.ad}
+              currentUserId={currentUserId}
+              onRequireLogin={requireLogin}
+              onRate={handleAdRating}
             />
           )}
           contentContainerStyle={{ paddingTop: 4, paddingBottom: 120 + insets.bottom }}
@@ -549,12 +639,25 @@ export default function HomeScreen() {
               {/* Pesquisa */}
               <PressableScale
                 onPress={() => router.push("/search")}
-                className="mx-[18px] mb-[22px] mt-5 h-[48px] flex-row items-center gap-[10px] rounded-[16px] bg-[#F1EFE8] px-4"
+                className="mx-[18px] mb-5 mt-4 h-[46px] flex-row items-center gap-[10px] rounded-[12px] border border-[#E8ECE6] bg-white px-4"
                 scale={0.98}
               >
                 <Icon name="search" size={17} color={COLORS.muted} />
                 <Text className="text-[15px] text-[#78877D]">Pesquisar produtos</Text>
               </PressableScale>
+
+              {isAdmin && (
+                <PressableScale
+                  onPress={() => router.push('/dashboard' as any)}
+                  className="mx-[18px] mb-4 min-h-[42px] flex-row items-center justify-between rounded-[10px] border border-[#CFE9D6] bg-white px-3"
+                >
+                  <View className="flex-row items-center gap-2">
+                    <Icon name="bar-chart" size={16} color={COLORS.primary} />
+                    <Text className="text-[12px] font-extrabold text-[#25703F]">Dashboard administrativo</Text>
+                  </View>
+                  <Icon name="arrow-right" size={15} color={COLORS.primary} />
+                </PressableScale>
+              )}
 
               {/* Categorias */}
               <View className="mb-3 flex-row items-center justify-between px-[18px]">
@@ -577,32 +680,34 @@ export default function HomeScreen() {
                 ))}
               </ScrollView>
 
-              {/* Título das publicações */}
+              {/* Título do feed */}
               <View className="mb-3 mt-6 flex-row items-center justify-between px-[18px]">
-                <View>
+                <View className="shrink pr-2">
                   <View className="flex-row items-center gap-2">
-                    <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">Publicações</Text>
+                    <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">Feed</Text>
                     {!hasRealProducts ? (
-                      <View className="rounded-full border border-[#F1D1A5] bg-[#FBEBD3] px-2 py-[3px]">
+                      <View className="rounded-[4px] border border-[#F1D1A5] bg-[#FBEBD3] px-[6px] py-[2px]">
                         <Text className="text-[8px] font-black tracking-wider text-[#B9741A]">DEMO</Text>
                       </View>
                     ) : null}
                   </View>
                   <Text className="mt-0.5 text-[12px] text-[#78877D]">
-                    {hasRealProducts ? "Publicações dos agricultores" : "Exemplos de produtos disponíveis"}
+                    {hasRealProducts ? 'Produtos e publicidade identificada' : 'Produtos de demonstração e publicidade'}
                   </Text>
                 </View>
 
-                <View className="h-[26px] min-w-[30px] items-center justify-center rounded-full bg-[#D9EEDD] px-[9px]">
-                  <Text className="text-[12px] font-extrabold text-[#1F6B3A]">{filteredProducts.length}</Text>
+                <View className="min-h-[26px] items-center justify-center rounded-[8px] bg-[#E9F5EC] px-[9px] py-1">
+                  <Text className="text-[10px] font-extrabold text-[#25703F]">
+                    {filteredProducts.length} produtos · {feedItems.filter((item) => item.type === 'ad').length} anúncios
+                  </Text>
                 </View>
               </View>
             </View>
           }
           ListEmptyComponent={
             <View className="items-center px-[30px] pb-10 pt-[45px]">
-              <View className="h-[86px] w-[86px] items-center justify-center rounded-[28px] bg-[#D9EEDD]">
-                <Icon name="sprout" size={44} color={COLORS.primary} />
+              <View className="h-[80px] w-[80px] items-center justify-center rounded-[16px] bg-[#E9F5EC]">
+                <Icon name="sprout" size={40} color={COLORS.primary} />
               </View>
               <Text className="mt-[15px] text-center text-[17px] font-extrabold text-[#16231C]">
                 Nenhum produto encontrado
@@ -615,9 +720,9 @@ export default function HomeScreen() {
                   selectCategory("all");
                   setSearch("");
                 }}
-                className="mt-[17px] rounded-[14px] bg-[#D9EEDD] px-5 py-[11px]"
+                className="mt-[17px] rounded-[10px] bg-[#E9F5EC] px-5 py-[11px]"
               >
-                <Text className="text-[13px] font-extrabold text-[#1F6B3A]">Limpar filtros</Text>
+                <Text className="text-[13px] font-extrabold text-[#25703F]">Limpar filtros</Text>
               </PressableScale>
             </View>
           }
@@ -641,13 +746,13 @@ export default function HomeScreen() {
         <Animated.View className="flex-1 justify-end bg-[rgba(15,20,17,0.5)]" style={{ opacity: sheetAnim }}>
           <Pressable style={{ flex: 1 }} onPress={closeCountryModal} />
           <Animated.View
-            className="rounded-t-[28px] bg-white px-5 pb-[30px] pt-[13px]"
+            className="rounded-t-[16px] bg-white px-5 pb-[30px] pt-[13px]"
             style={{
               transform: [{ translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [300, 0] }) }],
             }}
           >
-            <View className="mb-5 h-[5px] w-10 self-center rounded-full bg-[#EAE4D6]" />
-            <Text className="text-[21px] font-extrabold text-[#16231C]">Escolha o país</Text>
+            <View className="mb-5 h-[4px] w-10 self-center rounded-full bg-[#E8ECE6]" />
+            <Text className="text-[20px] font-extrabold text-[#16231C]">Escolha o país</Text>
             <Text className="mb-5 mt-[5px] text-[13px] text-[#78877D]">
               Selecione onde pretende comprar ou vender.
             </Text>
@@ -662,11 +767,11 @@ export default function HomeScreen() {
                     setSelectedCountry(country);
                     closeCountryModal();
                   }}
-                  className={`mb-[10px] min-h-[70px] flex-row items-center rounded-[19px] border px-3 ${
-                    selected ? "border-[#8FCB9B] bg-[#EAF3EA]" : "border-[#EAE4D6] bg-white"
+                  className={`mb-[10px] min-h-[66px] flex-row items-center rounded-[12px] border px-3 ${
+                    selected ? "border-[#9ED5AC] bg-[#E9F5EC]" : "border-[#E8ECE6] bg-white"
                   }`}
                 >
-                  <View className="h-[46px] w-[46px] items-center justify-center rounded-[14px] bg-[#FAF8F3]">
+                  <View className="h-[44px] w-[44px] items-center justify-center rounded-[10px] bg-[#F6F8F5]">
                     <Text className="text-[26px]">{country.flag}</Text>
                   </View>
                   <View className="ml-3 flex-1">
@@ -674,7 +779,7 @@ export default function HomeScreen() {
                     <Text className="mt-[3px] text-[11px] text-[#78877D]">Moeda: {country.currency}</Text>
                   </View>
                   {selected ? (
-                    <View className="h-7 w-7 items-center justify-center rounded-full bg-[#1F6B3A]">
+                    <View className="h-7 w-7 items-center justify-center rounded-full bg-[#2E8B4F]">
                       <Icon name="check" size={16} color={COLORS.white} strokeWidth={3} />
                     </View>
                   ) : null}

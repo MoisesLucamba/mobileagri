@@ -33,18 +33,19 @@ import {
   watchPayment,
 } from "../lib/payments";
 
+// Paleta partilhada com Home, ProductCard, Pesquisa e Perfil
 const COLORS = {
-  primary: "#1F6B3A",
-  primaryDark: "#154D29",
-  primarySoft: "#EAF3EA",
+  primary: "#2E8B4F",
+  primaryDark: "#25703F",
+  primarySoft: "#E9F5EC",
   accent: "#E2932F",
   accentSoft: "#FBF1E1",
   text: "#16231C",
   muted: "#78877D",
   faint: "#AEB8AC",
-  canvas: "#FAF8F3",
+  canvas: "#F6F8F5",
   surface: "#FFFFFF",
-  border: "#EAE4D6",
+  border: "#E8ECE6",
   red: "#DD5138",
   redSoft: "#FBECE9",
 };
@@ -83,7 +84,7 @@ function PressableScale({ children, style, onPress, disabled, ...rest }: any) {
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      onPressIn={() => to(0.95)}
+      onPressIn={() => to(0.96)}
       onPressOut={() => to(1)}
       {...rest}
     >
@@ -97,9 +98,9 @@ function FadeSlide({ children, delay = 0, style }: any) {
   useEffect(() => {
     Animated.timing(v, {
       toValue: 1,
-      duration: 460,
+      duration: 420,
       delay,
-      easing: Easing.out(Easing.back(1.1)),
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
   }, []);
@@ -109,7 +110,7 @@ function FadeSlide({ children, delay = 0, style }: any) {
         style,
         {
           opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: "clamp" }),
-          transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [22, 0] }) }],
+          transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
         },
       ]}
     >
@@ -211,7 +212,7 @@ function MethodCard({ p, active, available, onPress }: any) {
         style={[
           styles.methodIcon,
           active && { backgroundColor: COLORS.primary },
-          { transform: [{ scale: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }] },
+          { transform: [{ scale: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] }) }] },
         ]}
       >
         <Icon name={providerIcon(p)} size={19} color={active ? "#FFFFFF" : COLORS.primary} />
@@ -728,7 +729,7 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
   // Pequeno "pulso" quando o total muda
   useEffect(() => {
     Animated.sequence([
-      Animated.timing(bump, { toValue: 1.08, duration: 100, useNativeDriver: true }),
+      Animated.timing(bump, { toValue: 1.06, duration: 100, useNativeDriver: true }),
       Animated.spring(bump, { toValue: 1, friction: 4, useNativeDriver: true }),
     ]).start();
   }, [estimate]);
@@ -990,7 +991,7 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
       <FadeSlide delay={240}>
         <View style={styles.totalBox}>
           <Text style={styles.totalLabel}>Total estimado</Text>
-          <Animated.View style={{ transform: [{ scale: bump }] }}>
+          <Animated.View style={{ transform: [{ scale: bump }], alignSelf: "flex-start" }}>
             <AnimatedAmount value={estimate} style={styles.totalValue} />
           </Animated.View>
           <View style={styles.hintRow}>
@@ -1184,106 +1185,107 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
   );
 }
 
+/* Estilos — planos, cantos pequenos, bordas finas, sombras mínimas */
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: "flex-end", alignItems: "center" },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(22,35,28,0.55)" },
   sheet: {
     backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     paddingTop: 8,
     shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: -6 },
-    elevation: 24,
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8,
   },
-  grabber: { alignSelf: "center", width: 42, height: 5, borderRadius: 3, backgroundColor: COLORS.border, marginBottom: 10 },
+  grabber: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.border, marginBottom: 10 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 10 },
   title: { fontSize: 19, fontWeight: "800", color: COLORS.text },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.canvas },
+  closeBtn: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.canvas },
 
   stepWrap: { paddingBottom: 12 },
   segRow: { flexDirection: "row", gap: 6 },
   segment: { flex: 1, height: 4, borderRadius: 2, backgroundColor: COLORS.border, overflow: "hidden" },
   segmentFill: { height: "100%", borderRadius: 2, backgroundColor: COLORS.primary },
   stepLabel: { flex: 1, marginTop: 6, fontSize: 10.5, fontWeight: "700", color: COLORS.faint },
-  stepLabelActive: { color: COLORS.primary },
+  stepLabelActive: { color: COLORS.primaryDark },
 
-  productRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 16, backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
-  productIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primarySoft },
+  productRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  productIcon: { width: 44, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primarySoft },
   productName: { fontSize: 15, fontWeight: "800", color: COLORS.text },
   productSub: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
 
   label: { fontSize: 12, fontWeight: "700", color: COLORS.muted, marginTop: 18, marginBottom: 8 },
-  input: { height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: COLORS.border, paddingHorizontal: 14, fontSize: 14.5, color: COLORS.text, backgroundColor: COLORS.surface },
+  input: { height: 48, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, paddingHorizontal: 14, fontSize: 14.5, color: COLORS.text, backgroundColor: COLORS.surface },
   inputFocus: { borderColor: COLORS.primary, backgroundColor: COLORS.primarySoft },
 
-  mapBtn: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 14, borderWidth: 1.5, borderColor: COLORS.border, backgroundColor: COLORS.canvas, marginTop: 10 },
+  mapBtn: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.canvas, marginTop: 10 },
   mapBtnOn: { borderColor: COLORS.primary, backgroundColor: COLORS.primarySoft },
-  mapBtnIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primarySoft },
+  mapBtnIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primarySoft },
   mapBtnIconOn: { backgroundColor: COLORS.primary },
   mapBtnTitle: { fontSize: 13.5, fontWeight: "800", color: COLORS.text },
   mapBtnSub: { fontSize: 11.5, color: COLORS.muted, marginTop: 2 },
 
   qtyRow: { flexDirection: "row", alignItems: "center", gap: 14 },
-  qtyBtn: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  qtyBtn: { width: 44, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
   qtyValue: { minWidth: 52, textAlign: "center", fontSize: 22, fontWeight: "900", color: COLORS.text },
   qtyHint: { fontSize: 11.5, color: COLORS.faint, marginLeft: "auto" },
   chipRow: { gap: 8, paddingTop: 12 },
-  chip: { paddingHorizontal: 14, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  chip: { paddingHorizontal: 13, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
   chipOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   chipText: { fontSize: 12.5, fontWeight: "700", color: COLORS.text },
   chipTextOn: { color: "#FFFFFF" },
 
-  method: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 16, borderWidth: 1.5, borderColor: COLORS.border, marginBottom: 10, backgroundColor: COLORS.surface },
+  method: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, marginBottom: 10, backgroundColor: COLORS.surface },
   methodActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primarySoft },
   methodOff: { opacity: 0.45 },
-  methodIcon: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primarySoft },
+  methodIcon: { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primarySoft },
   methodTitle: { fontSize: 14, fontWeight: "800", color: COLORS.text },
   methodSub: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
 
-  totalBox: { marginTop: 18, padding: 16, borderRadius: 18, backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  totalBox: { marginTop: 18, padding: 16, borderRadius: 12, backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
   totalLabel: { fontSize: 12, color: COLORS.muted, fontWeight: "600" },
-  totalValue: { fontSize: 28, fontWeight: "900", color: COLORS.text, marginTop: 2 },
+  totalValue: { fontSize: 28, fontWeight: "900", color: COLORS.primaryDark, marginTop: 2 },
   hintRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
   totalHint: { flex: 1, fontSize: 11.5, color: COLORS.faint },
 
-  error: { marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: COLORS.redSoft, color: COLORS.red, fontSize: 12.5, lineHeight: 18, overflow: "hidden" },
+  error: { marginTop: 14, padding: 12, borderRadius: 10, backgroundColor: COLORS.redSoft, color: COLORS.red, fontSize: 12.5, lineHeight: 18, overflow: "hidden" },
 
-  primaryBtn: { height: 54, borderRadius: 16, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primary, marginTop: 18, alignSelf: "stretch", shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  primaryBtn: { height: 52, borderRadius: 12, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primary, marginTop: 18, alignSelf: "stretch" },
   primaryBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
   btnDisabled: { opacity: 0.45 },
-  secondaryBtn: { height: 46, borderRadius: 14, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: COLORS.primary, marginTop: 14, alignSelf: "stretch" },
-  secondaryBtnText: { color: COLORS.primary, fontSize: 13.5, fontWeight: "800" },
+  secondaryBtn: { height: 46, borderRadius: 10, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.primary, marginTop: 14, alignSelf: "stretch" },
+  secondaryBtnText: { color: COLORS.primaryDark, fontSize: 13.5, fontWeight: "800" },
   linkBtn: { paddingVertical: 14, alignSelf: "stretch" },
   linkText: { color: COLORS.muted, fontSize: 13.5, fontWeight: "700" },
 
-  previewBtn: { flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", padding: 10, borderRadius: 12, backgroundColor: COLORS.accentSoft },
+  previewBtn: { flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", padding: 10, borderRadius: 10, backgroundColor: COLORS.accentSoft },
   previewText: { color: COLORS.accent, fontSize: 11.5, fontWeight: "700" },
-  previewTag: { alignSelf: "center", color: COLORS.accent, fontSize: 10.5, fontWeight: "800", backgroundColor: COLORS.accentSoft, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginBottom: 8, overflow: "hidden" },
+  previewTag: { alignSelf: "center", color: COLORS.accent, fontSize: 10.5, fontWeight: "800", backgroundColor: COLORS.accentSoft, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginBottom: 8, overflow: "hidden" },
 
   center: { alignItems: "center", paddingTop: 12 },
   centerInner: { alignItems: "center", alignSelf: "stretch" },
   centerTitle: { fontSize: 17, fontWeight: "800", color: COLORS.text, textAlign: "center", marginTop: 10 },
   centerBody: { fontSize: 13, color: COLORS.muted, textAlign: "center", lineHeight: 19, marginTop: 6 },
   bigAmount: { fontSize: 32, fontWeight: "900", color: COLORS.text, textAlign: "center", marginTop: 4 },
-  resultIcon: { width: 76, height: 76, borderRadius: 28, alignItems: "center", justifyContent: "center" },
+  resultIcon: { width: 76, height: 76, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   burstWrap: { width: 160, height: 140, alignItems: "center", justifyContent: "center" },
   particle: { position: "absolute", width: 9, height: 9, borderRadius: 5 },
   successRing: { position: "absolute", width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: COLORS.primary },
 
-  countdown: { alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: COLORS.accentSoft },
+  countdown: { alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: COLORS.accentSoft },
   countdownText: { fontSize: 12, fontWeight: "800", color: COLORS.accent },
 
-  refBox: { marginTop: 16, padding: 16, borderRadius: 18, backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
+  refBox: { marginTop: 16, padding: 16, borderRadius: 12, backgroundColor: COLORS.canvas, borderWidth: 1, borderColor: COLORS.border },
   refIntro: { fontSize: 13, color: COLORS.muted, lineHeight: 19, marginBottom: 6 },
   refLine: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
   refKey: { fontSize: 12.5, color: COLORS.muted },
   refVal: { fontSize: 16, fontWeight: "900", color: COLORS.text, letterSpacing: 0.5 },
 
   waitRow: { alignItems: "center", marginTop: 26, marginBottom: 8 },
-  waitText: { fontSize: 13, fontWeight: "700", color: COLORS.primary, textAlign: "center", marginBottom: 14 },
+  waitText: { fontSize: 13, fontWeight: "700", color: COLORS.primaryDark, textAlign: "center", marginBottom: 14 },
   dotsRow: { flexDirection: "row", gap: 7, height: 18, alignItems: "flex-end" },
   waitDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: COLORS.primary },
 
@@ -1306,11 +1308,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: COLORS.primary,
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
   },
   processingTitle: { fontSize: 18, fontWeight: "800", color: COLORS.text, textAlign: "center", marginTop: 18 },
   processingBody: { fontSize: 12, color: COLORS.faint, textAlign: "center" },

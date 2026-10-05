@@ -21,39 +21,29 @@ import ProductCard, { Product as CardProduct } from '@/components/ProductCard';
 import PaymentSheet from '@/components/PaymentSheet';
 
 /* =========================================================
-   TEMA
+   TEMA — mesma paleta do Home e do ProductCard
 ========================================================= */
 
 const T = {
   g900: '#173D24',
-  g700: '#1F6B3A',
-  g600: '#1F6B3A',
-  g500: '#1F6B3A',
+  g700: '#25703F', // texto verde sobre fundos claros
+  g600: '#2E8B4F', // verde principal
+  g500: '#2E8B4F',
   g400: '#79C267',
-  g300: '#C7D6C4',
-  g100: '#EEF0E9',
-  g50: '#F5F3EC',
+  g300: '#9ED5AC',
+  g100: '#E9F5EC', // fundo suave verde
+  g50: '#F1F5F0',
 
-  e700: '#5C4A3A',
-  e500: '#7B6652',
-  e300: '#A0846A',
-  ePale: '#F3ECE4',
-
-  ink: '#3D403A',
+  ink: '#16231C',
   mid: '#4D554B',
-  muted: '#77796F',
-  faint: '#A3A398',
+  muted: '#78877D',
+  faint: '#AEB8AC',
 
-  canvas: '#FBFAF6',
+  canvas: '#F6F8F5',
   white: '#FFFFFF',
-  rule: '#E8E5DC',
+  rule: '#E8ECE6',
 
   gold: '#B7833D',
-  goldL: '#D3A557',
-
-  blue: '#637F9C',
-  purple: '#7654B8',
-  orange: '#D8782E',
   red: '#B95E54',
 };
 
@@ -91,6 +81,7 @@ interface Product {
   is_liked?: boolean;
   comments?: any[];
   user_verified?: boolean;
+  user_avatar?: string | null;
 }
 
 interface UserResult {
@@ -238,6 +229,7 @@ export default function SearchPage() {
     province_id: item.province_id || item.province || '',
     municipality_id: item.municipality_id || item.location || '',
     farmer_name: getSellerName(item),
+    user_avatar: item.user_avatar ?? null,
     contact: item.contact || '',
     photos: Array.isArray(item.photos) && item.photos.length > 0
       ? item.photos
@@ -380,11 +372,33 @@ export default function SearchPage() {
         }
       }
 
+      // Fotos de perfil dos produtores: uma query só (tenta "users" e depois "profiles").
+      const avatarById: Record<string, string | null> = {};
+      const sellerIds = Array.from(
+        new Set(products.map((p) => p.user_id || p.seller_id).filter(Boolean) as string[])
+      );
+
+      if (sellerIds.length > 0) {
+        for (const table of ['users', 'profiles']) {
+          const { data: rows, error: avatarError } = await supabase
+            .from(table)
+            .select('id, avatar_url')
+            .in('id', sellerIds);
+
+          if (!avatarError && rows) {
+            for (const row of rows as any[]) avatarById[row.id] = row.avatar_url ?? null;
+            break;
+          }
+        }
+      }
+
       return products.map((product) => ({
         ...product,
         likes_count: likesByProduct[product.id] || 0,
         is_liked: likedByMe.has(product.id),
         comments: commentsByProduct[product.id] || [],
+        user_avatar:
+          product.user_avatar ?? avatarById[(product.user_id || product.seller_id) as string] ?? null,
       }));
     },
     []
@@ -624,11 +638,11 @@ export default function SearchPage() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Icon name="chevron-left" size={23} color={T.g700} />
+            <Icon name="chevron-left" size={22} color={T.g700} />
           </Pressable>
 
           <View style={styles.searchBox}>
-            <Icon name="search" size={19} color={T.muted} />
+            <Icon name="search" size={18} color={T.muted} />
 
             <TextInput
               value={searchTerm}
@@ -655,7 +669,7 @@ export default function SearchPage() {
             style={[styles.filterButton, showFilters && styles.filterButtonActive]}
             onPress={() => setShowFilters(!showFilters)}
           >
-            <Icon name="sliders" size={21} color={showFilters ? '#fff' : T.g700} />
+            <Icon name="sliders" size={20} color={showFilters ? '#fff' : T.g700} />
           </Pressable>
         </View>
 
@@ -673,14 +687,7 @@ export default function SearchPage() {
                 onPress={() => setSelectedCategory(category.id)}
                 style={[styles.categoryPill, active && styles.categoryPillActive]}
               >
-                <View
-                  style={[
-                    styles.categoryIcon,
-                    { backgroundColor: active ? '#FFFFFF' : T.g100 },
-                  ]}
-                >
-                  <Icon name={category.icon} size={15} color={T.g700} />
-                </View>
+                <Icon name={category.icon} size={15} color={active ? '#fff' : T.muted} />
 
                 <Text style={[styles.categoryText, active && styles.categoryTextActive]}>
                   {category.name}
@@ -783,7 +790,7 @@ export default function SearchPage() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={T.canvas} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor={T.white} translucent={false} />
 
       <FlatList
         keyboardShouldPersistTaps="handled"
@@ -852,7 +859,7 @@ export default function SearchPage() {
               {showProductsSection && sortedProducts.length > 0 ? (
                 <View style={styles.sectionHeaderProducts}>
                   <View style={styles.sectionTitleRow}>
-                    <View style={[styles.sectionIcon, { backgroundColor: T.g100 }]}>
+                    <View style={styles.sectionIcon}>
                       <Icon name="sprout" size={18} color={T.g700} />
                     </View>
 
@@ -868,7 +875,7 @@ export default function SearchPage() {
               {loading ? (
                 <View style={styles.loadingBox}>
                   <View style={styles.loadingCircle}>
-                    <ActivityIndicator size="large" color={T.g700} />
+                    <ActivityIndicator size="large" color={T.g600} />
                   </View>
                   <Text style={styles.loadingText}>A procurar...</Text>
                 </View>
@@ -877,7 +884,7 @@ export default function SearchPage() {
               {nothingFound ? (
                 <View style={styles.emptyBox}>
                   <View style={styles.emptyIcon}>
-                    <Icon name="search" size={42} color={T.g700} />
+                    <Icon name="search" size={38} color={T.g600} />
                   </View>
 
                   <Text style={styles.emptyTitle}>Nada encontrado</Text>
@@ -913,7 +920,7 @@ export default function SearchPage() {
 }
 
 /* =========================================================
-   ESTILOS
+   ESTILOS — planos, cantos pequenos, bordas finas
 ========================================================= */
 
 const styles = StyleSheet.create({
@@ -921,11 +928,10 @@ const styles = StyleSheet.create({
   listContent: { paddingBottom: 30 },
 
   header: {
-    backgroundColor: T.canvas,
+    backgroundColor: T.white,
     paddingTop: 40,
-    paddingBottom: 8,
+    paddingBottom: 10,
     zIndex: 20,
-    elevation: 2,
     borderBottomWidth: 1,
     borderBottomColor: T.rule,
   },
@@ -933,61 +939,58 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    gap: 9,
+    gap: 8,
     minHeight: 42,
   },
   backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: T.g50,
+    backgroundColor: T.g100,
   },
   searchBox: {
     flex: 1,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F5F3EC',
+    borderRadius: 12,
+    backgroundColor: T.canvas,
+    borderWidth: 1,
+    borderColor: T.rule,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
   },
   searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: T.ink, paddingVertical: 0 },
   filterButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: T.g50,
+    backgroundColor: T.g100,
   },
-  filterButtonActive: { backgroundColor: T.g700 },
+  filterButtonActive: { backgroundColor: T.g600 },
 
-  categoriesContainer: { paddingHorizontal: 16, paddingTop: 8, gap: 7 },
+  categoriesContainer: { paddingHorizontal: 16, paddingTop: 10, gap: 8 },
   categoryPill: {
     height: 34,
-    paddingHorizontal: 10,
-    borderRadius: 17,
+    paddingHorizontal: 12,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F3EC',
+    gap: 6,
+    backgroundColor: T.white,
+    borderWidth: 1,
+    borderColor: T.rule,
   },
-  categoryPillActive: { backgroundColor: T.g600 },
-  categoryIcon: {
-    width: 23,
-    height: 23,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 4,
-  },
-  categoryText: { fontSize: 13, fontWeight: '700', color: T.mid },
+  categoryPillActive: { backgroundColor: T.g600, borderColor: T.g600 },
+  categoryText: { fontSize: 12.5, fontWeight: '700', color: T.ink },
   categoryTextActive: { color: '#fff' },
 
   filtersPanel: {
-    backgroundColor: T.canvas,
-    padding: 12,
+    backgroundColor: T.white,
+    padding: 14,
     borderBottomWidth: 1,
     borderBottomColor: T.rule,
   },
@@ -997,58 +1000,62 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 12,
   },
-  filterTitle: { fontSize: 17, fontWeight: '800', color: T.ink },
-  clearText: { color: T.gold, fontSize: 13, fontWeight: '800' },
-  filterLabel: { color: T.mid, fontSize: 13, fontWeight: '800', marginBottom: 7 },
+  filterTitle: { fontSize: 16, fontWeight: '800', color: T.ink },
+  clearText: { color: T.g700, fontSize: 13, fontWeight: '800' },
+  filterLabel: { color: T.mid, fontSize: 13, fontWeight: '800', marginBottom: 8 },
 
   sortScroll: { marginBottom: 14 },
   sortPill: {
     height: 32,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    backgroundColor: '#F5F3EC',
+    paddingHorizontal: 11,
+    borderRadius: 10,
+    backgroundColor: T.canvas,
+    borderWidth: 1,
+    borderColor: T.rule,
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 8,
     gap: 5,
   },
-  sortPillActive: { backgroundColor: T.g500 },
+  sortPillActive: { backgroundColor: T.g600, borderColor: T.g600 },
   sortText: { fontSize: 12, fontWeight: '700', color: T.mid },
   sortTextActive: { color: '#fff' },
 
   provinceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   provincePill: {
-    minHeight: 29,
-    paddingHorizontal: 9,
-    borderRadius: 17,
-    backgroundColor: '#F5F3EC',
+    minHeight: 30,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: T.canvas,
+    borderWidth: 1,
+    borderColor: T.rule,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  provincePillActive: { backgroundColor: T.g500 },
+  provincePillActive: { backgroundColor: T.g600, borderColor: T.g600 },
   provinceText: { color: T.muted, fontSize: 12, fontWeight: '700' },
   provinceTextActive: { color: '#fff' },
 
-  content: { paddingHorizontal: 16, paddingTop: 12 },
+  content: { paddingHorizontal: 18, paddingTop: 14 },
 
   tabsContainer: {
-    height: 44,
-    backgroundColor: '#EEF0E9',
-    borderRadius: 25,
-    padding: 4,
+    height: 42,
+    backgroundColor: T.g100,
+    borderRadius: 12,
+    padding: 3,
     flexDirection: 'row',
     marginBottom: 14,
   },
   tab: {
     flex: 1,
-    borderRadius: 21,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 5,
   },
-  tabActive: { backgroundColor: '#FFFFFF' },
+  tabActive: { backgroundColor: T.white },
   tabText: { color: T.muted, fontSize: 12, fontWeight: '700' },
   tabTextActive: { color: T.g700 },
 
@@ -1056,8 +1063,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#F6ECE9',
-    borderRadius: 14,
+    backgroundColor: '#F8EEEC',
+    borderRadius: 10,
     padding: 12,
     marginBottom: 14,
   },
@@ -1066,12 +1073,12 @@ const styles = StyleSheet.create({
   hintText: { color: T.muted, fontSize: 12, marginBottom: 16 },
 
   section: { marginBottom: 16 },
-  sectionHeaderProducts: { marginBottom: 9 },
+  sectionHeaderProducts: { marginBottom: 10 },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center' },
   sectionIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     backgroundColor: T.g100,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1079,33 +1086,35 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 17, fontWeight: '800', color: T.ink, flexShrink: 1 },
   countBadge: {
-    minWidth: 27,
-    height: 25,
+    minWidth: 26,
+    height: 24,
     paddingHorizontal: 7,
-    borderRadius: 13,
+    borderRadius: 8,
     backgroundColor: T.g100,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 7,
+    marginLeft: 8,
   },
   countText: { color: T.g700, fontSize: 11, fontWeight: '900' },
 
   userCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 17,
-    padding: 13,
+    backgroundColor: T.white,
+    borderRadius: 12,
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 9,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    borderColor: T.rule,
   },
-  avatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: T.g100 },
+  avatar: { width: 46, height: 46, borderRadius: 23, borderWidth: 1, borderColor: T.rule },
   avatarFallback: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: T.g100,
+    borderWidth: 1,
+    borderColor: T.rule,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1116,9 +1125,9 @@ const styles = StyleSheet.create({
 
   loadingBox: { paddingVertical: 55, alignItems: 'center' },
   loadingCircle: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 60,
+    height: 60,
+    borderRadius: 16,
     backgroundColor: T.g100,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1127,9 +1136,9 @@ const styles = StyleSheet.create({
   loadingText: { color: T.muted, fontSize: 13, fontWeight: '700' },
 
   emptyBox: {
-    backgroundColor: T.canvas,
-    borderRadius: 24,
-    paddingVertical: 50,
+    backgroundColor: T.white,
+    borderRadius: 12,
+    paddingVertical: 44,
     paddingHorizontal: 28,
     alignItems: 'center',
     borderWidth: 1,
@@ -1137,22 +1146,22 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   emptyIcon: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: T.g50,
+    width: 76,
+    height: 76,
+    borderRadius: 16,
+    backgroundColor: T.g100,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 17,
   },
-  emptyTitle: { fontSize: 20, fontWeight: '900', color: T.ink },
+  emptyTitle: { fontSize: 19, fontWeight: '900', color: T.ink },
   emptyText: { textAlign: 'center', color: T.muted, fontSize: 13, lineHeight: 20, marginTop: 8 },
   emptyButton: {
     marginTop: 17,
     backgroundColor: T.g600,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 10,
   },
   emptyButtonText: { color: '#fff', fontWeight: '800', fontSize: 12 },
 });

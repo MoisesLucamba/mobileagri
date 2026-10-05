@@ -32,24 +32,25 @@ const AVATAR = 92;
 // =====================================================
 
 const COLORS = {
-  // Fundo marfim/leite; os botões mantêm o verde original da marca.
-  primary: "#1F6B3A",
-  secondary: "#79C267",
-  dark: "#465044",
-  deep: "#343B32",
-  text: "#3D403A",
-  muted: "#77796F",
-  faint: "#A3A398",
-  border: "#E8E5DC",
-  field: "#F5F3EC",
-  background: "#FBFAF6",
-  soft: "#EEF0E9",
+  // Paleta alinhada com o ProductCard: verde de marca, neutros claros e branco.
+  primary: "#2E8B4F",
+  white: "#FFFFFF",
+  secondary: "#25703F",
+  dark: "#16231C",
+  deep: "#16231C",
+  text: "#16231C",
+  muted: "#78877D",
+  faint: "#AEB8AC",
+  border: "#E8ECE6",
+  field: "#F9FAF8",
+  background: "#F4F6F2",
+  soft: "#E9F5EC",
   gold: "#B7833D",
   goldSoft: "#F5EEDF",
   blue: "#637F9C",
   blueSoft: "#EDF1F5",
-  danger: "#B95E54",
-  dangerSoft: "#F6ECE9",
+  danger: "#DD5138",
+  dangerSoft: "#FBEDE9",
 };
 
 const ROLE_ACCENT: Record<string, string> = {
@@ -61,10 +62,10 @@ const ROLE_ACCENT: Record<string, string> = {
 
 const SHADOW_SOFT = {
   shadowColor: COLORS.dark,
-  shadowOpacity: 0.22,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 5 },
-  elevation: 6,
+  shadowOpacity: 0.04,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 1 },
+  elevation: 1,
 };
 
 // =====================================================
@@ -673,20 +674,20 @@ export default function ProfileScreen() {
               accessibilityRole="button"
               accessibilityLabel="Voltar"
             >
-              <Icon name="arrow-left" size={20} color="#FFFFFF" />
+              <Icon name="arrow-left" size={20} color={COLORS.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle} numberOfLines={1}>O meu perfil</Text>
           </View>
           <View style={{ flexDirection: "row", gap: 10 }}>
             <TouchableOpacity style={styles.headerBtn} onPress={() => setSettingsOpen(true)} activeOpacity={0.8}>
-              <Icon name="settings" size={19} color="#FFFFFF" />
+              <Icon name="settings" size={19} color={COLORS.primary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerBtn}
               activeOpacity={0.8}
               onPress={async () => { await supabase.auth.signOut(); router.replace("/login"); }}
             >
-              <Icon name="log-out" size={19} color="#FFFFFF" />
+              <Icon name="log-out" size={19} color={COLORS.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1057,25 +1058,29 @@ const styles = StyleSheet.create({
   centerScreen: { flex: 1, backgroundColor: COLORS.background, alignItems: "center", justifyContent: "center", gap: 14, padding: 24 },
   loadingText: { fontSize: 14, color: COLORS.muted },
 
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 22, paddingBottom: 64 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingBottom: 64 },
   headerTitle: { fontSize: 22, fontWeight: "800", color: COLORS.text },
   headerBtn: {
-    width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center",
-    backgroundColor: COLORS.primary, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+    width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center",
+    backgroundColor: COLORS.soft, borderWidth: 1, borderColor: COLORS.border,
   },
 
   sheet: {
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    paddingHorizontal: 22,
+    width: "92%",
+    alignSelf: "center",
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
     paddingTop: AVATAR / 2 + 14,
+    paddingBottom: 12,
     minHeight: SCREEN_H * 0.8,
     shadowColor: COLORS.deep,
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
 
   avatarWrap: {
@@ -1094,7 +1099,7 @@ const styles = StyleSheet.create({
   },
 
   nameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
-  memberName: { fontSize: 24, fontWeight: "800", color: COLORS.text, flexShrink: 1, textAlign: "center" },
+  memberName: { fontSize: 22, fontWeight: "800", color: COLORS.text, flexShrink: 1, textAlign: "center" },
   rolePill: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "center", marginTop: 8, paddingHorizontal: 13, paddingVertical: 6, borderRadius: 999 },
   roleDot: { width: 7, height: 7, borderRadius: 4 },
   roleText: { fontSize: 12.5, fontWeight: "800", textTransform: "capitalize" },
@@ -1107,7 +1112,7 @@ const styles = StyleSheet.create({
   memberActions: { flexDirection: "row", gap: 10, marginTop: 22 },
   historyLink: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    marginTop: 12, padding: 11, borderRadius: 17,
+    marginTop: 12, padding: 10, borderRadius: 10,
     backgroundColor: COLORS.field, borderWidth: 1, borderColor: COLORS.border,
   },
   historyLinkIcon: { width: 40, height: 40, borderRadius: 14, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center" },
@@ -1116,21 +1121,21 @@ const styles = StyleSheet.create({
   historyLinkSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
 
   pillButton: {
-    height: 54, borderRadius: 999, backgroundColor: COLORS.primary,
+    height: 42, borderRadius: 10, backgroundColor: COLORS.primary,
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
     ...SHADOW_SOFT,
   },
-  pillButtonText: { color: "#FFFFFF", fontSize: 15.5, fontWeight: "800" },
+  pillButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
   pillOutline: {
-    height: 54, borderRadius: 999, borderWidth: 1.5, borderColor: COLORS.border,
+    height: 42, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
     backgroundColor: COLORS.background, alignItems: "center", justifyContent: "center",
   },
   pillOutlineText: { fontSize: 15, fontWeight: "700", color: COLORS.text },
   roundOutline: {
-    width: 54, height: 54, borderRadius: 27, borderWidth: 1.5, borderColor: COLORS.border,
+    width: 42, height: 42, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
     backgroundColor: COLORS.background, alignItems: "center", justifyContent: "center",
   },
-  smallPill: { height: 38, paddingHorizontal: 16, borderRadius: 999, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
+  smallPill: { height: 36, paddingHorizontal: 14, borderRadius: 10, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
   smallPillText: { fontSize: 13, fontWeight: "800", color: "#FFFFFF" },
 
   codeChip: {
@@ -1141,25 +1146,36 @@ const styles = StyleSheet.create({
   codeChipValue: { fontSize: 12.5, color: COLORS.text, fontWeight: "800", letterSpacing: 0.5 },
 
   statsRow: { flexDirection: "row", gap: 10, marginTop: 22 },
-  statTile: { flex: 1, backgroundColor: COLORS.field, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 8, alignItems: "center" },
+  statTile: { flex: 1, backgroundColor: COLORS.white, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, paddingVertical: 13, paddingHorizontal: 8, alignItems: "center" },
   statValue: { fontSize: 24, fontWeight: "800" },
   statLabel: { fontSize: 11.5, color: COLORS.muted, fontWeight: "600", marginTop: 4, textAlign: "center" },
 
-  agentCodeCard: { borderRadius: 18, padding: 16, marginTop: 10, alignItems: "center" },
+  agentCodeCard: { borderRadius: 10, padding: 14, marginTop: 10, alignItems: "center" },
   agentCodeLabel: { fontSize: 12, color: COLORS.muted, fontWeight: "600" },
   agentCodeValue: { fontSize: 22, fontWeight: "800", letterSpacing: 1.5, marginTop: 2 },
 
   tabsScroll: { marginTop: 24, marginBottom: 16, flexGrow: 0 },
   tabChip: {
     flexDirection: "row", alignItems: "center", gap: 7, height: 40, paddingHorizontal: 15,
-    borderRadius: 999, backgroundColor: COLORS.field,
+    borderRadius: 10, backgroundColor: COLORS.field,
   },
   tabChipActive: { backgroundColor: COLORS.primary },
   tabChipText: { fontSize: 13, fontWeight: "700", color: COLORS.muted },
   tabBadge: { minWidth: 18, height: 18, borderRadius: 9, backgroundColor: COLORS.danger, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
   tabBadgeText: { fontSize: 10, fontWeight: "800", color: "#FFFFFF" },
 
-  listCard: { backgroundColor: COLORS.field, borderRadius: 18, padding: 16 },
+  listCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 12,
+    shadowColor: COLORS.deep,
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
   listCardTitle: { fontSize: 15, fontWeight: "800", color: COLORS.text },
   listCardSub: { fontSize: 13, color: COLORS.muted, marginTop: 4 },
   listCardMeta: { fontSize: 12, color: COLORS.faint, marginTop: 3 },
@@ -1176,7 +1192,7 @@ const styles = StyleSheet.create({
   statusPill: { paddingHorizontal: 11, paddingVertical: 4, borderRadius: 999, marginLeft: 8 },
   statusPillText: { fontSize: 11, fontWeight: "800" },
 
-  emptyState: { alignItems: "center", paddingVertical: 36, paddingHorizontal: 24, backgroundColor: COLORS.field, borderRadius: 22 },
+  emptyState: { alignItems: "center", paddingVertical: 32, paddingHorizontal: 20, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12 },
   emptyIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center", marginBottom: 12 },
   emptyMessage: { fontSize: 15, fontWeight: "800", color: COLORS.text, textAlign: "center" },
   emptySub: { fontSize: 13, color: COLORS.muted, marginTop: 6, textAlign: "center", lineHeight: 19 },
@@ -1187,8 +1203,8 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 13.5, fontWeight: "700", color: COLORS.text, marginBottom: 7 },
   fieldRequired: { fontSize: 11, fontWeight: "600", color: COLORS.primary },
   fieldInput: {
-    height: 54, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 14,
-    paddingHorizontal: 15, fontSize: 15, color: COLORS.text, backgroundColor: COLORS.field,
+    height: 46, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    paddingHorizontal: 13, fontSize: 14, color: COLORS.text, backgroundColor: COLORS.field,
   },
   fieldInputFocused: { borderColor: COLORS.primary, backgroundColor: "#FFFFFF" },
 

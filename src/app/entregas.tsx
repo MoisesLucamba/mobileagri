@@ -21,32 +21,33 @@ import MapViewer, { MapViewerCoords } from '../components/MapViewer';
 import RoleGuard from '../components/RoleGuard';
 import { supabase } from '../lib/supabase';
 
-// Mesma palette da página de Segurança
+// Mesma paleta do ProductCard
 const COLORS = {
-  primary: '#1F6B3A',
-  secondary: '#79C267',
-  dark: '#465044',
-  text: '#3D403A',
-  muted: '#77796F',
-  faint: '#A3A398',
-  border: '#E8E5DC',
-  field: '#F5F3EC',
-  background: '#FBFAF6',
-  soft: '#EEF0E9',
-  gold: '#B7833D',
-  goldSoft: '#F5EEDF',
+  primary: '#2E8B4F',
+  primaryDark: '#25703F',
+  tint: '#E9F5EC',
+  text: '#16231C',
+  muted: '#78877D',
+  faint: '#AEB8AC',
+  line: '#E8ECE6',
+  field: '#F4F6F2',
+  background: '#F9FAF8',
+  white: '#FFFFFF',
+  gold: '#B9741A',
+  goldSoft: '#FBEBD3',
   blue: '#2F6DB5',
-  blueSoft: '#EDF1F5',
-  danger: '#B95E54',
-  dangerSoft: '#F6ECE9',
+  blueSoft: '#E8EFF8',
+  danger: '#DD5138',
+  dangerSoft: '#FBEAE6',
 };
 
-const SHADOW_SOFT = {
-  shadowColor: COLORS.dark,
-  shadowOpacity: 0.22,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 5 },
-  elevation: 6,
+// Sombra quase nula, igual ao cartão do feed
+const SHADOW_FLAT = {
+  shadowColor: '#16231C',
+  shadowOpacity: 0.04,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 1 },
+  elevation: 1,
 };
 
 interface FreightLoad {
@@ -76,10 +77,10 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
-  open: { bg: COLORS.soft, fg: COLORS.primary },
+  open: { bg: COLORS.tint, fg: COLORS.primaryDark },
   accepted: { bg: COLORS.blueSoft, fg: COLORS.blue },
   in_transit: { bg: COLORS.goldSoft, fg: COLORS.gold },
-  delivered: { bg: COLORS.soft, fg: COLORS.primary },
+  delivered: { bg: COLORS.tint, fg: COLORS.primaryDark },
   cancelled: { bg: COLORS.dangerSoft, fg: COLORS.danger },
 };
 
@@ -339,7 +340,7 @@ function CargasScreen() {
             accessibilityRole="button"
             accessibilityLabel="Voltar"
           >
-            <Icon name="arrow-left" size={20} color="#FFFFFF" />
+            <Icon name="arrow-left" size={19} color={COLORS.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>
             Próximas cargas
@@ -350,7 +351,7 @@ function CargasScreen() {
           {/* Cartão de resumo */}
           <View style={styles.heroCard}>
             <View style={styles.heroIcon}>
-              <Icon name="truck" size={28} color="#FFFFFF" />
+              <Icon name="truck" size={24} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.heroTitle}>
@@ -439,7 +440,7 @@ function CargasScreen() {
                 <View key={load.id} style={styles.loadCard}>
                   <View style={styles.loadTop}>
                     <View style={styles.loadIcon}>
-                      <Icon name="package" size={20} color={COLORS.primary} />
+                      <Icon name="package" size={19} color={COLORS.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.loadTitle} numberOfLines={1}>
@@ -453,7 +454,9 @@ function CargasScreen() {
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={styles.priceLabel}>Oferta</Text>
-                      <Text style={styles.loadPrice}>{money(load.offered_price, load.currency)}</Text>
+                      <View style={styles.pricePill}>
+                        <Text style={styles.loadPrice}>{money(load.offered_price, load.currency)}</Text>
+                      </View>
                     </View>
                   </View>
 
@@ -537,10 +540,10 @@ function CargasScreen() {
                         <ActivityIndicator color="#fff" />
                       ) : (
                         <>
-                          <Text style={[styles.actionText, tooHeavy && { color: COLORS.muted }]}>
+                          <Text style={[styles.actionText, (tooHeavy || capacityMissing) && { color: COLORS.muted }]}>
                             {capacityMissing ? 'Capacidade em falta' : tooHeavy ? 'Capacidade insuficiente' : 'Aceitar carga'}
                           </Text>
-                          {!tooHeavy && !capacityMissing && <Icon name="arrow-right" size={18} color="#FFFFFF" />}
+                          {!tooHeavy && !capacityMissing && <Icon name="arrow-right" size={17} color="#FFFFFF" />}
                         </>
                       )}
                     </TouchableOpacity>
@@ -594,66 +597,66 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingHorizontal: 22,
-    paddingBottom: 18,
+    paddingHorizontal: 18,
+    paddingBottom: 16,
   },
+  // Mesmo botão do ícone de mapa do ProductCard
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: COLORS.tint,
   },
-  headerTitle: { flex: 1, fontSize: 21, fontWeight: '800', color: COLORS.text },
+  headerTitle: { flex: 1, fontSize: 19, fontWeight: '900', color: COLORS.text },
 
-  body: { paddingHorizontal: 22, gap: 14 },
+  body: { paddingHorizontal: 18, gap: 14 },
 
   heroCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 18,
-    borderRadius: 24,
+    gap: 12,
+    padding: 14,
+    borderRadius: 12,
     backgroundColor: COLORS.primary,
-    ...SHADOW_SOFT,
   },
   heroIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
-  heroSub: { fontSize: 12.5, color: 'rgba(255,255,255,0.8)', marginTop: 3 },
+  heroTitle: { fontSize: 16, fontWeight: '900', color: '#FFFFFF' },
+  heroSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
 
   locationNotice: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
-    borderRadius: 14,
-    paddingVertical: 11,
-    paddingHorizontal: 13,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     backgroundColor: COLORS.goldSoft,
   },
   locationNoticeText: { flex: 1, color: COLORS.text, fontSize: 12, lineHeight: 17 },
-  locationNoticeAction: { color: COLORS.primary, fontSize: 12, fontWeight: '800' },
+  locationNoticeAction: { color: COLORS.primaryDark, fontSize: 12, fontWeight: '800' },
 
   segment: {
     flexDirection: 'row',
-    backgroundColor: COLORS.field,
-    borderRadius: 999,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.line,
     padding: 4,
     gap: 4,
   },
   segmentBtn: {
     flex: 1,
-    height: 42,
-    borderRadius: 999,
+    height: 38,
+    borderRadius: 9,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -665,63 +668,76 @@ const styles = StyleSheet.create({
     minWidth: 22,
     height: 20,
     paddingHorizontal: 6,
-    borderRadius: 10,
-    backgroundColor: COLORS.border,
+    borderRadius: 6,
+    backgroundColor: COLORS.field,
     alignItems: 'center',
     justifyContent: 'center',
   },
   segmentCountText: { fontSize: 11, fontWeight: '800', color: COLORS.muted },
 
   emptyCard: {
-    backgroundColor: COLORS.field,
-    borderRadius: 22,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.line,
     padding: 32,
     alignItems: 'center',
+    ...SHADOW_FLAT,
   },
   emptyIcon: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    backgroundColor: COLORS.field,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptyText: { marginTop: 14, fontSize: 14.5, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
   emptySub: { marginTop: 4, fontSize: 12.5, color: COLORS.muted, textAlign: 'center' },
 
+  // Cartão plano: igual ao ProductCard
   loadCard: {
-    backgroundColor: COLORS.field,
-    borderRadius: 22,
-    padding: 16,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    padding: 12,
+    ...SHADOW_FLAT,
   },
-  loadTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  loadTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   loadIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.soft,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: COLORS.tint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  loadTitle: { fontSize: 15.5, fontWeight: '800', color: COLORS.text },
+  loadTitle: { fontSize: 16, fontWeight: '900', color: COLORS.text },
   statusPill: {
     alignSelf: 'flex-start',
-    marginTop: 5,
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-    borderRadius: 999,
+    marginTop: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 6,
   },
-  statusPillText: { fontSize: 11, fontWeight: '800' },
-  priceLabel: { fontSize: 10.5, fontWeight: '700', color: COLORS.muted },
-  loadPrice: { fontSize: 15.5, fontWeight: '800', color: COLORS.primary, marginTop: 1 },
+  statusPillText: { fontSize: 10.5, fontWeight: '800' },
+  priceLabel: { fontSize: 10.5, fontWeight: '700', color: COLORS.muted, marginBottom: 3 },
+  pricePill: {
+    backgroundColor: COLORS.tint,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  loadPrice: { fontSize: 14, fontWeight: '900', color: COLORS.primaryDark },
 
   route: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 16,
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: COLORS.field,
   },
   routeRail: { alignItems: 'center', paddingTop: 4 },
   dotOrigin: {
@@ -732,10 +748,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     backgroundColor: '#FFFFFF',
   },
-  routeLine: { flex: 1, width: 2, backgroundColor: COLORS.border, marginVertical: 3 },
+  routeLine: { flex: 1, width: 2, backgroundColor: COLORS.line, marginVertical: 3 },
   dotDest: { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.primary },
   routeLabel: { fontSize: 11, fontWeight: '700', color: COLORS.faint },
-  routeText: { fontSize: 14, fontWeight: '700', color: COLORS.text, marginTop: 1 },
+  routeText: { fontSize: 13.5, fontWeight: '700', color: COLORS.text, marginTop: 1 },
 
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   mapRouteButton: {
@@ -743,21 +759,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    marginTop: 12,
-    paddingVertical: 9,
+    marginTop: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    backgroundColor: COLORS.tint,
   },
-  mapRouteText: { color: COLORS.primary, fontSize: 12.5, fontWeight: '800' },
+  mapRouteText: { color: COLORS.primaryDark, fontSize: 12.5, fontWeight: '800' },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: '#FFFFFF',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: COLORS.field,
   },
   chipText: { fontSize: 12.5, fontWeight: '700', color: COLORS.text },
 
@@ -767,33 +783,31 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 12,
     padding: 10,
-    borderRadius: 14,
+    borderRadius: 8,
     backgroundColor: COLORS.goldSoft,
   },
   warnText: { flex: 1, fontSize: 12, fontWeight: '600', color: COLORS.text },
 
   notes: { marginTop: 12, fontSize: 12.5, color: COLORS.muted, lineHeight: 18 },
 
+  // Botão igual ao "Comprar" do ProductCard
   actionBtn: {
-    marginTop: 16,
-    height: 52,
-    borderRadius: 999,
+    marginTop: 14,
+    height: 42,
+    borderRadius: 10,
     backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    ...SHADOW_SOFT,
+    gap: 6,
   },
-  actionBtnDisabled: { backgroundColor: COLORS.border, shadowOpacity: 0, elevation: 0 },
+  actionBtnDisabled: { backgroundColor: COLORS.line },
   actionBtnOutline: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.white,
     borderWidth: 1.5,
     borderColor: COLORS.primary,
-    shadowOpacity: 0,
-    elevation: 0,
   },
-  actionText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
+  actionText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 },
 });
 
 export default function CargasRoute() {

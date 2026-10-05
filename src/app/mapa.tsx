@@ -38,50 +38,51 @@ const LOGO = require("../../assets/images/Agrilink_SD.png");
 const { height: SCREEN_H } = Dimensions.get("window");
 
 /* =====================================================================
-   BRANDING — mesma palette da página de Segurança
+   BRANDING — mesma palette do ProductCard
    ===================================================================== */
 
 const COLORS = {
-  primary: "#1F6B3A",
-  secondary: "#79C267",
-  dark: "#465044",
-  deep: "#343B32",
-  text: "#3D403A",
-  muted: "#77796F",
-  faint: "#A3A398",
-  border: "#E8E5DC",
-  field: "#F5F3EC",
-  background: "#FBFAF6",
-  soft: "#EEF0E9",
-  accent: "#E2932F",
-  accentSoft: "#F5EEDF",
+  primary: "#2E8B4F",
+  primaryDark: "#25703F",
+  tint: "#E9F5EC",
+  text: "#16231C",
+  muted: "#78877D",
+  faint: "#AEB8AC",
+  line: "#E8ECE6",
+  field: "#F4F6F2",
+  background: "#F9FAF8",
+  white: "#FFFFFF",
+  gold: "#B9741A",
+  goldSoft: "#FBEBD3",
   blue: "#2F6DB5",
-  blueSoft: "#EDF1F5",
-  danger: "#B95E54",
+  blueSoft: "#E8EFF8",
+  danger: "#DD5138",
+};
+
+// Sombra quase nula, igual ao cartão do feed
+const SHADOW_FLAT = {
+  shadowColor: "#16231C",
+  shadowOpacity: 0.04,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 1 },
+  elevation: 1,
+};
+
+// Para elementos que flutuam sobre o mapa (precisam de um pouco mais de separação)
+const SHADOW_FLOAT = {
+  shadowColor: "#16231C",
+  shadowOpacity: 0.1,
+  shadowRadius: 8,
+  shadowOffset: { width: 0, height: 2 },
+  elevation: 3,
 };
 
 const SHADOW_UP = {
-  shadowColor: COLORS.deep,
-  shadowOpacity: 0.15,
-  shadowRadius: 18,
-  shadowOffset: { width: 0, height: -6 },
-  elevation: 12,
-};
-
-const SHADOW_SOFT = {
-  shadowColor: COLORS.dark,
-  shadowOpacity: 0.22,
+  shadowColor: "#16231C",
+  shadowOpacity: 0.08,
   shadowRadius: 10,
-  shadowOffset: { width: 0, height: 5 },
+  shadowOffset: { width: 0, height: -2 },
   elevation: 6,
-};
-
-const SHADOW_FLOAT = {
-  shadowColor: COLORS.deep,
-  shadowOpacity: 0.16,
-  shadowRadius: 14,
-  shadowOffset: { width: 0, height: 6 },
-  elevation: 8,
 };
 
 /* =====================================================================
@@ -119,8 +120,8 @@ type LocStatus = "idle" | "granted" | "denied" | "off";
 const LAYERS: { kind: Kind; label: string; icon: IconName; color: string }[] = [
   { kind: "produto", label: "Produtos", icon: "leaf", color: COLORS.primary },
   { kind: "motorista", label: "Motoristas", icon: "truck", color: COLORS.blue },
-  { kind: "agente", label: "Agentes", icon: "users", color: COLORS.accent },
-  { kind: "agricultor", label: "Agricultores", icon: "sprout", color: COLORS.dark },
+  { kind: "agente", label: "Agentes", icon: "users", color: COLORS.gold },
+  { kind: "agricultor", label: "Agricultores", icon: "sprout", color: COLORS.text },
 ];
 
 const LAYER_BY_KIND = Object.fromEntries(
@@ -224,15 +225,15 @@ const MAP_HTML = `<!DOCTYPE html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <style>
-  html, body, #map { height: 100%; margin: 0; padding: 0; background: #FBFAF6; }
+  html, body, #map { height: 100%; margin: 0; padding: 0; background: #F9FAF8; }
   .leaflet-control-attribution { font-size: 9px; background: rgba(255,255,255,0.75); }
   .al-pin { background: transparent; border: none; }
   .al-tip {
-    background:#465044 !important; color:#fff !important; border:none !important;
+    background:#16231C !important; color:#fff !important; border:none !important;
     font-weight:700 !important; font-size:11px !important; padding:5px 9px !important;
-    border-radius:8px !important; box-shadow:0 4px 12px rgba(0,0,0,0.25) !important;
+    border-radius:6px !important; box-shadow:0 2px 8px rgba(22,35,28,0.25) !important;
   }
-  .al-tip::before { border-top-color:#465044 !important; }
+  .al-tip::before { border-top-color:#16231C !important; }
 </style>
 </head>
 <body>
@@ -290,7 +291,7 @@ const MAP_HTML = `<!DOCTYPE html>
       return '<div style="width:' + size + 'px;height:' + size + 'px;background:' + color +
         ';border:2.5px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);' +
         'display:flex;align-items:center;justify-content:center;' +
-        'box-shadow:0 5px 14px rgba(0,0,0,0.32);">' +
+        'box-shadow:0 3px 10px rgba(22,35,28,0.28);">' +
         '<div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;">' + svg + '</div></div>';
     }
 
@@ -337,7 +338,7 @@ const MAP_HTML = `<!DOCTYPE html>
         }).addTo(map);
         var icon = L.divIcon({
           className: 'al-pin',
-          html: '<div style="width:18px;height:18px;background:#2F6DB5;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>',
+          html: '<div style="width:18px;height:18px;background:#2F6DB5;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(22,35,28,0.3);"></div>',
           iconSize: [18, 18], iconAnchor: [9, 9]
         });
         userMarker = L.marker([lat, lng], { icon: icon, zIndexOffset: 900 }).addTo(map);
@@ -367,7 +368,7 @@ const MAP_HTML = `<!DOCTYPE html>
         });
 
         if (animate) {
-          var dot = L.circleMarker(coords[0], { radius: 9, fillColor: '#E2932F', fillOpacity: 1, color: '#fff', weight: 3 }).addTo(map);
+          var dot = L.circleMarker(coords[0], { radius: 9, fillColor: '#B9741A', fillOpacity: 1, color: '#fff', weight: 3 }).addTo(map);
           routeLayers.push(dot);
           var idx = 0, t = 0;
           var step = Math.max(1, Math.floor(coords.length / 400));
@@ -397,7 +398,7 @@ const MAP_HTML = `<!DOCTYPE html>
       if (pickMarker) { try { map.removeLayer(pickMarker); } catch (e) {} }
       var icon = L.divIcon({
         className: 'al-pin',
-        html: pinHtml('#E2932F', 'pick', true),
+        html: pinHtml('#B9741A', 'pick', true),
         iconSize: [44, 44], iconAnchor: [22, 44]
       });
       pickMarker = L.marker(ev.latlng, { icon: icon }).addTo(map);
@@ -991,7 +992,7 @@ export default function MapaScreen() {
             accessibilityRole="button"
             accessibilityLabel="Voltar"
           >
-            <Icon name="arrow-left" size={19} color="#FFFFFF" />
+            <Icon name="arrow-left" size={19} color={COLORS.text} />
           </TouchableOpacity>
 
           <Image source={LOGO} style={styles.logo} resizeMode="contain" />
@@ -1132,7 +1133,7 @@ export default function MapaScreen() {
           onPress={recenter}
           activeOpacity={0.9}
         >
-          <Icon name="navigation" size={19} color={COLORS.accent} />
+          <Icon name="navigation" size={19} color={COLORS.gold} />
           <Text style={styles.locBannerText}>{locBanner}</Text>
           <Text style={styles.locBannerAction}>Ativar</Text>
         </TouchableOpacity>
@@ -1144,7 +1145,7 @@ export default function MapaScreen() {
           <View style={styles.sheetHandle} />
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <View style={styles.pickIcon}>
-              <Icon name="pin" size={20} color={COLORS.accent} />
+              <Icon name="pin" size={20} color={COLORS.gold} />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.cardTitle}>
@@ -1159,7 +1160,7 @@ export default function MapaScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.pillButton, { marginTop: 16 }, !pickedPoint && styles.disabled]}
+            style={[styles.pillButton, { marginTop: 14 }, !pickedPoint && styles.disabled]}
             disabled={!pickedPoint}
             activeOpacity={0.85}
             onPress={() => {
@@ -1175,7 +1176,7 @@ export default function MapaScreen() {
             }}
           >
             <Text style={styles.pillButtonText}>Usar este local</Text>
-            <Icon name="arrow-right" size={18} color="#FFFFFF" />
+            <Icon name="arrow-right" size={17} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       )}
@@ -1209,7 +1210,7 @@ export default function MapaScreen() {
             <View
               style={[styles.badge, { backgroundColor: LAYER_BY_KIND[selected.kind].color }]}
             >
-              <Icon name={LAYER_BY_KIND[selected.kind].icon} size={21} color="#FFFFFF" />
+              <Icon name={LAYER_BY_KIND[selected.kind].icon} size={20} color="#FFFFFF" />
             </View>
 
             <View style={{ flex: 1, marginLeft: 12 }}>
@@ -1257,7 +1258,7 @@ export default function MapaScreen() {
               onPress={() => startTracking(selected)}
               activeOpacity={0.85}
             >
-              <Icon name="navigation" size={17} color="#FFFFFF" />
+              <Icon name="navigation" size={16} color="#FFFFFF" />
               <Text style={styles.pillButtonText}>Rastrear</Text>
             </TouchableOpacity>
 
@@ -1310,7 +1311,7 @@ export default function MapaScreen() {
                   <View
                     style={[
                       styles.stepLine,
-                      step.state === "done" && { backgroundColor: COLORS.secondary },
+                      step.state === "done" && { backgroundColor: COLORS.primary },
                     ]}
                   />
                 )}
@@ -1319,11 +1320,11 @@ export default function MapaScreen() {
                     styles.stepDot,
                     step.state === "done" && {
                       borderColor: COLORS.primary,
-                      backgroundColor: COLORS.soft,
+                      backgroundColor: COLORS.tint,
                     },
                     step.state === "active" && {
-                      borderColor: COLORS.accent,
-                      backgroundColor: COLORS.accentSoft,
+                      borderColor: COLORS.gold,
+                      backgroundColor: COLORS.goldSoft,
                     },
                   ]}
                 >
@@ -1334,7 +1335,7 @@ export default function MapaScreen() {
                       step.state === "done"
                         ? COLORS.primary
                         : step.state === "active"
-                          ? COLORS.accent
+                          ? COLORS.gold
                           : COLORS.muted
                     }
                   />
@@ -1370,7 +1371,7 @@ export default function MapaScreen() {
           onPress={() => setListOpen(true)}
           activeOpacity={0.9}
         >
-          <Icon name="list" size={18} color="#FFFFFF" />
+          <Icon name="list" size={17} color="#FFFFFF" />
           <Text style={styles.pillButtonText}>Ver lista ({visible.length})</Text>
         </TouchableOpacity>
       )}
@@ -1497,7 +1498,7 @@ const styles = StyleSheet.create({
   web: { flex: 1, backgroundColor: COLORS.background },
 
   rowCenter: { flexDirection: "row", alignItems: "center" },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.line },
   disabled: { opacity: 0.55 },
 
   // HEADER FLUTUANTE (o mapa continua visível por baixo)
@@ -1506,59 +1507,60 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     gap: 10,
   },
   topCard: {
     flexDirection: "row",
     alignItems: "center",
     padding: 8,
-    borderRadius: 999,
-    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.line,
     ...SHADOW_FLOAT,
   },
+  // Mesmo botão do ícone de mapa do ProductCard
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.tint,
   },
   logo: { width: 28, height: 28, marginLeft: 10 },
-  headerTitle: { fontSize: 15.5, fontWeight: "800", color: COLORS.text },
+  headerTitle: { fontSize: 15, fontWeight: "900", color: COLORS.text },
   headerSubtitle: { fontSize: 11.5, color: COLORS.muted, marginTop: 1 },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.soft,
+    backgroundColor: COLORS.tint,
   },
-  iconBtnActive: { backgroundColor: COLORS.accent },
+  iconBtnActive: { backgroundColor: COLORS.gold },
 
   // PESQUISA
   searchBox: {
-    height: 50,
-    borderRadius: 999,
-    backgroundColor: COLORS.background,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.line,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 18,
+    paddingHorizontal: 14,
     gap: 10,
     ...SHADOW_FLOAT,
   },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.text, padding: 0 },
+  searchInput: { flex: 1, fontSize: 14, color: COLORS.text, padding: 0 },
   searchResults: {
-    borderRadius: 22,
-    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.line,
     overflow: "hidden",
     ...SHADOW_FLOAT,
   },
@@ -1566,8 +1568,8 @@ const styles = StyleSheet.create({
   searchIcon: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.soft,
+    borderRadius: 8,
+    backgroundColor: COLORS.tint,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1575,28 +1577,26 @@ const styles = StyleSheet.create({
   searchSub: { fontSize: 11.5, color: COLORS.muted, marginTop: 2 },
 
   // CAMADAS
-  layerScroll: { marginHorizontal: -16 },
-  layerRow: { paddingHorizontal: 16, gap: 8, paddingBottom: 6 },
+  layerScroll: { marginHorizontal: -18 },
+  layerRow: { paddingHorizontal: 18, gap: 8, paddingBottom: 6 },
   layerChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    height: 38,
-    paddingHorizontal: 13,
-    borderRadius: 999,
-    backgroundColor: COLORS.background,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.line,
     ...SHADOW_FLOAT,
-    shadowOpacity: 0.1,
-    elevation: 4,
   },
-  layerText: { fontSize: 12.5, fontWeight: "700", color: COLORS.text },
+  layerText: { fontSize: 12.5, fontWeight: "800", color: COLORS.text },
   layerCount: {
     minWidth: 20,
     height: 18,
     paddingHorizontal: 5,
-    borderRadius: 9,
+    borderRadius: 6,
     backgroundColor: COLORS.field,
     alignItems: "center",
     justifyContent: "center",
@@ -1606,32 +1606,32 @@ const styles = StyleSheet.create({
   // AVISO DE LOCALIZAÇÃO
   locBanner: {
     position: "absolute",
-    left: 16,
-    right: 16,
+    left: 18,
+    right: 18,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     padding: 12,
-    borderRadius: 18,
-    backgroundColor: COLORS.background,
-    borderWidth: 1.5,
-    borderColor: COLORS.accent,
-    ...SHADOW_SOFT,
+    borderRadius: 12,
+    backgroundColor: COLORS.goldSoft,
+    borderWidth: 1,
+    borderColor: COLORS.gold,
+    ...SHADOW_FLOAT,
   },
   locBannerText: { flex: 1, fontSize: 12.5, color: COLORS.text, fontWeight: "600" },
-  locBannerAction: { fontSize: 13, fontWeight: "800", color: COLORS.primary },
+  locBannerAction: { fontSize: 13, fontWeight: "800", color: COLORS.primaryDark },
 
   // FABs
-  fabColumn: { position: "absolute", right: 16 },
+  fabColumn: { position: "absolute", right: 18 },
   fab: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.background,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.line,
     ...SHADOW_FLOAT,
   },
 
@@ -1641,57 +1641,60 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    paddingHorizontal: 22,
-    paddingTop: 12,
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: COLORS.line,
+    paddingHorizontal: 18,
+    paddingTop: 10,
     ...SHADOW_UP,
   },
-  pickSheet: { borderTopWidth: 3, borderTopColor: COLORS.accent },
+  pickSheet: { borderTopWidth: 3, borderTopColor: COLORS.gold },
   sheetModal: {
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    paddingHorizontal: 22,
-    paddingTop: 12,
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: 18,
+    paddingTop: 10,
   },
   sheetHandle: {
-    width: 42,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: COLORS.border,
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.line,
     alignSelf: "center",
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  sheetTitle: { fontSize: 22, fontWeight: "800", color: COLORS.text },
+  sheetTitle: { fontSize: 19, fontWeight: "900", color: COLORS.text },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(52,59,50,0.42)",
+    backgroundColor: "rgba(22,35,28,0.42)",
     justifyContent: "flex-end",
   },
 
   badge: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   pickIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: COLORS.accentSoft,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: COLORS.goldSoft,
     alignItems: "center",
     justifyContent: "center",
   },
-  cardTitle: { fontSize: 17, fontWeight: "800", color: COLORS.text },
+  cardTitle: { fontSize: 16, fontWeight: "900", color: COLORS.text },
   cardSub: { fontSize: 12.5, color: COLORS.muted, marginTop: 2 },
   closeChip: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: 10,
     backgroundColor: COLORS.field,
     alignItems: "center",
     justifyContent: "center",
@@ -1701,41 +1704,41 @@ const styles = StyleSheet.create({
   metricBox: {
     flex: 1,
     padding: 12,
-    borderRadius: 18,
+    borderRadius: 8,
     backgroundColor: COLORS.field,
   },
   metricLabel: { fontSize: 12, fontWeight: "700", color: COLORS.muted },
-  metricValue: { fontSize: 16, fontWeight: "800", color: COLORS.text, marginTop: 3 },
+  metricValue: { fontSize: 15, fontWeight: "900", color: COLORS.text, marginTop: 3 },
 
   distancePill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginTop: 12,
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
     backgroundColor: COLORS.blueSoft,
     alignSelf: "flex-start",
   },
   distanceText: { fontSize: 12.5, fontWeight: "700", color: COLORS.blue },
 
+  // Botão igual ao "Comprar" do ProductCard
   pillButton: {
-    height: 54,
-    borderRadius: 999,
+    height: 42,
+    borderRadius: 10,
     backgroundColor: COLORS.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    ...SHADOW_SOFT,
+    gap: 6,
   },
-  pillButtonText: { color: "#FFFFFF", fontSize: 15.5, fontWeight: "800" },
+  pillButtonText: { color: "#FFFFFF", fontSize: 13.5, fontWeight: "800" },
   roundAction: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: COLORS.soft,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: COLORS.tint,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1746,26 +1749,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    height: 52,
-    paddingHorizontal: 26,
-    borderRadius: 999,
+    height: 42,
+    paddingHorizontal: 20,
+    borderRadius: 10,
     backgroundColor: COLORS.primary,
-    ...SHADOW_SOFT,
+    ...SHADOW_FLOAT,
   },
 
   // LISTA
   listRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12 },
   listThumb: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
   listThumbImage: { width: "100%", height: "100%" },
-  listTitle: { fontSize: 14.5, fontWeight: "800", color: COLORS.text },
-  listDistance: { fontSize: 12, fontWeight: "700", color: COLORS.primary },
+  listTitle: { fontSize: 14.5, fontWeight: "900", color: COLORS.text },
+  listDistance: { fontSize: 12, fontWeight: "800", color: COLORS.primaryDark },
 
   // TIMELINE
   stepRow: { flexDirection: "row", paddingBottom: 16, position: "relative" },
@@ -1775,14 +1778,14 @@ const styles = StyleSheet.create({
     top: 32,
     bottom: 0,
     width: 2,
-    backgroundColor: COLORS.border,
+    backgroundColor: COLORS.line,
   },
   stepDot: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: COLORS.border,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
     backgroundColor: COLORS.field,
     alignItems: "center",
     justifyContent: "center",
@@ -1791,8 +1794,8 @@ const styles = StyleSheet.create({
   stepDetail: { fontSize: 12.5, color: COLORS.muted, marginTop: 2 },
 
   progressBox: {
-    padding: 14,
-    borderRadius: 18,
+    padding: 12,
+    borderRadius: 8,
     backgroundColor: COLORS.field,
   },
   progressHeader: {
@@ -1801,43 +1804,43 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
   },
-  progressValue: { fontSize: 13, fontWeight: "800", color: COLORS.primary },
+  progressValue: { fontSize: 13, fontWeight: "900", color: COLORS.primaryDark },
   progressTrack: {
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: COLORS.border,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.line,
     overflow: "hidden",
   },
-  progressFill: { height: "100%", borderRadius: 4, backgroundColor: COLORS.primary },
+  progressFill: { height: "100%", borderRadius: 3, backgroundColor: COLORS.primary },
 
   // ESTADOS
   emptyCard: {
     position: "absolute",
-    left: 16,
-    right: 16,
-    padding: 16,
-    borderRadius: 22,
-    backgroundColor: COLORS.background,
+    left: 18,
+    right: 18,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    ...SHADOW_SOFT,
+    borderColor: COLORS.line,
+    ...SHADOW_FLOAT,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(251,250,246,0.92)",
+    backgroundColor: "rgba(249,250,248,0.92)",
     alignItems: "center",
     justifyContent: "center",
   },
   overlayCard: {
-    paddingVertical: 28,
-    paddingHorizontal: 34,
-    borderRadius: 28,
-    backgroundColor: COLORS.background,
+    paddingVertical: 26,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.line,
     alignItems: "center",
-    ...SHADOW_UP,
+    ...SHADOW_FLAT,
   },
-  overlayTitle: { fontSize: 15, fontWeight: "800", color: COLORS.text, marginTop: 14 },
+  overlayTitle: { fontSize: 15, fontWeight: "900", color: COLORS.text, marginTop: 14 },
   overlaySub: { fontSize: 12.5, color: COLORS.muted, marginTop: 4 },
 });

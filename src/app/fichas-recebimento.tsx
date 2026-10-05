@@ -9,22 +9,30 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
-import MapView, { Marker } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabase } from '../lib/supabase';
 import RoleGuard from '../components/RoleGuard';
+import MapPicker, { Coords, PickedLocation } from '../components/MapPicker';
 
+// Paleta partilhada com Home, ProductCard, Pesquisa, Perfil e Pagamento
 const T = {
-  green: '#2c863b',
-  greenPale: '#E8F5E9',
-  charcoal: '#1C2B1E',
-  muted: '#6B7C6E',
-  border: '#D4E8D1',
-  cream: '#FAFAF7',
+  green: '#2E8B4F',
+  greenDark: '#25703F',
+  greenPale: '#E9F5EC',
+  charcoal: '#16231C',
+  muted: '#78877D',
+  faint: '#AEB8AC',
+  border: '#E8ECE6',
+  cream: '#F6F8F5',
+  field: '#F9FAF8',
   white: '#FFFFFF',
 };
 
@@ -64,8 +72,10 @@ interface LocalEntrega {
 
 function FichaRecebimentoScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     nomeFicha: '',
@@ -99,12 +109,21 @@ function FichaRecebimentoScreen() {
     }
   };
 
+  // O mapa vem do componente MapPicker (o mesmo usado no pagamento)
+  const handlePicked = ({ lat, lng, address }: PickedLocation) => {
+    setLocalTemp((p) => ({
+      descricao: p.descricao.trim() ? p.descricao : address || p.descricao,
+      coordenadas: { lat, lng },
+    }));
+    setPickerOpen(false);
+  };
+
   const addLocal = () => {
-    if (localTemp.descricao && localTemp.coordenadas) {
+    if (localTemp.descricao.trim() && localTemp.coordenadas) {
       set('locaisEntrega', [...formData.locaisEntrega, localTemp]);
       setLocalTemp({ descricao: '', coordenadas: null });
     } else {
-      Alert.alert('Faltam dados', 'Preenche a descrição e toca no mapa para marcar o local.');
+      Alert.alert('Faltam dados', 'Preenche a descrição e marca o local no mapa.');
     }
   };
 
@@ -175,6 +194,7 @@ function FichaRecebimentoScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Ex.: Milho Premium Luanda"
+                placeholderTextColor={T.faint}
                 value={formData.nomeFicha}
                 onChangeText={(v) => set('nomeFicha', v)}
               />
@@ -217,6 +237,7 @@ function FichaRecebimentoScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Ex.: Fresco, sem defeitos"
+                  placeholderTextColor={T.faint}
                   value={formData.qualidade}
                   onChangeText={(v) => set('qualidade', v)}
                 />
@@ -260,57 +281,45 @@ function FichaRecebimentoScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Ex.: Armazém Viana, Luanda Sul"
+                placeholderTextColor={T.faint}
                 value={localTemp.descricao}
                 onChangeText={(v) => setLocalTemp((p) => ({ ...p, descricao: v }))}
               />
             </Field>
 
-            <Text style={styles.hint}>Toca no mapa para marcar a localização exata.</Text>
+            {/* Mapa através do componente MapPicker */}
+            <TouchableOpacity
+              style={[styles.mapBtn, localTemp.coordenadas && styles.mapBtnOn]}
+              onPress={() => setPickerOpen(true)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.mapBtnIcon, localTemp.coordenadas && styles.mapBtnIconOn]}>
+                <Ionicons
+                  name={localTemp.coordenadas ? 'checkmark' : 'location-outline'}
+                  size={18}
+                  color={localTemp.coordenadas ? '#fff' : T.green}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.mapBtnTitle}>
+                  {localTemp.coordenadas ? 'Local marcado no mapa' : 'Escolher no mapa'}
+                </Text>
+                <Text style={styles.mapBtnSub} numberOfLines={1}>
+                  {localTemp.coordenadas
+                    ? `${localTemp.coordenadas.lat.toFixed(5)}, ${localTemp.coordenadas.lng.toFixed(5)} · toca para alterar`
+                    : 'Marca ou pesquisa o local exato da entrega'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={T.faint} />
+            </TouchableOpacity>
 
-            <View style={styles.mapWrapper}>
-              <MapView
-                style={{ flex: 1 }}
-                initialRegion={{
-                  latitude: -8.838,
-                  longitude: 13.235,
-                  latitudeDelta: 0.5,
-                  longitudeDelta: 0.5,
-                }}
-                onPress={(e) =>
-                  setLocalTemp((p) => ({
-                    ...p,
-                    coordenadas: {
-                      lat: e.nativeEvent.coordinate.latitude,
-                      lng: e.nativeEvent.coordinate.longitude,
-                    },
-                  }))
-                }
-              >
-                {localTemp.coordenadas && (
-                  <Marker
-                    coordinate={{
-                      latitude: localTemp.coordenadas.lat,
-                      longitude: localTemp.coordenadas.lng,
-                    }}
-                    pinColor={T.green}
-                  />
-                )}
-              </MapView>
-            </View>
-
-            {localTemp.coordenadas && (
-              <Text style={styles.coords}>
-                {localTemp.coordenadas.lat.toFixed(5)}, {localTemp.coordenadas.lng.toFixed(5)}
-              </Text>
-            )}
-
-            <TouchableOpacity style={styles.addLocalBtn} onPress={addLocal}>
+            <TouchableOpacity style={styles.addLocalBtn} onPress={addLocal} activeOpacity={0.85}>
               <Ionicons name="add" size={16} color="#fff" />
               <Text style={styles.addLocalBtnText}>Adicionar Local de Entrega</Text>
             </TouchableOpacity>
 
             {formData.locaisEntrega.length > 0 && (
-              <View style={{ marginTop: 12 }}>
+              <View style={{ marginTop: 14 }}>
                 <Text style={styles.fieldLabel}>
                   Locais adicionados ({formData.locaisEntrega.length})
                 </Text>
@@ -318,15 +327,15 @@ function FichaRecebimentoScreen() {
                   <View key={i} style={styles.localRow}>
                     <Ionicons name="location-outline" size={16} color={T.green} />
                     <View style={{ flex: 1, marginLeft: 8 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: T.charcoal }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: T.charcoal }}>
                         {local.descricao}
                       </Text>
-                      <Text style={{ fontSize: 10, color: T.muted }}>
+                      <Text style={{ fontSize: 10.5, color: T.muted, marginTop: 1 }}>
                         {local.coordenadas?.lat.toFixed(4)}, {local.coordenadas?.lng.toFixed(4)}
                       </Text>
                     </View>
-                    <TouchableOpacity onPress={() => removeLocal(i)}>
-                      <Ionicons name="close" size={16} color={T.muted} />
+                    <TouchableOpacity onPress={() => removeLocal(i)} hitSlop={10}>
+                      <Ionicons name="close" size={18} color={T.muted} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -343,6 +352,7 @@ function FichaRecebimentoScreen() {
                 style={styles.input}
                 keyboardType="phone-pad"
                 placeholder="+244 999 999 999"
+                placeholderTextColor={T.faint}
                 value={formData.telefone}
                 onChangeText={(v) => set('telefone', v)}
               />
@@ -351,6 +361,7 @@ function FichaRecebimentoScreen() {
               <TextInput
                 style={[styles.input, styles.textArea]}
                 placeholder="Requisitos adicionais para o fornecedor..."
+                placeholderTextColor={T.faint}
                 multiline
                 value={formData.descricaoFinal}
                 onChangeText={(v) => set('descricaoFinal', v)}
@@ -360,6 +371,7 @@ function FichaRecebimentoScreen() {
               <TextInput
                 style={[styles.input, styles.textArea]}
                 placeholder="Informações complementares, links úteis..."
+                placeholderTextColor={T.faint}
                 multiline
                 value={formData.observacoes}
                 onChangeText={(v) => set('observacoes', v)}
@@ -384,21 +396,23 @@ function FichaRecebimentoScreen() {
             ].map((item) => (
               <View key={item.label} style={styles.summaryRow}>
                 <Text style={{ fontSize: 13, color: T.muted }}>{item.label}</Text>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: T.charcoal }}>
+                <Text
+                  style={{ fontSize: 13, fontWeight: '700', color: T.charcoal, flexShrink: 1, textAlign: 'right', marginLeft: 12 }}
+                >
                   {item.value}
                 </Text>
               </View>
             ))}
 
             {formData.locaisEntrega.length > 0 && (
-              <View style={{ marginTop: 12 }}>
+              <View style={{ marginTop: 14 }}>
                 <Text style={styles.fieldLabel}>
                   Locais de Entrega ({formData.locaisEntrega.length})
                 </Text>
                 {formData.locaisEntrega.map((local, i) => (
                   <View key={i} style={styles.summaryLocalRow}>
                     <Ionicons name="location-outline" size={14} color={T.green} />
-                    <Text style={{ fontSize: 13, color: T.charcoal, marginLeft: 6 }}>
+                    <Text style={{ fontSize: 13, color: T.charcoal, marginLeft: 6, flex: 1 }}>
                       {local.descricao}
                     </Text>
                   </View>
@@ -407,9 +421,9 @@ function FichaRecebimentoScreen() {
             )}
 
             {!!formData.descricaoFinal && (
-              <View style={{ marginTop: 12 }}>
+              <View style={{ marginTop: 14 }}>
                 <Text style={styles.fieldLabel}>Descrição Final</Text>
-                <Text style={{ fontSize: 13, color: T.muted }}>{formData.descricaoFinal}</Text>
+                <Text style={{ fontSize: 13, color: T.muted, lineHeight: 19 }}>{formData.descricaoFinal}</Text>
               </View>
             )}
           </View>
@@ -419,12 +433,14 @@ function FichaRecebimentoScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: T.cream }}>
+      <StatusBar barStyle="dark-content" backgroundColor={T.white} />
+
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={20} color={T.charcoal} />
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.8}>
+          <Ionicons name="arrow-back" size={20} color={T.greenDark} />
         </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 8 }}>
+        <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.headerTitle}>Nova Ficha de Recebimento</Text>
           <Text style={styles.headerSubtitle}>
             Passo {step + 1} de {STEPS.length}
@@ -448,8 +464,8 @@ function FichaRecebimentoScreen() {
                   style={[
                     styles.stepCircle,
                     {
-                      backgroundColor: isDone ? T.green : isActive ? T.greenPale : '#F0F0F0',
-                      borderWidth: isActive ? 2 : 0,
+                      backgroundColor: isDone ? T.green : isActive ? T.greenPale : T.cream,
+                      borderWidth: isActive ? 1.5 : 0,
                       borderColor: T.green,
                     },
                   ]}
@@ -462,10 +478,10 @@ function FichaRecebimentoScreen() {
                 </View>
                 <Text
                   style={{
-                    fontSize: 9,
+                    fontSize: 9.5,
                     fontWeight: '700',
                     marginTop: 4,
-                    color: isActive ? T.green : isDone ? T.charcoal : T.muted,
+                    color: isActive ? T.greenDark : isDone ? T.charcoal : T.muted,
                   }}
                 >
                   {s.label}
@@ -477,6 +493,8 @@ function FichaRecebimentoScreen() {
                     flex: 1,
                     height: 2,
                     marginHorizontal: 2,
+                    marginBottom: 14,
+                    borderRadius: 1,
                     backgroundColor: i < step ? T.green : T.border,
                   }}
                 />
@@ -487,51 +505,72 @@ function FichaRecebimentoScreen() {
       </View>
 
       {/* Content */}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
-        <View style={styles.card}>{renderStep()}</View>
-      </ScrollView>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 18, paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.card}>{renderStep()}</View>
+        </ScrollView>
 
-      {/* Bottom nav */}
-      <View style={styles.bottomNav}>
-        {step > 0 && (
-          <TouchableOpacity
-            style={[styles.navBtn, styles.navBtnOutline]}
-            onPress={() => setStep(step - 1)}
-          >
-            <Ionicons name="arrow-back" size={16} color={T.charcoal} />
-            <Text style={[styles.navBtnText, { color: T.charcoal }]}>Anterior</Text>
-          </TouchableOpacity>
-        )}
+        {/* Bottom nav — sobe acima dos botões/gestos do dispositivo */}
+        <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) + 14 }]}>
+          {step > 0 && (
+            <TouchableOpacity
+              style={[styles.navBtn, styles.navBtnOutline]}
+              onPress={() => setStep(step - 1)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="arrow-back" size={16} color={T.charcoal} />
+              <Text style={[styles.navBtnText, { color: T.charcoal }]}>Anterior</Text>
+            </TouchableOpacity>
+          )}
 
-        {step < STEPS.length - 1 ? (
-          <TouchableOpacity
-            style={[
-              styles.navBtn,
-              { backgroundColor: canAdvance() ? T.green : T.border, flex: 1 },
-            ]}
-            onPress={() => canAdvance() && setStep(step + 1)}
-            disabled={!canAdvance()}
-          >
-            <Text style={styles.navBtnText}>Próximo</Text>
-            <Ionicons name="arrow-forward" size={16} color="#fff" />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.navBtn, { backgroundColor: T.green, flex: 1 }]}
-            onPress={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-                <Text style={styles.navBtnText}>Submeter Ficha</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
+          {step < STEPS.length - 1 ? (
+            <TouchableOpacity
+              style={[
+                styles.navBtn,
+                { backgroundColor: canAdvance() ? T.green : T.border, flex: 1 },
+              ]}
+              onPress={() => canAdvance() && setStep(step + 1)}
+              disabled={!canAdvance()}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.navBtnText, !canAdvance() && { color: T.muted }]}>Próximo</Text>
+              <Ionicons name="arrow-forward" size={16} color={canAdvance() ? '#fff' : T.muted} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.navBtn, { backgroundColor: T.green, flex: 1 }]}
+              onPress={handleSubmit}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                  <Text style={styles.navBtnText}>Submeter Ficha</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+
+      <MapPicker
+        visible={pickerOpen}
+        initialCoords={localTemp.coordenadas as Coords | null}
+        initialQuery={localTemp.descricao}
+        onClose={() => setPickerOpen(false)}
+        onConfirm={handlePicked}
+      />
     </View>
   );
 }
@@ -561,33 +600,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 54,
     paddingBottom: 12,
     backgroundColor: T.white,
     borderBottomWidth: 1,
     borderBottomColor: T.border,
   },
-  backBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 15, fontWeight: '700', color: T.charcoal },
-  headerSubtitle: { fontSize: 11, color: T.muted, marginTop: 1 },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.greenPale,
+  },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: T.charcoal },
+  headerSubtitle: { fontSize: 11.5, color: T.muted, marginTop: 1 },
   stepsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
     backgroundColor: T.white,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
   },
   stepItem: { alignItems: 'center' },
-  stepCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  stepCircle: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   card: {
     backgroundColor: T.white,
-    borderRadius: 18,
-    padding: 18,
+    borderRadius: 12,
+    padding: 16,
     borderWidth: 1,
     borderColor: T.border,
   },
   fieldLabel: { fontSize: 13, fontWeight: '700', color: T.charcoal, marginBottom: 4 },
-  hint: { fontSize: 11, color: T.muted, marginBottom: 8 },
+  hint: { fontSize: 11.5, color: T.muted, marginBottom: 8, lineHeight: 16 },
   input: {
     height: 48,
     borderWidth: 1,
@@ -596,12 +643,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     justifyContent: 'center',
     color: T.charcoal,
+    backgroundColor: T.field,
   },
-  textArea: { height: 90, textAlignVertical: 'top', paddingTop: 10 },
+  textArea: { height: 96, textAlignVertical: 'top', paddingTop: 12 },
   row: { flexDirection: 'row', gap: 12 },
-  pickerWrapper: { borderWidth: 1, borderColor: T.border, borderRadius: 10, overflow: 'hidden' },
-  mapWrapper: { height: 240, borderRadius: 12, overflow: 'hidden', borderWidth: 1.5, borderColor: T.border },
-  coords: { fontSize: 11, color: T.green, marginTop: 6 },
+  pickerWrapper: {
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: T.field,
+  },
+
+  mapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.field,
+  },
+  mapBtnOn: { borderColor: T.green, backgroundColor: T.greenPale },
+  mapBtnIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.greenPale,
+  },
+  mapBtnIconOn: { backgroundColor: T.green },
+  mapBtnTitle: { fontSize: 13.5, fontWeight: '800', color: T.charcoal },
+  mapBtnSub: { fontSize: 11.5, color: T.muted, marginTop: 2 },
+
   addLocalBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -612,7 +688,7 @@ const styles = StyleSheet.create({
     backgroundColor: T.green,
     marginTop: 12,
   },
-  addLocalBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  addLocalBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   localRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -624,14 +700,14 @@ const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 9,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: T.border,
   },
   summaryLocalRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
+    padding: 9,
     borderRadius: 8,
     backgroundColor: T.greenPale,
     marginTop: 4,
@@ -640,7 +716,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingTop: 14,
     backgroundColor: T.white,
     borderTopWidth: 1,
     borderTopColor: T.border,
@@ -652,10 +728,10 @@ const styles = StyleSheet.create({
     gap: 6,
     height: 50,
     borderRadius: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
   },
-  navBtnOutline: { borderWidth: 1, borderColor: T.border, backgroundColor: 'transparent' },
-  navBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  navBtnOutline: { borderWidth: 1, borderColor: T.border, backgroundColor: T.white },
+  navBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
 });
 
 export default function FichaRecebimentoRoute() {

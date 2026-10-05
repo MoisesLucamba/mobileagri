@@ -4,8 +4,9 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -16,7 +17,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ViewStyle,
+  ViewStyle
 } from 'react-native';
 import Animated, {
   Easing,
@@ -32,38 +33,34 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon, { IconName } from '../components/Icon';
 import { getMunicipalityLabel, getProvinceLabel, getProvincesForCountry } from '../data/country-locations';
+import { normalizeAngolaAuthPhone } from '../lib/authPhone';
 import { signInWithGoogle } from '../lib/googleAuth';
 import { supabase } from '../lib/supabase';
 
+// Mesma paleta do ProductCard
 const COLORS = {
-  primary: '#16834A',
-  secondary: '#C7F16B',
-  dark: '#143529',
-  text: '#1C3428',
-  mid: '#506557',
-  muted: '#687A6C',
-  faint: '#9AA99D',
-  border: '#DCE8DD',
-  field: '#FFFFFF',
-  background: '#F4F9F2',
-  soft: '#EAF5E8',
-  gold: '#B86E25',
-  goldSoft: '#FFF3E3',
-  danger: '#B54747',
-  dangerSoft: '#FCECEC',
-};
-
-const SHADOW_SOFT = {
-  shadowColor: COLORS.dark,
-  shadowOpacity: 0.22,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 5 },
-  elevation: 6,
+  primary: '#2E8B4F',
+  primaryDark: '#25703F',
+  tint: '#E9F5EC',
+  text: '#16231C',
+  mid: '#5B7A66',
+  muted: '#78877D',
+  faint: '#AEB8AC',
+  line: '#E8ECE6',
+  field: '#F4F6F2',
+  background: '#F9FAF8',
+  white: '#FFFFFF',
+  gold: '#B9741A',
+  goldSoft: '#FBEBD3',
+  danger: '#DD5138',
+  dangerSoft: '#FBEAE6',
 };
 
 const MIN_PASSWORD = 8;
+type VerificationChannel = 'email' | 'phone' | 'both';
 
 const enter = (delay: number) => FadeInDown.delay(delay).springify().damping(18).stiffness(140);
+const LOGO = require('../../assets/images/Agrilink_SD.png');
 
 // Gera um NIF aleatório (13 dígitos, nunca começa por 0)
 // para quem não preencher o campo no registo.
@@ -112,7 +109,7 @@ function PressScale({
       <Pressable
         onPress={onPress}
         disabled={disabled}
-        onPressIn={() => (scale.value = withSpring(0.96, { damping: 15, stiffness: 300 }))}
+        onPressIn={() => (scale.value = withSpring(0.97, { damping: 15, stiffness: 300 }))}
         onPressOut={() => (scale.value = withSpring(1, { damping: 12, stiffness: 240 }))}
         style={style}
       >
@@ -135,19 +132,17 @@ function Field({
   const p = useSharedValue(0);
 
   useEffect(() => {
-    p.value = withTiming(focused ? 1 : 0, { duration: 220 });
+    p.value = withTiming(focused ? 1 : 0, { duration: 200 });
   }, [focused]);
 
   const anim = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(p.value, [0, 1], [COLORS.border, COLORS.primary]),
-    backgroundColor: interpolateColor(p.value, [0, 1], [COLORS.field, '#FFFFFF']),
-    transform: [{ scale: 1 + p.value * 0.008 }],
+    borderColor: interpolateColor(p.value, [0, 1], [COLORS.line, COLORS.primary]),
   }));
 
   return (
     <Animated.View style={[styles.inputWrapper, anim]}>
       <View style={styles.inputIcon}>
-        <Icon name={icon} size={19} color={focused ? COLORS.primary : COLORS.muted} />
+        <Icon name={icon} size={18} color={focused ? COLORS.primary : COLORS.muted} />
       </View>
       {children}
     </Animated.View>
@@ -161,6 +156,8 @@ export default function Register() {
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [verificationModalVisible, setVerificationModalVisible] = useState(false);
+  const [verificationChannel, setVerificationChannel] = useState<VerificationChannel>('both');
   const [errorMessage, setErrorMessage] = useState('');
   const [focused, setFocused] = useState<string | null>(null);
 
@@ -259,26 +256,46 @@ export default function Register() {
     }
     if (!validateCurrentStep()) return;
 
+    setVerificationModalVisible(true);
+  };
+
+  const startVerification = async () => {
+    const cleanEmail = email.trim().toLowerCase();
+    const authPhone = normalizeAngolaAuthPhone(phone);
+
+    if (verificationChannel !== 'email' && !authPhone) {
+      setVerificationModalVisible(false);
+      setErrorMessage('Introduza um número angolano válido para verificar por SMS.');
+      setCurrentStep(1);
+      return;
+    }
+
     setLoading(true);
     setErrorMessage('');
+    setVerificationModalVisible(false);
     try {
-      const cleanEmail = email.trim().toLowerCase();
       const cleanName = fullName.trim();
+      const userMetadata = {
+        full_name: cleanName,
+        phone: phone.trim(),
+        phone_e164: authPhone,
+        contact_email: cleanEmail,
+        identity_document: identityDocument.trim() || generateRandomNif(),
+        user_type: userType,
+        load_capacity_kg: userType === 'motorista' && loadCapacity ? Number(loadCapacity) : null,
+        province_id: selectedProvince,
+        municipality_id: selectedMunicipality,
+        referred_by_agent_id: wasReferred === 'sim' && agentCode ? agentCode.toUpperCase() : null,
+        verification_method: verificationChannel,
+      };
 
+      const credentials = verificationChannel === 'email'
+        ? { email: cleanEmail, password }
+        : { phone: authPhone!, password };
       const { error } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password,
+        ...credentials,
         options: {
-          data: {
-            full_name: cleanName,
-            phone,
-            identity_document: identityDocument.trim() || generateRandomNif(),
-            user_type: userType,
-            load_capacity_kg: userType === 'motorista' && loadCapacity ? Number(loadCapacity) : null,
-            province_id: selectedProvince,
-            municipality_id: selectedMunicipality,
-            referred_by_agent_id: wasReferred === 'sim' && agentCode ? agentCode.toUpperCase() : null,
-          },
+          data: userMetadata,
         },
       });
 
@@ -291,8 +308,14 @@ export default function Register() {
         return;
       }
 
-      Alert.alert('Conta criada!', `Enviámos um link de confirmação para ${cleanEmail}.`);
-      router.replace('/login');
+      router.push({
+        pathname: '/verify-otp',
+        params: {
+          channel: verificationChannel,
+          email: cleanEmail,
+          phone: authPhone ?? '',
+        },
+      } as any);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Erro inesperado ao criar conta.');
     } finally {
@@ -358,23 +381,17 @@ export default function Register() {
               style={styles.backBtn}
               onPress={handleTopBack}
               disabled={loading}
-              activeOpacity={0.5}
+              activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Voltar"
             >
-              <Icon name="chevron-left" size={22} color={COLORS.text} />
-              <Text style={styles.backText}>Voltar</Text>
+              <Icon name="chevron-left" size={19} color={COLORS.text} />
             </TouchableOpacity>
           </Animated.View>
 
           {/* Logo */}
           <View style={styles.header}>
-            <View style={styles.brandLockup}>
-              <View style={styles.brandMark}>
-                <Icon name="leaf" size={23} color="#FFFFFF" />
-              </View>
-              <Text style={styles.brand}>AgriLink</Text>
-            </View>
+            <Image source={LOGO} resizeMode="contain" style={styles.logo} accessibilityLabel="AgriLink" />
             <Animated.Text entering={enter(250)} style={styles.title}>
               Cria a tua conta
             </Animated.Text>
@@ -385,7 +402,7 @@ export default function Register() {
 
           {errorMessage ? (
             <Animated.View entering={FadeInDown.duration(300)} style={styles.errorBox}>
-              <Icon name="alert-circle" size={17} color={COLORS.danger} />
+              <Icon name="alert-circle" size={16} color={COLORS.danger} />
               <Text style={styles.errorText}>{errorMessage}</Text>
             </Animated.View>
           ) : null}
@@ -402,7 +419,6 @@ export default function Register() {
                       style={[
                         styles.stepDot,
                         (done || active) && styles.stepDotOn,
-                        active && styles.stepDotActive,
                       ]}
                     >
                       <Icon
@@ -411,7 +427,7 @@ export default function Register() {
                         color={done || active ? '#FFFFFF' : COLORS.faint}
                       />
                     </View>
-                    <Text style={[styles.stepDotLabel, (done || active) && { color: COLORS.primary }]}>
+                    <Text style={[styles.stepDotLabel, (done || active) && { color: COLORS.primaryDark }]}>
                       {s.title}
                     </Text>
                   </View>
@@ -448,7 +464,7 @@ export default function Register() {
                         style={[styles.userTypeBtn, active && styles.userTypeBtnActive]}
                       >
                         <View style={[styles.userTypeIcon, active && styles.userTypeIconActive]}>
-                          <Icon name={opt.icon} size={20} color={active ? '#FFFFFF' : COLORS.primary} />
+                          <Icon name={opt.icon} size={19} color={active ? '#FFFFFF' : COLORS.primary} />
                         </View>
                         <Text style={[styles.userTypeLabel, active && styles.userTypeLabelActive]}>
                           {opt.label}
@@ -466,7 +482,7 @@ export default function Register() {
                 style={[styles.googleButton, busy && styles.disabled]}
               >
                 {googleLoading ? (
-                  <ActivityIndicator size="small" color={COLORS.dark} />
+                  <ActivityIndicator size="small" color={COLORS.text} />
                 ) : (
                   <>
                     <Text style={styles.googleMark}>G</Text>
@@ -628,7 +644,7 @@ export default function Register() {
                     {...focusProps('pass')}
                   />
                   <TouchableOpacity style={styles.eyeButton} onPress={() => setShowPassword(!showPassword)}>
-                    <Icon name={showPassword ? 'eye-off' : 'eye'} size={19} color={COLORS.muted} />
+                    <Icon name={showPassword ? 'eye-off' : 'eye'} size={18} color={COLORS.muted} />
                   </TouchableOpacity>
                 </Field>
               </View>
@@ -650,7 +666,7 @@ export default function Register() {
                     style={styles.eyeButton}
                     onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                   >
-                    <Icon name={showConfirmPassword ? 'eye-off' : 'eye'} size={19} color={COLORS.muted} />
+                    <Icon name={showConfirmPassword ? 'eye-off' : 'eye'} size={18} color={COLORS.muted} />
                   </TouchableOpacity>
                 </Field>
               </View>
@@ -670,7 +686,7 @@ export default function Register() {
                         <View style={[styles.radioOuter, active && { borderColor: COLORS.primary }]}>
                           {active && <View style={styles.radioInner} />}
                         </View>
-                        <Text style={[styles.radioLabel, active && { color: COLORS.primary }]}>
+                        <Text style={[styles.radioLabel, active && { color: COLORS.primaryDark }]}>
                           {v === 'nao' ? 'Não' : 'Sim'}
                         </Text>
                       </PressScale>
@@ -679,7 +695,7 @@ export default function Register() {
                 </View>
 
                 {wasReferred === 'sim' && (
-                  <Animated.View entering={FadeInDown.duration(350)} style={{ marginTop: 14 }}>
+                  <Animated.View entering={FadeInDown.duration(350)} style={{ marginTop: 12 }}>
                     <Field icon="key" focused={focused === 'agent'}>
                       <TextInput
                         placeholder="Código de 6 dígitos"
@@ -719,7 +735,7 @@ export default function Register() {
           <View style={styles.actionsRow}>
             {currentStep > 0 && (
               <PressScale onPress={goPrev} style={styles.prevBtn}>
-                <Icon name="arrow-left" size={19} color={COLORS.text} />
+                <Icon name="arrow-left" size={18} color={COLORS.text} />
               </PressScale>
             )}
             <PressScale
@@ -735,7 +751,7 @@ export default function Register() {
                   <Text style={styles.submitText}>
                     {currentStep === steps.length - 1 ? 'Criar conta' : 'Continuar'}
                   </Text>
-                  <Icon name="arrow-right" size={18} color="#FFFFFF" />
+                  <Icon name="arrow-right" size={17} color="#FFFFFF" />
                 </>
               )}
             </PressScale>
@@ -752,26 +768,77 @@ export default function Register() {
           <View style={{ flex: 1, minHeight: 24 }} />
 
           {/* TERMOS E FOOTER */}
-          <View style={styles.legalCard}>
-            <Icon name="shield" size={16} color={COLORS.primary} />
-            <Text style={styles.legalText}>
-              Ao criar conta, aceita os nossos{' '}
-              <Text style={styles.legalLink} onPress={() => router.push('/termos')}>
-                Termos de Utilização
-              </Text>{' '}
-              e a{' '}
-              <Text style={styles.legalLink} onPress={() => router.push('/privacidade')}>
-                Política de Privacidade
-              </Text>
-              .
+          <Text style={styles.legalText}>
+            Ao criar conta, aceita os nossos{' '}
+            <Text style={styles.legalLink} onPress={() => router.push('/termos')}>
+              Termos de Utilização
+            </Text>{' '}
+            e a{' '}
+            <Text style={styles.legalLink} onPress={() => router.push('/privacidade')}>
+              Política de Privacidade
             </Text>
-          </View>
+            .
+          </Text>
           <Text style={styles.footerText}>
             © {new Date().getFullYear()} AgriLink · Desenvolvida pela{' '}
             <Text style={styles.footerBrand}>THE TEAM</Text>
           </Text>
         </View>
       </ScrollView>
+      <Modal
+        visible={verificationModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVerificationModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setVerificationModalVisible(false)} />
+          <View style={styles.verificationModal}>
+            <View style={styles.modalIcon}>
+              <Icon name="shield" size={19} color={COLORS.primary} />
+            </View>
+            <Text style={styles.modalTitle}>Como quer verificar a conta?</Text>
+            <Text style={styles.modalDescription}>
+              Basta confirmar um contacto para ativar a conta. Pode confirmar o segundo depois.
+            </Text>
+
+            {([
+              { id: 'email', label: 'E-mail', detail: email.trim().toLowerCase(), icon: 'mail' as IconName },
+              { id: 'phone', label: 'Telemóvel', detail: phone.trim(), icon: 'phone' as IconName },
+              { id: 'both', label: 'Ambos', detail: 'Telemóvel primeiro; e-mail opcional', icon: 'check-circle' as IconName },
+            ] as const).map((option) => {
+              const selected = verificationChannel === option.id;
+              return (
+                <Pressable
+                  key={option.id}
+                  onPress={() => setVerificationChannel(option.id)}
+                  style={[styles.verificationOption, selected && styles.verificationOptionActive]}
+                >
+                  <Icon name={option.icon} size={18} color={selected ? COLORS.primary : COLORS.muted} />
+                  <View style={styles.verificationOptionCopy}>
+                    <Text style={styles.verificationOptionTitle}>{option.label}</Text>
+                    <Text style={styles.verificationOptionDetail} numberOfLines={1}>{option.detail}</Text>
+                  </View>
+                  <View style={[styles.radioOuter, selected && styles.radioOuterActive]}>
+                    {selected && <View style={styles.radioInner} />}
+                  </View>
+                </Pressable>
+              );
+            })}
+
+            <PressScale
+              onPress={startVerification}
+              disabled={loading}
+              style={[styles.modalContinue, loading && styles.disabled]}
+            >
+              {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.modalContinueText}>Enviar código</Text>}
+            </PressScale>
+            <TouchableOpacity onPress={() => setVerificationModalVisible(false)} disabled={loading} style={styles.modalCancel}>
+              <Text style={styles.modalCancelText}>Agora não</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -784,153 +851,144 @@ const styles = StyleSheet.create({
 
   content: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     width: '100%',
     maxWidth: 520,
     alignSelf: 'center',
   },
 
+  // Mesmo botão do ícone de mapa do ProductCard
   backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    marginLeft: -4,
-    paddingVertical: 8,
-    paddingRight: 12,
-    gap: 2,
-  },
-  backText: { fontSize: 15.5, fontWeight: '600', color: COLORS.text },
-
-  header: { alignItems: 'center', marginTop: 4, marginBottom: 24 },
-  brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  brandMark: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.tint,
   },
-  brand: { fontSize: 18, fontWeight: '800', color: COLORS.primary },
+
+  header: { alignItems: 'center', marginTop: 8, marginBottom: 22 },
+  logo: { width: 80, height: 80, borderRadius: 12, backgroundColor: COLORS.white },
   title: {
-    marginTop: 18,
-    fontSize: 26,
-    fontWeight: '800',
+    marginTop: 12,
+    fontSize: 23,
+    fontWeight: '900',
     color: COLORS.text,
     textAlign: 'center',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
-  subtitle: { fontSize: 14.5, color: COLORS.muted, textAlign: 'center', marginTop: 6 },
+  subtitle: { fontSize: 13.5, color: COLORS.muted, textAlign: 'center', marginTop: 4 },
 
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: COLORS.dangerSoft,
-    borderRadius: 16,
+    borderRadius: 10,
     padding: 12,
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  errorText: { color: COLORS.danger, fontSize: 13, fontWeight: '700', flex: 1 },
+  errorText: { color: COLORS.danger, fontSize: 12.5, fontWeight: '700', flex: 1 },
 
-  progressBlock: { marginBottom: 22 },
-  stepper: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  progressBlock: { marginBottom: 20 },
+  stepper: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   stepperItem: { flex: 1, alignItems: 'center', gap: 6 },
   stepDot: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.field,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.line,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepDotOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  stepDotActive: { ...SHADOW_SOFT, shadowOpacity: 0.18, elevation: 4 },
-  stepDotLabel: { fontSize: 11.5, fontWeight: '700', color: COLORS.faint },
+  stepDotLabel: { fontSize: 11.5, fontWeight: '800', color: COLORS.faint },
 
-  progressTrack: { height: 6, borderRadius: 999, backgroundColor: COLORS.border, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 999, backgroundColor: COLORS.primary },
+  progressTrack: { height: 4, borderRadius: 2, backgroundColor: COLORS.line, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 2, backgroundColor: COLORS.primary },
   stepRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
   stepHint: { flex: 1, fontSize: 12.5, color: COLORS.muted },
-  stepBadge: { backgroundColor: COLORS.soft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
-  stepBadgeText: { fontSize: 10.5, fontWeight: '800', color: COLORS.primary },
+  stepBadge: { backgroundColor: COLORS.tint, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  stepBadgeText: { fontSize: 10.5, fontWeight: '800', color: COLORS.primaryDark },
 
-  stepBody: { gap: 16 },
+  stepBody: { gap: 14 },
 
-  label: { fontSize: 13.5, fontWeight: '700', color: COLORS.text, marginBottom: 8 },
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  optionalBadge: { backgroundColor: COLORS.goldSoft, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
+  label: { fontSize: 12.5, fontWeight: '800', color: COLORS.text, marginBottom: 6 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  optionalBadge: { backgroundColor: COLORS.goldSoft, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
   optionalText: { fontSize: 10, fontWeight: '800', color: COLORS.gold },
 
   inputWrapper: {
-    height: 54,
-    borderWidth: 1.5,
-    borderRadius: 14,
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  inputIcon: { marginLeft: 16 },
-  input: { flex: 1, height: '100%', fontSize: 15.5, color: COLORS.text, paddingHorizontal: 12 },
-  eyeButton: { paddingHorizontal: 16, height: '100%', justifyContent: 'center', alignItems: 'center' },
+  inputIcon: { marginLeft: 14 },
+  input: { flex: 1, height: '100%', fontSize: 14.5, color: COLORS.text, paddingHorizontal: 10 },
+  eyeButton: { paddingHorizontal: 14, height: '100%', justifyContent: 'center', alignItems: 'center' },
 
   hintBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    marginTop: 10,
-    padding: 12,
-    borderRadius: 16,
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
     backgroundColor: COLORS.goldSoft,
   },
   hintText: { flex: 1, fontSize: 11.5, color: COLORS.mid, lineHeight: 17 },
 
   pickerWrap: {
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 14,
-    backgroundColor: COLORS.field,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
     overflow: 'hidden',
   },
 
   userTypeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
   userTypeCell: { width: '48%' },
   userTypeBtn: {
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.field,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    backgroundColor: COLORS.white,
     alignItems: 'center',
     gap: 8,
   },
-  userTypeBtnActive: { borderColor: COLORS.primary, backgroundColor: COLORS.soft },
+  userTypeBtnActive: { borderColor: COLORS.primary, backgroundColor: COLORS.tint },
   userTypeIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#FFFFFF',
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: COLORS.tint,
     alignItems: 'center',
     justifyContent: 'center',
   },
   userTypeIconActive: { backgroundColor: COLORS.primary },
-  userTypeLabel: { fontSize: 12.5, fontWeight: '700', color: COLORS.mid },
-  userTypeLabelActive: { color: COLORS.primary },
+  userTypeLabel: { fontSize: 12.5, fontWeight: '800', color: COLORS.mid },
+  userTypeLabelActive: { color: COLORS.primaryDark },
 
   googleButton: {
-    minHeight: 50,
-    borderRadius: 14,
+    height: 46,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: '#FFFFFF',
+    borderColor: COLORS.line,
+    backgroundColor: COLORS.white,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
   },
   googleMark: { fontSize: 18, fontWeight: '800', color: '#4285F4' },
-  googleButtonText: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  googleButtonText: { fontSize: 14, fontWeight: '800', color: COLORS.text },
 
   radioGroup: { flexDirection: 'row', gap: 10, marginTop: 2 },
   radioChip: {
@@ -938,51 +996,87 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 14,
-    borderRadius: 999,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.field,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    backgroundColor: COLORS.white,
   },
-  radioChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.soft },
+  radioChipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.tint },
   radioOuter: {
     width: 18,
     height: 18,
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: COLORS.border,
+    borderColor: COLORS.line,
     alignItems: 'center',
     justifyContent: 'center',
   },
   radioInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary },
-  radioLabel: { fontSize: 14, fontWeight: '700', color: COLORS.mid },
+  radioLabel: { fontSize: 13.5, fontWeight: '800', color: COLORS.mid },
 
   codeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   invalidCode: { fontSize: 12, fontWeight: '700', color: COLORS.danger },
-  validCode: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
+  validCode: { fontSize: 12, fontWeight: '700', color: COLORS.primaryDark },
 
-  actionsRow: { flexDirection: 'row', gap: 10, marginTop: 26 },
+  modalOverlay: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(22,35,28,0.42)', padding: 18 },
+  verificationModal: {
+    width: '100%',
+    maxWidth: 460,
+    alignSelf: 'center',
+    padding: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    backgroundColor: COLORS.white,
+  },
+  modalIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: COLORS.tint },
+  modalTitle: { marginTop: 12, color: COLORS.text, fontSize: 17, fontWeight: '900' },
+  modalDescription: { marginTop: 4, marginBottom: 14, color: COLORS.muted, fontSize: 12.5, lineHeight: 18 },
+  verificationOption: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+  },
+  verificationOptionActive: { borderColor: COLORS.primary, backgroundColor: COLORS.tint },
+  verificationOptionCopy: { flex: 1 },
+  verificationOptionTitle: { color: COLORS.text, fontSize: 13.5, fontWeight: '800' },
+  verificationOptionDetail: { marginTop: 2, color: COLORS.muted, fontSize: 11.5 },
+  radioOuterActive: { borderColor: COLORS.primary },
+  modalContinue: { height: 46, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: 10, backgroundColor: COLORS.primary },
+  modalContinueText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+  modalCancel: { minHeight: 42, alignItems: 'center', justifyContent: 'center' },
+  modalCancelText: { color: COLORS.muted, fontSize: 13, fontWeight: '700' },
+
+  actionsRow: { flexDirection: 'row', gap: 10, marginTop: 24 },
   prevBtn: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    backgroundColor: '#FFFFFF',
+    width: 46,
+    height: 46,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    backgroundColor: COLORS.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Botão igual ao "Comprar" do ProductCard
   submitBtn: {
-    height: 54,
-    borderRadius: 999,
+    height: 46,
+    borderRadius: 10,
     backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    ...SHADOW_SOFT,
+    gap: 6,
   },
-  submitText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  submitText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   disabled: { opacity: 0.6 },
 
   loginRow: {
@@ -990,23 +1084,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
-    marginTop: 22,
+    marginTop: 20,
   },
-  loginText: { fontSize: 14, color: COLORS.muted },
-  loginLink: { fontSize: 14, fontWeight: '800', color: COLORS.primary, marginLeft: 6 },
+  loginText: { fontSize: 13.5, color: COLORS.muted },
+  loginLink: { fontSize: 13.5, fontWeight: '800', color: COLORS.primaryDark, marginLeft: 6 },
 
-  legalCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    backgroundColor: COLORS.soft,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  legalText: { flex: 1, fontSize: 12, lineHeight: 18, color: COLORS.muted },
-  legalLink: { color: COLORS.primary, fontWeight: '700', textDecorationLine: 'underline' },
+  legalText: { fontSize: 11.5, lineHeight: 17, color: COLORS.muted, textAlign: 'center' },
+  legalLink: { color: COLORS.primaryDark, fontWeight: '700' },
 
-  footerText: { fontSize: 11.5, color: '#8A968C', textAlign: 'center', marginTop: 14 },
-  footerBrand: { fontWeight: '800', color: COLORS.dark, letterSpacing: 0.5 },
+  footerText: { fontSize: 11, color: COLORS.faint, textAlign: 'center', marginTop: 12 },
+  footerBrand: { fontWeight: '800', color: COLORS.text },
 });

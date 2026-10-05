@@ -9,19 +9,24 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
+    useWindowDimensions,
     View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import Icon from "./Icon";
 
+// Paleta partilhada com o resto da app
 const COLORS = {
-  primary: "#1F6B3A",
+  primary: "#2E8B4F",
+  primaryDark: "#25703F",
+  primarySoft: "#E9F5EC",
   text: "#16231C",
   muted: "#78877D",
   faint: "#AEB8AC",
-  canvas: "#FAF8F3",
+  canvas: "#F6F8F5",
   surface: "#FFFFFF",
-  border: "#EAE4D6",
+  border: "#E8ECE6",
 };
 
 export type MapViewerCoords = { lat: number; lng: number };
@@ -44,7 +49,7 @@ function buildMapHtml(lat: number, lng: number) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; background: #FAF8F3; }
+    html, body, #map { height: 100%; margin: 0; padding: 0; background: #F6F8F5; }
     .leaflet-control-attribution { font-size: 9px; }
   </style>
 </head>
@@ -76,7 +81,7 @@ function buildRouteHtml({ origin, destination }: MapViewerRoute, roadCoords: [nu
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; background: #FAF8F3; }
+    html, body, #map { height: 100%; margin: 0; padding: 0; background: #F6F8F5; }
     .leaflet-control-attribution { font-size: 9px; }
   </style>
 </head>
@@ -94,21 +99,21 @@ function buildRouteHtml({ origin, destination }: MapViewerRoute, roadCoords: [nu
     function endpoint(point, label, color) {
       var icon = L.divIcon({
         className: 'route-endpoint',
-        html: '<div style="width:34px;height:34px;border-radius:50%;border:3px solid #fff;background:' + color + ';color:#fff;display:flex;align-items:center;justify-content:center;font:bold 14px sans-serif;box-shadow:0 2px 9px #0005">' + label + '</div>',
+        html: '<div style="width:34px;height:34px;border-radius:10px;border:3px solid #fff;background:' + color + ';color:#fff;display:flex;align-items:center;justify-content:center;font:bold 14px sans-serif;box-shadow:0 2px 9px #0005">' + label + '</div>',
         iconSize: [34, 34],
         iconAnchor: [17, 17]
       });
       L.marker(point, { icon: icon, zIndexOffset: 1000 }).addTo(map);
     }
-    endpoint(origin, 'A', '#1F6B3A');
+    endpoint(origin, 'A', '#2E8B4F');
     endpoint(destination, 'B', '#E2932F');
-    var fallback = L.polyline([origin, destination], { color: '#1F6B3A', weight: 5, dashArray: '8 9', opacity: 0.8 }).addTo(map);
+    var fallback = L.polyline([origin, destination], { color: '#2E8B4F', weight: 5, dashArray: '8 9', opacity: 0.8 }).addTo(map);
     map.fitBounds(L.latLngBounds([origin, destination]), { padding: [42, 42] });
     var road = ${roadGeometry};
     if (road && road.length > 1) {
       map.removeLayer(fallback);
       L.polyline(road, { color: '#FFFFFF', weight: 10, opacity: 0.9 }).addTo(map);
-      L.polyline(road, { color: '#1F6B3A', weight: 5, opacity: 0.95 }).addTo(map);
+      L.polyline(road, { color: '#2E8B4F', weight: 5, opacity: 0.95 }).addTo(map);
       map.fitBounds(L.latLngBounds(road), { padding: [42, 42] });
     }
     setTimeout(function () { map.invalidateSize(); }, 300);
@@ -118,13 +123,18 @@ function buildRouteHtml({ origin, destination }: MapViewerRoute, roadCoords: [nu
 }
 
 export default function MapViewer({ visible, coords, route, title, subtitle, onClose }: Props) {
+  const insets = useSafeAreaInsets();
+  const { height: screenH } = useWindowDimensions();
   const enter = useRef(new Animated.Value(0)).current;
   const [roadCoords, setRoadCoords] = useState<[number, number][] | null>(null);
+
+  // O cartão nunca passa por baixo da barra de navegação / gestos do dispositivo
+  const cardHeight = Math.min(560, screenH - insets.top - insets.bottom - 56);
 
   useEffect(() => {
     if (visible) {
       enter.setValue(0);
-      Animated.spring(enter, { toValue: 1, bounciness: 6, speed: 14, useNativeDriver: true }).start();
+      Animated.spring(enter, { toValue: 1, bounciness: 4, speed: 14, useNativeDriver: true }).start();
     }
   }, [visible]);
 
@@ -176,17 +186,23 @@ export default function MapViewer({ visible, coords, route, title, subtitle, onC
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+      <View
+        style={[
+          styles.overlay,
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 },
+        ]}
+      >
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <Animated.View
           style={[
             styles.card,
             {
+              height: cardHeight,
               opacity: enter,
               transform: [
-                { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
-                { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) },
+                { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) },
+                { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) },
               ],
             },
           ]}
@@ -232,11 +248,16 @@ export default function MapViewer({ visible, coords, route, title, subtitle, onC
             </View>
 
             <View style={styles.footer}>
-              <TouchableOpacity style={styles.openBtn} onPress={openExternalMaps} disabled={!coords && !route}>
+              <TouchableOpacity
+                style={styles.openBtn}
+                onPress={openExternalMaps}
+                disabled={!coords && !route}
+                activeOpacity={0.85}
+              >
                 <Icon name="navigation" size={16} color="#FFFFFF" />
                 <Text style={styles.openText}>Abrir no Maps</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.closeTextBtn} onPress={onClose}>
+              <TouchableOpacity style={styles.closeTextBtn} onPress={onClose} activeOpacity={0.85}>
                 <Text style={styles.closeText}>Fechar</Text>
               </TouchableOpacity>
             </View>
@@ -253,21 +274,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(22,35,28,0.5)",
-    padding: 22,
+    paddingHorizontal: 18,
   },
   card: {
     width: "100%",
-    maxWidth: 420,
-    height: 520,
-    borderRadius: 26,
+    maxWidth: 440,
+    borderRadius: 16,
     backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
   },
-  inner: { flex: 1, overflow: "hidden", borderRadius: 26, backgroundColor: COLORS.surface },
+  inner: { flex: 1, overflow: "hidden", borderRadius: 16, backgroundColor: COLORS.surface },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -277,19 +299,19 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   headerIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#EAF3EA",
+    backgroundColor: COLORS.primarySoft,
   },
   title: { fontSize: 15, fontWeight: "800", color: COLORS.text },
   subtitle: { fontSize: 11.5, color: COLORS.muted, marginTop: 2 },
   closeBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.canvas,
@@ -308,7 +330,7 @@ const styles = StyleSheet.create({
   openBtn: {
     flex: 1,
     height: 46,
-    borderRadius: 14,
+    borderRadius: 10,
     backgroundColor: COLORS.primary,
     flexDirection: "row",
     alignItems: "center",
@@ -319,10 +341,12 @@ const styles = StyleSheet.create({
   closeTextBtn: {
     flex: 1,
     height: 46,
-    borderRadius: 14,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.canvas,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   closeText: { fontSize: 13.5, fontWeight: "800", color: COLORS.muted },
 });

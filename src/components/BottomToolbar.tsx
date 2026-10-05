@@ -6,9 +6,13 @@ import { useUserRole } from "../context/RoleContext";
 import { FALLBACK_ACTION, ROLE_ACTIONS } from "../constants/roleActions";
 import Icon, { IconName } from "./Icon";
 
+// Mesma paleta do ProductCard
 const COLORS = {
-  muted: "#A3ADA5",
-  primary: "#1F6B3A",
+  primary: "#2E8B4F",
+  tint: "#E9F5EC",
+  text: "#16231C", // preto carregado (inativo)
+  muted: "#78877D",
+  line: "#E8ECE6",
   white: "#FFFFFF",
 };
 
@@ -22,13 +26,14 @@ function TabIcon({ active, icon, onPress }: TabIconProps) {
   return (
     <TouchableOpacity activeOpacity={0.7} onPress={onPress} className="flex-1 items-center justify-center">
       <View
-        className={`h-[38px] w-[38px] items-center justify-center rounded-full ${active ? "bg-primary-soft" : ""}`}
+        className="h-[38px] w-[38px] items-center justify-center rounded-[10px]"
+        style={{ backgroundColor: active ? COLORS.tint : "transparent" }}
       >
         <Icon
           name={icon}
           size={19}
-          color={active ? COLORS.primary : COLORS.muted}
-          strokeWidth={active ? 2.4 : 2}
+          color={active ? COLORS.primary : COLORS.text}
+          strokeWidth={2.2}
         />
       </View>
     </TouchableOpacity>
@@ -47,8 +52,8 @@ export default function BottomToolbar() {
 
   return (
     <View
-      className="absolute left-5 right-5 z-[100] h-[58px] flex-row items-center justify-around rounded-[29px] border border-[#ECE9E0] bg-white"
-      style={[s.shadow, { bottom }]}
+      className="absolute left-[18px] right-[18px] z-[100] h-[58px] flex-row items-center justify-around rounded-[12px] bg-white"
+      style={[s.bar, { bottom }]}
     >
       <TabIcon active={isActive("/home")} icon="home" onPress={() => router.push("/home")} />
 
@@ -61,7 +66,7 @@ export default function BottomToolbar() {
         className="flex-1 items-center justify-center"
       >
         <View
-          className="h-[38px] w-[38px] items-center justify-center rounded-full"
+          className="h-[38px] w-[38px] items-center justify-center rounded-[10px]"
           style={{ backgroundColor: loading ? COLORS.muted : action.color }}
         >
           {loading ? (
@@ -79,12 +84,15 @@ export default function BottomToolbar() {
   );
 }
 
+// Cartão plano: borda fina e sombra quase nula, igual ao ProductCard
 const s = StyleSheet.create({
-  shadow: {
+  bar: {
+    borderWidth: 1,
+    borderColor: COLORS.line,
     shadowColor: "#16231C",
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
 });

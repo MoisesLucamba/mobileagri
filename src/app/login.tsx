@@ -1,59 +1,55 @@
+import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StatusBar,
-    StyleProp,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-    ViewStyle,
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleProp,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  ViewStyle,
 } from 'react-native';
 import Animated, {
-    FadeIn,
-    FadeInDown,
-    interpolateColor,
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring,
-    withTiming,
+  FadeIn,
+  FadeInDown,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import Icon, { IconName } from '../components/Icon';
+import { normalizeAngolaAuthPhone } from '../lib/authPhone';
 import { signInWithGoogle } from '../lib/googleAuth';
 import { supabase } from '../lib/supabase';
 
+// Mesma paleta do ProductCard
 const COLORS = {
-  primary: '#16834A',
-  secondary: '#C7F16B',
-  dark: '#143529',
-  text: '#1C3428',
-  muted: '#687A6C',
-  faint: '#9AA99D',
-  border: '#DCE8DD',
-  field: '#FFFFFF',
-  background: '#F4F9F2',
-  soft: '#EAF5E8',
-};
-
-const SHADOW_SOFT = {
-  shadowColor: COLORS.dark,
-  shadowOpacity: 0.22,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 5 },
-  elevation: 6,
+  primary: '#2E8B4F',
+  primaryDark: '#25703F',
+  tint: '#E9F5EC',
+  text: '#16231C',
+  muted: '#78877D',
+  faint: '#AEB8AC',
+  line: '#E8ECE6',
+  background: '#F9FAF8',
+  white: '#FFFFFF',
 };
 
 const enter = (delay: number) => FadeInDown.delay(delay).springify().damping(18).stiffness(140);
+const LOGO = require('../../assets/images/Agrilink_SD.png');
 
 // ================================
 // COMPONENTES
@@ -125,19 +121,17 @@ function Field({
   const p = useSharedValue(0);
 
   useEffect(() => {
-    p.value = withTiming(focused ? 1 : 0, { duration: 220 });
+    p.value = withTiming(focused ? 1 : 0, { duration: 200 });
   }, [focused]);
 
   const anim = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(p.value, [0, 1], [COLORS.border, COLORS.primary]),
-    backgroundColor: interpolateColor(p.value, [0, 1], [COLORS.field, '#FFFFFF']),
-    transform: [{ scale: 1 + p.value * 0.008 }],
+    borderColor: interpolateColor(p.value, [0, 1], [COLORS.line, COLORS.primary]),
   }));
 
   return (
     <Animated.View style={[styles.inputWrapper, anim]}>
       <View style={styles.inputIcon}>
-        <Icon name={icon} size={19} color={focused ? COLORS.primary : COLORS.muted} />
+        <Icon name={icon} size={18} color={focused ? COLORS.primary : COLORS.muted} />
       </View>
       {children}
     </Animated.View>
@@ -182,7 +176,7 @@ export default function LoginScreen() {
   // ================================
   const handleSubmit = async () => {
     if (!email.trim()) {
-      Alert.alert('Atenção', 'Por favor, introduza o seu e-mail.');
+      Alert.alert('Atenção', 'Introduza o seu e-mail ou telefone.');
       return;
     }
 
@@ -194,10 +188,17 @@ export default function LoginScreen() {
     try {
       setLoading(true);
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+      const identifier = email.trim();
+      const phoneCredential = identifier.includes('@') ? null : normalizeAngolaAuthPhone(identifier);
+      if (!identifier.includes('@') && !phoneCredential) {
+        Alert.alert('Telefone inválido', 'Use um número angolano válido, por exemplo 923 456 789.');
+        return;
+      }
+
+      const result = identifier.includes('@')
+        ? await supabase.auth.signInWithPassword({ email: identifier.toLowerCase(), password })
+        : await supabase.auth.signInWithPassword({ phone: phoneCredential!, password });
+      const { data, error } = result;
 
       if (error) {
         console.log('Erro de login:', error);
@@ -227,7 +228,8 @@ export default function LoginScreen() {
   // RECUPERAR PASSWORD
   // ================================
   const handleForgotPassword = async () => {
-    if (!email.trim()) {
+    const recoveryEmail = email.trim().toLowerCase();
+    if (!recoveryEmail.includes('@')) {
       Alert.alert('Recuperar palavra-passe', 'Introduza primeiro o seu e-mail.');
       return;
     }
@@ -235,7 +237,8 @@ export default function LoginScreen() {
     try {
       setLoading(true);
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+      const redirectTo = Linking.createURL('reset-password');
+      const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, { redirectTo });
 
       if (error) {
         Alert.alert('Erro', error.message);
@@ -244,7 +247,7 @@ export default function LoginScreen() {
 
       Alert.alert(
         'E-mail enviado',
-        'Enviámos um link para redefinir a sua palavra-passe. Verifique o seu e-mail.'
+        'Enviámos um link de recuperação. Abra-o no AgriLink para definir a nova palavra-passe.'
       );
     } catch (error) {
       console.log('Erro ao recuperar password:', error);
@@ -282,23 +285,17 @@ export default function LoginScreen() {
               style={styles.backBtn}
               onPress={handleBack}
               disabled={busy}
-              activeOpacity={0.5}
+              activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Voltar"
             >
-              <Icon name="chevron-left" size={22} color={COLORS.text} />
-              <Text style={styles.backText}>Voltar</Text>
+              <Icon name="chevron-left" size={19} color={COLORS.text} />
             </TouchableOpacity>
           </Animated.View>
 
           {/* Logo */}
           <View style={styles.header}>
-            <View style={styles.brandLockup}>
-              <View style={styles.brandMark}>
-                <Icon name="leaf" size={23} color="#FFFFFF" />
-              </View>
-              <Text style={styles.brand}>AgriLink</Text>
-            </View>
+            <Image source={LOGO} resizeMode="contain" style={styles.logo} accessibilityLabel="AgriLink" />
             <Animated.Text entering={enter(250)} style={styles.title}>
               Bem-vindo de volta
             </Animated.Text>
@@ -313,11 +310,11 @@ export default function LoginScreen() {
             <Field icon="mail" focused={focused === 'email'}>
               <TextInput
                 style={styles.input}
-                placeholder="Digite o seu e-mail"
+                placeholder="E-mail ou telefone"
                 placeholderTextColor={COLORS.faint}
                 value={email}
                 onChangeText={setEmail}
-                keyboardType="email-address"
+                keyboardType="default"
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!busy}
@@ -355,7 +352,7 @@ export default function LoginScreen() {
                 disabled={busy}
                 accessibilityLabel={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
               >
-                <Icon name={showPassword ? 'eye-off' : 'eye'} size={19} color={COLORS.muted} />
+                <Icon name={showPassword ? 'eye-off' : 'eye'} size={18} color={COLORS.muted} />
               </TouchableOpacity>
             </Field>
           </Animated.View>
@@ -378,7 +375,7 @@ export default function LoginScreen() {
               ) : (
                 <>
                   <Text style={styles.loginButtonText}>Entrar</Text>
-                  <Icon name="arrow-right" size={18} color="#FFFFFF" />
+                  <Icon name="arrow-right" size={17} color="#FFFFFF" />
                 </>
               )}
             </PressScale>
@@ -399,10 +396,10 @@ export default function LoginScreen() {
               style={[styles.googleButton, busy && styles.disabled]}
             >
               {googleLoading ? (
-                <ActivityIndicator size="small" color={COLORS.dark} />
+                <ActivityIndicator size="small" color={COLORS.text} />
               ) : (
                 <>
-                  <GoogleLogo size={19} />
+                  <GoogleLogo size={18} />
                   <Text style={styles.googleButtonText}>Continuar com o Google</Text>
                 </>
               )}
@@ -421,20 +418,17 @@ export default function LoginScreen() {
 
           {/* TERMOS E FOOTER */}
           <Animated.View entering={FadeIn.delay(900).duration(600)}>
-            <View style={styles.legalCard}>
-              <Icon name="shield" size={16} color={COLORS.primary} />
-              <Text style={styles.legalText}>
-                Ao continuar, aceita os nossos{' '}
-                <Text style={styles.legalLink} onPress={() => router.push('/termos')}>
-                  Termos de Utilização
-                </Text>{' '}
-                e a{' '}
-                <Text style={styles.legalLink} onPress={() => router.push('/privacidade')}>
-                  Política de Privacidade
-                </Text>
-                .
+            <Text style={styles.legalText}>
+              Ao continuar, aceita os nossos{' '}
+              <Text style={styles.legalLink} onPress={() => router.push('/termos')}>
+                Termos de Utilização
+              </Text>{' '}
+              e a{' '}
+              <Text style={styles.legalLink} onPress={() => router.push('/privacidade')}>
+                Política de Privacidade
               </Text>
-            </View>
+              .
+            </Text>
             <Text style={styles.footerText}>
               © {new Date().getFullYear()} AgriLink · Desenvolvida pela{' '}
               <Text style={styles.footerBrand}>THE TEAM</Text>
@@ -454,123 +448,106 @@ const styles = StyleSheet.create({
 
   content: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 18,
     width: '100%',
     maxWidth: 520,
     alignSelf: 'center',
   },
 
+  // Mesmo botão do ícone de mapa do ProductCard
   backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    marginLeft: -4,
-    paddingVertical: 8,
-    paddingRight: 12,
-    gap: 2,
-  },
-  backText: { fontSize: 15.5, fontWeight: '600', color: COLORS.text },
-
-  header: { alignItems: 'center', marginTop: 8, marginBottom: 30 },
-  brandLockup: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  brandMark: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.tint,
   },
-  brand: { fontSize: 18, fontWeight: '800', color: COLORS.primary },
+
+  header: { alignItems: 'center', marginTop: 12, marginBottom: 28 },
+  logo: { width: 88, height: 88, borderRadius: 12, backgroundColor: COLORS.white },
   title: {
-    marginTop: 20,
-    fontSize: 28,
-    fontWeight: '800',
+    marginTop: 14,
+    fontSize: 24,
+    fontWeight: '900',
     color: COLORS.text,
     textAlign: 'center',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
-  subtitle: { marginTop: 6, fontSize: 14.5, color: COLORS.muted, textAlign: 'center' },
+  subtitle: { marginTop: 4, fontSize: 13.5, color: COLORS.muted, textAlign: 'center' },
 
-  inputContainer: { marginBottom: 16 },
-  label: { fontSize: 13.5, fontWeight: '700', color: COLORS.text, marginBottom: 8 },
+  inputContainer: { marginBottom: 14 },
+  label: { fontSize: 12.5, fontWeight: '800', color: COLORS.text, marginBottom: 6 },
   inputWrapper: {
-    height: 54,
-    borderWidth: 1.5,
-    borderRadius: 14,
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  inputIcon: { marginLeft: 16 },
+  inputIcon: { marginLeft: 14 },
   input: {
     flex: 1,
     height: '100%',
-    fontSize: 15.5,
+    fontSize: 14.5,
     color: COLORS.text,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
   },
   eyeButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
 
-  forgotWrap: { alignSelf: 'flex-end', marginTop: -4, marginBottom: 22 },
-  forgotText: { fontSize: 13.5, fontWeight: '700', color: COLORS.primary },
+  forgotWrap: { alignSelf: 'flex-end', marginTop: -2, marginBottom: 18 },
+  forgotText: { fontSize: 12.5, fontWeight: '800', color: COLORS.primaryDark },
 
+  // Botão igual ao "Comprar" do ProductCard
   loginButton: {
-    height: 54,
-    borderRadius: 999,
+    height: 46,
+    borderRadius: 10,
     backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    ...SHADOW_SOFT,
+    gap: 6,
   },
-  loginButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  loginButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   disabled: { opacity: 0.6 },
 
-  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
-  divider: { flex: 1, height: 1, backgroundColor: COLORS.border },
-  dividerText: { fontSize: 13, color: COLORS.muted, marginHorizontal: 12 },
+  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 18 },
+  divider: { flex: 1, height: 1, backgroundColor: COLORS.line },
+  dividerText: { fontSize: 12.5, color: COLORS.muted, marginHorizontal: 12 },
 
   googleButton: {
-    height: 54,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 999,
+    height: 46,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.white,
   },
-  googleButtonText: { fontSize: 15.5, fontWeight: '700', color: COLORS.text },
+  googleButtonText: { fontSize: 14, fontWeight: '800', color: COLORS.text },
 
   registerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
-    marginTop: 24,
+    marginTop: 22,
   },
-  registerText: { fontSize: 14, color: COLORS.muted },
-  registerLink: { fontSize: 14, fontWeight: '800', color: COLORS.primary, marginLeft: 6 },
+  registerText: { fontSize: 13.5, color: COLORS.muted },
+  registerLink: { fontSize: 13.5, fontWeight: '800', color: COLORS.primaryDark, marginLeft: 6 },
 
-  legalCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    backgroundColor: COLORS.soft,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  legalText: { flex: 1, fontSize: 12, lineHeight: 18, color: COLORS.muted },
-  legalLink: { color: COLORS.primary, fontWeight: '700', textDecorationLine: 'underline' },
+  legalText: { fontSize: 11.5, lineHeight: 17, color: COLORS.muted, textAlign: 'center' },
+  legalLink: { color: COLORS.primaryDark, fontWeight: '700' },
 
-  footerText: { fontSize: 11.5, color: '#8A968C', textAlign: 'center', marginTop: 14 },
-  footerBrand: { fontWeight: '800', color: COLORS.dark, letterSpacing: 0.5 },
+  footerText: { fontSize: 11, color: COLORS.faint, textAlign: 'center', marginTop: 12 },
+  footerBrand: { fontWeight: '800', color: COLORS.text },
 });
