@@ -50,7 +50,6 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-    "lightningcss-win32-x64-msvc": "1.33.0",
     "prettier-plugin-tailwindcss": "^0.5.11",
     "tailwindcss": "^3.4.17",
     "typescript": "~6.0.3"
