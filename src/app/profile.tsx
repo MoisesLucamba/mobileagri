@@ -1,13 +1,15 @@
 import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
+import { type Href, useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -24,18 +26,19 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import Icon, { IconName } from "../components/Icon";
 import { normalizeRole } from "../constants/roleActions";
 import { useUserRole } from "../context/RoleContext";
-import i18n, { AppLanguage, LANGUAGE_STORAGE_KEY } from "../constants/i18n";
+import i18n, { AppLanguage, changeAppLanguage, LANGUAGE_STORAGE_KEY } from "../constants/i18n";
 import ProcessingScreen from "../components/ProcessingScreen";
 import { supabase } from "../lib/supabase";
+import { isAgrilinkAdmin } from "../lib/agrilinkAds";
 
-const AVATAR = 92;
+const AVATAR = 88;
+const COVER_HEIGHT = 112;
 
 // =====================================================
-// BRANDING — mesmos tokens do ecrã de login
+// BRANDING — cores inalteradas
 // =====================================================
 
 const COLORS = {
-  // Paleta alinhada com o ProductCard: verde de marca, neutros claros e branco.
   primary: "#2E8B4F",
   white: "#FFFFFF",
   secondary: "#25703F",
@@ -61,14 +64,6 @@ const ROLE_ACCENT: Record<string, string> = {
   agente: "#E2932F",
   comprador: COLORS.blue,
   motorista: "#DB6B1F",
-};
-
-const SHADOW_SOFT = {
-  shadowColor: COLORS.dark,
-  shadowOpacity: 0.04,
-  shadowRadius: 4,
-  shadowOffset: { width: 0, height: 1 },
-  elevation: 1,
 };
 
 // =====================================================
@@ -130,47 +125,81 @@ type DriverLoad = {
 // MICRO COMPONENTES
 // =====================================================
 
+function Avatar({ uri, name, size, accent }: { uri?: string; name: string; size: number; accent?: string }) {
+  return (
+    <View
+      style={{
+        width: size, height: size, borderRadius: size / 2, overflow: "hidden",
+        backgroundColor: accent || COLORS.primary, alignItems: "center", justifyContent: "center",
+      }}
+    >
+      {uri ? (
+        <Image source={{ uri }} style={{ width: "100%", height: "100%" }} />
+      ) : (
+        <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: size * 0.4 }}>
+          {(name || "?").charAt(0).toUpperCase()}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function StatsRow({ items }: { items: { value: number | string; label: string; color: string }[] }) {
   return (
     <View style={styles.statsRow}>
-      {items.map((it) => (
-        <View key={it.label} style={styles.statTile}>
+      {items.map((it, i) => (
+        <View key={it.label} style={[styles.statItem, i > 0 && styles.statDivider]}>
           <Text style={[styles.statValue, { color: it.color }]}>{it.value}</Text>
-          <Text style={styles.statLabel} numberOfLines={2}>{it.label}</Text>
+          <Text style={styles.statLabel} numberOfLines={1}>{it.label}</Text>
         </View>
       ))}
     </View>
   );
 }
 
-function InfoRow({ icon, value }: { icon: IconName; value: string }) {
+function MetaItem({ icon, value }: { icon: IconName; value: string }) {
+  if (!value) return null;
   return (
-    <View style={styles.infoRow}>
-      <View style={styles.infoIcon}>
-        <Icon name={icon} size={15} color={COLORS.primary} />
-      </View>
-      <Text style={styles.infoValue} numberOfLines={1}>{value || "—"}</Text>
+    <View style={styles.metaItem}>
+      <Icon name={icon} size={14} color={COLORS.muted} />
+      <Text style={styles.metaText} numberOfLines={1}>{value}</Text>
     </View>
   );
 }
 
-function TabChip({ active, onPress, icon, label, badge }: {
-  active: boolean; onPress: () => void; icon: IconName;
-  label: string; badge?: number;
+function Highlight({ icon, label, onPress, bg, color }: {
+  icon: IconName; label: string; onPress: () => void; bg: string; color: string;
+}) {
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.highlight} accessibilityRole="button" accessibilityLabel={label}>
+      <View style={[styles.highlightCircle, { backgroundColor: bg }]}>
+        <Icon name={icon} size={22} color={color} />
+      </View>
+      <Text style={styles.highlightLabel} numberOfLines={2}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function TabItem({ active, onPress, icon, label, badge }: {
+  active: boolean; onPress: () => void; icon: IconName; label: string; badge?: number;
 }) {
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
-      style={[styles.tabChip, active && styles.tabChipActive]}
+      style={[styles.tabItem, active && styles.tabItemActive]}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
     >
-      <Icon name={icon} size={15} color={active ? "#FFFFFF" : COLORS.muted} />
-      <Text style={[styles.tabChipText, active && { color: "#FFFFFF" }]}>{label}</Text>
-      {!!badge && badge > 0 && (
-        <View style={styles.tabBadge}>
-          <Text style={styles.tabBadgeText}>{badge}</Text>
-        </View>
-      )}
+      <View style={[styles.tabIconBubble, active && styles.tabIconBubbleActive]}>
+        <Icon name={icon} size={18} color={active ? "#FFFFFF" : COLORS.primary} />
+        {!!badge && badge > 0 && (
+          <View style={[styles.tabBadge, active && { borderColor: COLORS.primary }]}>
+            <Text style={styles.tabBadgeText}>{badge}</Text>
+          </View>
+        )}
+      </View>
+      <Text style={[styles.tabLabel, active && styles.tabLabelActive]} numberOfLines={1}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -184,6 +213,7 @@ function StatusPill({ status }: { status: string }) {
     pending: { bg: COLORS.goldSoft, color: COLORS.gold, label: "Pendente" },
     accepted: { bg: COLORS.soft, color: COLORS.primary, label: "Aceite" },
     in_transit: { bg: COLORS.blueSoft, color: COLORS.blue, label: "Em trânsito" },
+    delivered: { bg: COLORS.soft, color: COLORS.primary, label: "Entregue" },
     rejected: { bg: COLORS.dangerSoft, color: COLORS.danger, label: "Rejeitado" },
     completed: { bg: COLORS.soft, color: COLORS.primary, label: "Concluído" },
   };
@@ -195,9 +225,7 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function EmptyState({ icon, message, sub }: {
-  icon: IconName; message: string; sub?: string;
-}) {
+function EmptyState({ icon, message, sub }: { icon: IconName; message: string; sub?: string }) {
   return (
     <View style={styles.emptyState}>
       <View style={styles.emptyIcon}>
@@ -229,6 +257,22 @@ function Field({ label, value, onChangeText, keyboardType, required }: {
         style={[styles.fieldInput, focused && styles.fieldInputFocused]}
         placeholderTextColor={COLORS.faint}
       />
+    </View>
+  );
+}
+
+// Cabeçalho de cada "publicação" no feed
+function PostHeader({ uri, name, accent, subtitle, status }: {
+  uri?: string; name: string; accent: string; subtitle: string; status?: string;
+}) {
+  return (
+    <View style={styles.postHeader}>
+      <Avatar uri={uri} name={name} size={36} accent={accent} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.postAuthor} numberOfLines={1}>{name}</Text>
+        <Text style={styles.postTime}>{subtitle}</Text>
+      </View>
+      {status ? <StatusPill status={status} /> : null}
     </View>
   );
 }
@@ -273,6 +317,7 @@ export default function ProfileScreen() {
   const [editMode, setEditMode] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [activeTab, setActiveTab] = useState("products");
 
@@ -299,6 +344,21 @@ export default function ProfileScreen() {
   const isMotorista = userRole === "motorista";
   const roleAccent = ROLE_ACCENT[userRole ?? ""] || COLORS.primary;
   const memberCode = userProfile?.agent_code || (authUser?.id ? authUser.id.slice(0, 8).toUpperCase() : "—");
+
+  useEffect(() => {
+    let mounted = true;
+    isAgrilinkAdmin()
+      .then((allowed) => {
+        if (mounted) setIsAdmin(allowed);
+      })
+      .catch((error) => {
+        console.error("Não foi possível verificar o acesso administrativo:", error);
+        if (mounted) setIsAdmin(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const tabs = TABS_BY_ROLE[userRole ?? ""] || TABS_BY_ROLE.agricultor;
   const visibleTab = tabs.some((tab) => tab.id === activeTab) ? activeTab : tabs[0].id;
@@ -485,7 +545,7 @@ export default function ProfileScreen() {
 
   const changeLanguage = async (language: AppLanguage) => {
     try {
-      await i18n.changeLanguage(language);
+      await changeAppLanguage(language);
       await AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, language);
     } catch (error) {
       console.warn("[i18n] Não foi possível guardar o idioma:", error);
@@ -659,6 +719,12 @@ export default function ProfileScreen() {
     Alert.alert("Copiado", "Código copiado para a área de transferência.");
   };
 
+  const signOut = async () => {
+    setSettingsOpen(false);
+    await supabase.auth.signOut();
+    router.replace("/login");
+  };
+
   const formatDate = (d: string) => new Date(d).toLocaleDateString("pt-AO");
 
   const activeProducts = userProducts.filter((p) => p.status === "active").length;
@@ -674,8 +740,8 @@ export default function ProfileScreen() {
     }
     if (isComprador) {
       return [
-        { value: fichasRecebimento.length, label: "Fichas criadas", color: COLORS.primary },
-        { value: buyerStats.completedOrders, label: "Compras concluídas", color: COLORS.primary },
+        { value: fichasRecebimento.length, label: "Fichas", color: COLORS.primary },
+        { value: buyerStats.completedOrders, label: "Compras", color: COLORS.primary },
         { value: buyerStats.favoriteProducts, label: "Favoritos", color: COLORS.gold },
       ];
     }
@@ -687,7 +753,7 @@ export default function ProfileScreen() {
       ];
     }
     return [
-      { value: activeProducts, label: "Produtos activos", color: COLORS.primary },
+      { value: activeProducts, label: "Produtos", color: COLORS.primary },
       { value: totalComments, label: "Comentários", color: COLORS.primary },
       { value: totalLikes, label: "Gostos", color: COLORS.gold },
     ];
@@ -706,191 +772,221 @@ export default function ProfileScreen() {
       <SafeAreaView style={styles.centerScreen}>
         <Icon name="user" size={68} color={COLORS.primary} />
         <Text style={styles.emptyMessage}>Sessão não encontrada</Text>
-        <TouchableOpacity style={[styles.pillButton, { paddingHorizontal: 32 }]} onPress={() => router.replace("/login")}>
-          <Text style={styles.pillButtonText}>Iniciar sessão</Text>
+        <TouchableOpacity style={[styles.primaryBtn, { paddingHorizontal: 32 }]} onPress={() => router.replace("/login")}>
+          <Text style={styles.primaryBtnText}>Iniciar sessão</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
   const profileName = userProfile?.full_name || authUser?.user_metadata?.full_name || "Utilizador AgriLink";
+  const avatarUri: string | undefined = userProfile?.avatar_url || undefined;
+  const pendingOrders = receivedOrders.filter((o) => o.status === "pending").length;
+  const hasHighlights = !isMotorista || isAdmin;
+
+  const statisticsRows = isAgente
+    ? [
+        { label: "Total de indicações", val: agentStats.totalReferrals, color: COLORS.primary },
+        { label: "Pontos acumulados", val: agentStats.totalPoints, color: COLORS.gold },
+      ]
+    : isComprador
+    ? [
+        { label: "Fichas criadas", val: fichasRecebimento.length, color: COLORS.primary },
+        { label: "Compras concluídas", val: buyerStats.completedOrders, color: COLORS.primary },
+        { label: "Favoritos", val: buyerStats.favoriteProducts, color: COLORS.gold },
+      ]
+    : [
+        { label: "Total de produtos", val: userProducts.length, color: COLORS.text },
+        { label: "Produtos activos", val: activeProducts, color: COLORS.primary },
+        { label: "Total de comentários", val: totalComments, color: COLORS.primary },
+        { label: "Total de gostos", val: totalLikes, color: COLORS.gold },
+      ];
 
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
+      {/* BARRA SUPERIOR */}
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t("login.back")}
+        >
+          <Icon name="arrow-left" size={22} color={COLORS.text} />
+        </TouchableOpacity>
+        <Text style={styles.topTitle} numberOfLines={1}>{t("profile.title")}</Text>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => setSettingsOpen(true)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t("settings.title")}
+        >
+          <Icon name="settings" size={21} color={COLORS.text} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 0 }}
+        stickyHeaderIndices={[1]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor={COLORS.primary}
             colors={[COLORS.primary]}
-            progressViewOffset={insets.top}
           />
         }
       >
-        {/* TOPO */}
-        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flexShrink: 1 }}>
-            <TouchableOpacity
-              style={styles.headerBtn}
-              onPress={() => router.back()}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel={t("login.back")}
-            >
-              <Icon name="arrow-left" size={20} color={COLORS.primary} />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle} numberOfLines={1}>{t("profile.title")}</Text>
-          </View>
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity style={styles.headerBtn} onPress={() => setSettingsOpen(true)} activeOpacity={0.8}>
-              <Icon name="settings" size={19} color={COLORS.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerBtn}
-              accessibilityRole="button"
-              accessibilityLabel={t("profile.logout")}
-              activeOpacity={0.8}
-              onPress={async () => { await supabase.auth.signOut(); router.replace("/login"); }}
-            >
-              <Icon name="log-out" size={19} color={COLORS.primary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* PAINEL BRANCO */}
-        <View style={styles.sheet}>
-          <TouchableOpacity onPress={changeAvatar} disabled={avatarLoading} activeOpacity={0.9} style={styles.avatarWrap}>
-            {userProfile?.avatar_url ? (
-              <Image source={{ uri: userProfile.avatar_url }} style={styles.avatarImg} />
-            ) : (
-              <Text style={styles.avatarInitial}>{profileName.charAt(0).toUpperCase()}</Text>
-            )}
-            <View style={styles.avatarEdit}>
-              <Icon name="camera" size={13} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
-
-          <View style={styles.nameRow}>
-            <Text style={styles.memberName} numberOfLines={1}>{profileName}</Text>
-            {userProfile?.verified && <Icon name="check-circle" size={18} color={COLORS.primary} />}
+        {/* [0] CAPA + PERFIL */}
+        <View>
+          <View style={styles.cover}>
+            <View style={[styles.coverBlob, styles.coverBlobA]} />
+            <View style={[styles.coverBlob, styles.coverBlobB]} />
           </View>
 
-          <View style={[styles.rolePill, { backgroundColor: `${roleAccent}1A` }]}>
-            <View style={[styles.roleDot, { backgroundColor: roleAccent }]} />
-            <Text style={[styles.roleText, { color: roleAccent }]}>{userProfile?.user_type || "—"}</Text>
-          </View>
+          <View style={styles.profileBody}>
+            <View style={styles.avatarRow}>
+              <TouchableOpacity
+                onPress={changeAvatar}
+                disabled={avatarLoading}
+                activeOpacity={0.9}
+                style={styles.avatarWrap}
+                accessibilityRole="button"
+                accessibilityLabel="Alterar fotografia"
+              >
+                <Avatar uri={avatarUri} name={profileName} size={AVATAR} accent={COLORS.soft} />
+                <View style={styles.avatarEdit}>
+                  <Icon name="camera" size={12} color="#FFFFFF" />
+                </View>
+              </TouchableOpacity>
 
-          {!editMode ? (
-            <>
-              <View style={styles.infoBlock}>
-                <InfoRow icon="mail" value={profileData.email} />
-                <InfoRow icon="phone" value={profileData.phone} />
-                <InfoRow icon="pin" value={userProfile?.province_id || "Angola"} />
-              </View>
-
-              <View style={styles.memberActions}>
-                <TouchableOpacity style={[styles.pillButton, { flex: 1 }]} onPress={() => setEditMode(true)} activeOpacity={0.85}>
-                  <Icon name="edit" size={17} color="#FFFFFF" />
-                  <Text style={styles.pillButtonText}>Editar perfil</Text>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={styles.outlineBtn} onPress={() => setEditMode(true)} activeOpacity={0.85}>
+                  <Icon name="edit" size={15} color={COLORS.text} />
+                  <Text style={styles.outlineBtnText}>Editar perfil</Text>
                 </TouchableOpacity>
-                {isAgente && (
-                  <TouchableOpacity style={styles.roundOutline} onPress={shareAgentCode} activeOpacity={0.85}>
-                    <Icon name="share" size={20} color={COLORS.primary} />
+                {isAgente && !!userProfile?.agent_code && (
+                  <TouchableOpacity
+                    style={styles.squareBtn}
+                    onPress={shareAgentCode}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel="Partilhar código de agente"
+                  >
+                    <Icon name="share" size={18} color={COLORS.primary} />
                   </TouchableOpacity>
                 )}
               </View>
-              {!isMotorista && (
-                <TouchableOpacity
-                  style={styles.historyLink}
-                  onPress={() => router.push("/historicopagamentos")}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel="Abrir histórico de compras e pagamentos"
-                >
-                  <View style={styles.historyLinkIcon}>
-                    <Icon name="receipt" size={19} color={COLORS.primary} />
-                  </View>
-                  <View style={styles.historyLinkTextBlock}>
-                    <Text style={styles.historyLinkTitle}>Histórico de compras e pagamentos</Text>
-                    <Text style={styles.historyLinkSubtitle}>Pedidos e movimentos da carteira</Text>
-                  </View>
-                  <Icon name="chevron-right" size={18} color={COLORS.faint} />
-                </TouchableOpacity>
-              )}
-            </>
-          ) : (
-            <View style={{ marginTop: 20, gap: 14 }}>
-              <Field label="Nome completo" value={profileData.full_name} onChangeText={(v) => setProfileData((p) => ({ ...p, full_name: v }))} />
-              <Field label="Telefone" value={profileData.phone} onChangeText={(v) => setProfileData((p) => ({ ...p, phone: v }))} keyboardType="phone-pad" />
-              <Field label="Email" value={profileData.email} onChangeText={(v) => setProfileData((p) => ({ ...p, email: v }))} keyboardType="email-address" />
-              <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
-                <TouchableOpacity style={[styles.pillButton, { flex: 1 }]} onPress={updateProfile} activeOpacity={0.85}>
-                  <Text style={styles.pillButtonText}>Guardar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.pillOutline, { flex: 1 }]} onPress={() => setEditMode(false)} activeOpacity={0.85}>
-                  <Text style={styles.pillOutlineText}>Cancelar</Text>
-                </TouchableOpacity>
+            </View>
+
+            <View style={styles.nameRow}>
+              <Text style={styles.memberName} numberOfLines={1}>{profileName}</Text>
+              {userProfile?.verified && <Icon name="check-circle" size={18} color={COLORS.primary} />}
+            </View>
+
+            <View style={styles.handleRow}>
+              <TouchableOpacity onPress={copyMemberCode} activeOpacity={0.7} style={styles.handleBtn}>
+                <Text style={styles.handleText}>#{memberCode}</Text>
+                <Icon name="copy" size={12} color={COLORS.faint} />
+              </TouchableOpacity>
+              <View style={[styles.rolePill, { backgroundColor: `${roleAccent}1A` }]}>
+                <View style={[styles.roleDot, { backgroundColor: roleAccent }]} />
+                <Text style={[styles.roleText, { color: roleAccent }]}>{userProfile?.user_type || "—"}</Text>
               </View>
             </View>
-          )}
 
-          <TouchableOpacity style={styles.codeChip} onPress={copyMemberCode} activeOpacity={0.8}>
-            <Icon name="copy" size={13} color={COLORS.muted} />
-            <Text style={styles.codeChipLabel}>Rede AgriLink</Text>
-            <Text style={styles.codeChipValue}>#{memberCode}</Text>
-          </TouchableOpacity>
-
-          <StatsRow items={statItems} />
-
-          {isAgente && userProfile?.agent_code && (
-            <View style={[styles.agentCodeCard, { backgroundColor: `${roleAccent}14` }]}>
-              <Text style={styles.agentCodeLabel}>Código de agente</Text>
-              <Text style={[styles.agentCodeValue, { color: roleAccent }]}>{userProfile.agent_code}</Text>
+            <View style={styles.metaWrap}>
+              <MetaItem icon="pin" value={userProfile?.province_id || "Angola"} />
+              <MetaItem icon="phone" value={profileData.phone} />
+              <MetaItem icon="mail" value={profileData.email} />
             </View>
-          )}
 
-          {/* TABS */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.tabsScroll}
-            contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
-          >
+            <StatsRow items={statItems} />
+          </View>
+
+          {/* ATALHOS (estilo destaques) */}
+          {hasHighlights && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.highlightsContent}
+              style={styles.highlightsScroll}
+            >
+              {!isMotorista && (
+                <Highlight
+                  icon="receipt"
+                  label="Histórico"
+                  bg={COLORS.soft}
+                  color={COLORS.primary}
+                  onPress={() => router.push("/historicopagamentos")}
+                />
+              )}
+              {isAdmin && (
+                <>
+                  <Highlight
+                    icon="bar-chart"
+                    label="Dashboard"
+                    bg={COLORS.blueSoft}
+                    color={COLORS.blue}
+                    onPress={() => router.push("/dashboard" as Href)}
+                  />
+                  <Highlight
+                    icon="image"
+                    label="Publicidade"
+                    bg={COLORS.goldSoft}
+                    color={COLORS.gold}
+                    onPress={() => router.push("/agrilink-ads" as Href)}
+                  />
+                </>
+              )}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* [1] TABS FIXAS */}
+        <View style={styles.tabsBar}>
+          <View style={styles.tabsTrack}>
             {tabs.map((tab) => (
-              <TabChip
+              <TabItem
                 key={tab.id}
                 active={visibleTab === tab.id}
                 onPress={() => setActiveTab(tab.id)}
                 icon={tab.icon}
                 label={tab.label}
-                badge={tab.id === "orders" ? receivedOrders.filter((o) => o.status === "pending").length : undefined}
+                badge={tab.id === "orders" ? pendingOrders : undefined}
               />
             ))}
-          </ScrollView>
+          </View>
+        </View>
 
+        {/* [2] FEED */}
+        <View style={styles.feed}>
+          {/* ENTREGAS */}
           {visibleTab === "deliveries" && isMotorista && (
             driverLoads.length === 0 ? (
               <EmptyState icon="truck" message="Ainda não tens entregas atribuídas" sub="As cargas que aceitares aparecerão aqui." />
             ) : (
-              <View style={{ gap: 10 }}>
-                {driverLoads.map((load) => (
-                  <View key={load.id} style={styles.listCard}>
-                    <View style={styles.rowBetween}>
-                      <Text style={[styles.listCardTitle, { flex: 1 }]} numberOfLines={1}>{load.product_name}</Text>
-                      <StatusPill status={load.status} />
-                    </View>
-                    <Text style={styles.listCardSub}>
-                      {Number(load.weight_kg || 0).toLocaleString("pt-AO")} kg · {load.origin_label} → {load.destination_label}
-                    </Text>
-                    {!!load.pickup_date && <Text style={styles.listCardMeta}>Recolha: {formatDate(load.pickup_date)}</Text>}
+              driverLoads.map((load) => (
+                <View key={load.id} style={styles.post}>
+                  <PostHeader
+                    uri={avatarUri}
+                    name={profileName}
+                    accent={roleAccent}
+                    subtitle={load.pickup_date ? `Recolha ${formatDate(load.pickup_date)}` : "Sem data de recolha"}
+                    status={load.status}
+                  />
+                  <Text style={styles.postTitle}>{load.product_name}</Text>
+                  <View style={styles.routeRow}>
+                    <Icon name="pin" size={13} color={COLORS.muted} />
+                    <Text style={styles.postSub} numberOfLines={1}>{load.origin_label} → {load.destination_label}</Text>
                   </View>
-                ))}
-              </View>
+                  <Text style={styles.postPrice}>{Number(load.weight_kg || 0).toLocaleString("pt-AO")} kg</Text>
+                </View>
+              ))
             )
           )}
 
@@ -900,53 +996,57 @@ export default function ProfileScreen() {
               fichasRecebimento.length === 0 ? (
                 <EmptyState icon="clipboard" message="Ainda não criaste fichas de recebimento" />
               ) : (
-                <View style={{ gap: 10 }}>
-                  {fichasRecebimento.map((f) => (
-                    <View key={f.id} style={styles.listCard}>
-                      <Text style={styles.listCardTitle}>{f.nomeFicha}</Text>
-                      <Text style={styles.listCardSub}>{f.produto} · {f.qualidade}</Text>
-                      <Text style={styles.listCardMeta}>{f.locaisEntrega?.length || 0} locais · {formatDate(f.created_at)}</Text>
+                fichasRecebimento.map((f) => (
+                  <View key={f.id} style={styles.post}>
+                    <PostHeader uri={avatarUri} name={profileName} accent={roleAccent} subtitle={formatDate(f.created_at)} />
+                    <Text style={styles.postTitle}>{f.nomeFicha}</Text>
+                    <Text style={styles.postSub}>{f.produto} · {f.qualidade}</Text>
+                    <View style={styles.tagRow}>
+                      <View style={styles.tag}>
+                        <Icon name="pin" size={12} color={COLORS.primary} />
+                        <Text style={styles.tagText}>{f.locaisEntrega?.length || 0} locais de entrega</Text>
+                      </View>
                     </View>
-                  ))}
-                </View>
+                  </View>
+                ))
               )
             ) : (
               userProducts.length === 0 ? (
-                <EmptyState icon="package" message="Ainda não publicaste produtos" />
+                <EmptyState icon="package" message="Ainda não publicaste produtos" sub="Os teus produtos aparecem aqui como publicações." />
               ) : (
-                <View style={{ gap: 10 }}>
-                  {userProducts.map((p) => (
-                    <View key={p.id} style={styles.listCard}>
-                      <View style={styles.rowBetween}>
-                        <Text style={[styles.listCardTitle, { flex: 1 }]} numberOfLines={1}>{p.product_type}</Text>
-                        <StatusPill status={p.status} />
+                userProducts.map((p) => (
+                  <View key={p.id} style={styles.post}>
+                    <PostHeader uri={avatarUri} name={profileName} accent={roleAccent} subtitle={formatDate(p.created_at)} status={p.status} />
+                    <Text style={styles.postTitle}>{p.product_type}</Text>
+                    <Text style={styles.postSub}>{p.quantity.toLocaleString()} kg · colheita {formatDate(p.harvest_date)}</Text>
+                    <Text style={styles.postPrice}>{p.price.toLocaleString()} Kz/kg</Text>
+
+                    <View style={styles.postFooter}>
+                      <View style={styles.reaction}>
+                        <Icon name="heart" size={17} color={COLORS.muted} />
+                        <Text style={styles.reactionText}>{productStats[p.id]?.likes || 0}</Text>
                       </View>
-                      <Text style={styles.listCardSub}>{p.quantity.toLocaleString()} kg · colheita {formatDate(p.harvest_date)}</Text>
-                      <View style={[styles.rowBetween, { marginTop: 8 }]}>
-                        <Text style={styles.listCardPrice}>{p.price.toLocaleString()} Kz/kg</Text>
-                        <View style={styles.interactionsRow}>
-                          <Icon name="message" size={12} color={COLORS.muted} />
-                          <Text style={styles.interactionsText}>{productStats[p.id]?.comments || 0}</Text>
-                          <Icon name="heart" size={12} color={COLORS.muted} />
-                          <Text style={styles.interactionsText}>{productStats[p.id]?.likes || 0}</Text>
-                        </View>
+                      <View style={styles.reaction}>
+                        <Icon name="message" size={16} color={COLORS.muted} />
+                        <Text style={styles.reactionText}>{productStats[p.id]?.comments || 0}</Text>
                       </View>
+                      <View style={{ flex: 1 }} />
                       {p.status !== "removed" && (
-                        <TouchableOpacity onPress={() => deleteProduct(p.id)} style={styles.removeLink}>
-                          <Text style={styles.removeLinkText}>Remover produto</Text>
+                        <TouchableOpacity onPress={() => deleteProduct(p.id)} hitSlop={8}>
+                          <Text style={styles.removeLinkText}>Remover</Text>
                         </TouchableOpacity>
                       )}
                     </View>
-                  ))}
-                </View>
+                  </View>
+                ))
               )
             )
           )}
 
           {/* SOURCING */}
           {visibleTab === "sourcing" && isComprador && (
-            <View style={{ gap: 14 }}>
-              <View style={styles.rowBetween}>
+            <View>
+              <View style={styles.sectionHead}>
                 <View style={{ flex: 1, paddingRight: 10 }}>
                   <Text style={styles.blockTitle}>Pedidos de sourcing</Text>
                   <Text style={styles.blockSubtitle}>Pede-nos para encontrar um produto específico</Text>
@@ -957,18 +1057,18 @@ export default function ProfileScreen() {
               </View>
 
               {showSourcingForm && (
-                <View style={{ gap: 14 }}>
+                <View style={styles.formBlock}>
                   <Field label="Nome do produto" value={sourcingForm.product_name} onChangeText={(v) => setSourcingForm((p) => ({ ...p, product_name: v }))} required />
                   <Field label="Quantidade (kg)" value={sourcingForm.quantity} onChangeText={(v) => setSourcingForm((p) => ({ ...p, quantity: v }))} required />
                   <Field label="Data de entrega (AAAA-MM-DD)" value={sourcingForm.delivery_date} onChangeText={(v) => setSourcingForm((p) => ({ ...p, delivery_date: v }))} required />
                   <Field label="Descrição" value={sourcingForm.description} onChangeText={(v) => setSourcingForm((p) => ({ ...p, description: v }))} />
                   <TouchableOpacity
-                    style={[styles.pillButton, submittingSourcing && { opacity: 0.65 }]}
+                    style={[styles.primaryBtn, submittingSourcing && { opacity: 0.65 }]}
                     onPress={submitSourcingRequest}
                     disabled={submittingSourcing}
                     activeOpacity={0.85}
                   >
-                    <Text style={styles.pillButtonText}>{submittingSourcing ? "A enviar…" : "Enviar pedido"}</Text>
+                    <Text style={styles.primaryBtnText}>{submittingSourcing ? "A enviar…" : "Enviar pedido"}</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -976,17 +1076,14 @@ export default function ProfileScreen() {
               {sourcingRequests.length === 0 ? (
                 <EmptyState icon="search" message="Ainda não fizeste pedidos de sourcing" />
               ) : (
-                <View style={{ gap: 10 }}>
-                  {sourcingRequests.map((r) => (
-                    <View key={r.id} style={styles.listCard}>
-                      <View style={styles.rowBetween}>
-                        <Text style={[styles.listCardTitle, { flex: 1 }]} numberOfLines={1}>{r.product_name}</Text>
-                        <StatusPill status={r.status} />
-                      </View>
-                      <Text style={styles.listCardSub}>{r.quantity} kg · entrega {new Date(r.delivery_date).toLocaleDateString("pt-AO")}</Text>
-                    </View>
-                  ))}
-                </View>
+                sourcingRequests.map((r) => (
+                  <View key={r.id} style={styles.post}>
+                    <PostHeader uri={avatarUri} name={profileName} accent={roleAccent} subtitle={formatDate(r.created_at)} status={r.status} />
+                    <Text style={styles.postTitle}>{r.product_name}</Text>
+                    <Text style={styles.postSub}>{r.quantity} kg · entrega {new Date(r.delivery_date).toLocaleDateString("pt-AO")}</Text>
+                    {!!r.description && <Text style={styles.postBody}>{r.description}</Text>}
+                  </View>
+                ))
               )}
             </View>
           )}
@@ -996,41 +1093,44 @@ export default function ProfileScreen() {
             receivedOrders.length === 0 ? (
               <EmptyState icon="cart" message="Ainda não recebeste encomendas" sub="Vão aparecer aqui assim que alguém pré-encomendar um dos teus produtos." />
             ) : (
-              <View style={{ gap: 10 }}>
-                {receivedOrders.map((o) => (
-                  <View key={o.id} style={styles.listCard}>
-                    <View style={styles.rowBetween}>
-                      <Text style={[styles.listCardTitle, { flex: 1 }]} numberOfLines={1}>{o.product?.product_type || "Produto"}</Text>
-                      <StatusPill status={o.status} />
-                    </View>
-                    <Text style={styles.listCardSub}>{o.buyer?.full_name || "Comprador"} · {o.buyer?.phone || "sem telefone"}</Text>
-                    <Text style={styles.listCardMeta}>{o.location} · {formatDate(o.created_at)}</Text>
-                    <View style={[styles.rowBetween, { marginTop: 8 }]}>
-                      <Text style={styles.listCardPrice}>{o.quantity.toLocaleString()} kg</Text>
-                      <Text style={styles.listCardPrice}>{((o.product?.price || 0) * o.quantity).toLocaleString()} Kz</Text>
-                    </View>
-
-                    <View style={styles.orderActions}>
-                      {o.status === "pending" && (
-                        <>
-                          <TouchableOpacity style={[styles.smallActionBtn, { backgroundColor: COLORS.soft }]} onPress={() => acceptOrder(o.id)}>
-                            <Icon name="check" size={15} color={COLORS.primary} />
-                            <Text style={[styles.smallActionText, { color: COLORS.primary }]}>Aceitar</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={[styles.smallActionBtn, { backgroundColor: COLORS.dangerSoft }]} onPress={() => rejectOrder(o.id)}>
-                            <Icon name="close" size={15} color={COLORS.danger} />
-                            <Text style={[styles.smallActionText, { color: COLORS.danger }]}>Rejeitar</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                      <TouchableOpacity style={[styles.smallActionBtn, { backgroundColor: COLORS.blueSoft }]} onPress={() => contactBuyer(o)}>
-                        <Icon name="message" size={14} color={COLORS.blue} />
-                        <Text style={[styles.smallActionText, { color: COLORS.blue }]}>Contactar</Text>
-                      </TouchableOpacity>
-                    </View>
+              receivedOrders.map((o) => (
+                <View key={o.id} style={styles.post}>
+                  <PostHeader
+                    name={o.buyer?.full_name || "Comprador"}
+                    accent={COLORS.blue}
+                    subtitle={`${o.buyer?.phone || "sem telefone"} · ${formatDate(o.created_at)}`}
+                    status={o.status}
+                  />
+                  <Text style={styles.postTitle}>{o.product?.product_type || "Produto"}</Text>
+                  <View style={styles.routeRow}>
+                    <Icon name="pin" size={13} color={COLORS.muted} />
+                    <Text style={styles.postSub} numberOfLines={1}>{o.location}</Text>
                   </View>
-                ))}
-              </View>
+                  <View style={styles.orderTotals}>
+                    <Text style={styles.postPrice}>{o.quantity.toLocaleString()} kg</Text>
+                    <Text style={styles.postPrice}>{((o.product?.price || 0) * o.quantity).toLocaleString()} Kz</Text>
+                  </View>
+
+                  <View style={styles.orderActions}>
+                    {o.status === "pending" && (
+                      <>
+                        <TouchableOpacity style={[styles.smallActionBtn, { backgroundColor: COLORS.soft }]} onPress={() => acceptOrder(o.id)}>
+                          <Icon name="check" size={15} color={COLORS.primary} />
+                          <Text style={[styles.smallActionText, { color: COLORS.primary }]}>Aceitar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.smallActionBtn, { backgroundColor: COLORS.dangerSoft }]} onPress={() => rejectOrder(o.id)}>
+                          <Icon name="close" size={15} color={COLORS.danger} />
+                          <Text style={[styles.smallActionText, { color: COLORS.danger }]}>Rejeitar</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                    <TouchableOpacity style={[styles.smallActionBtn, { backgroundColor: COLORS.blueSoft }]} onPress={() => contactBuyer(o)}>
+                      <Icon name="message" size={14} color={COLORS.blue} />
+                      <Text style={[styles.smallActionText, { color: COLORS.blue }]}>Contactar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
             )
           )}
 
@@ -1039,53 +1139,31 @@ export default function ProfileScreen() {
             agentStats.recentReferrals.length === 0 ? (
               <EmptyState icon="users" message="Ainda não tens indicações" sub="Partilha o teu código para começares a ganhar pontos." />
             ) : (
-              <View style={{ gap: 10 }}>
-                {agentStats.recentReferrals.map((r: any, i: number) => (
-                  <View key={`${r.user_name}-${i}`} style={[styles.listCard, styles.referralCard]}>
-                    <View style={styles.referralAvatar}>
-                      <Icon name="user" size={15} color={COLORS.primary} />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={styles.listCardTitle}>{r.user_name}</Text>
-                      <Text style={styles.listCardSub}>{formatDate(r.created_at)}</Text>
-                    </View>
-                    <View style={styles.referralPoints}>
-                      <Icon name="star" size={12} color={COLORS.gold} filled />
-                      <Text style={styles.referralPointsText}>+{r.points}</Text>
-                    </View>
+              agentStats.recentReferrals.map((r: any, i: number) => (
+                <View key={`${r.user_name}-${i}`} style={[styles.post, styles.referralRow]}>
+                  <Avatar name={r.user_name || "?"} size={42} accent={COLORS.primary} />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.postAuthor} numberOfLines={1}>{r.user_name}</Text>
+                    <Text style={styles.postTime}>Entrou a {formatDate(r.created_at)}</Text>
                   </View>
-                ))}
-              </View>
+                  <View style={styles.referralPoints}>
+                    <Icon name="star" size={12} color={COLORS.gold} filled />
+                    <Text style={styles.referralPointsText}>+{r.points}</Text>
+                  </View>
+                </View>
+              ))
             )
           )}
 
           {/* ESTATÍSTICAS */}
           {visibleTab === "statistics" && (
-            <View style={{ gap: 10 }}>
-              {(isAgente
-                ? [
-                    { label: "Total de indicações", val: agentStats.totalReferrals, color: COLORS.primary },
-                    { label: "Pontos acumulados", val: agentStats.totalPoints, color: COLORS.gold },
-                  ]
-                : isComprador
-                ? [
-                    { label: "Fichas criadas", val: fichasRecebimento.length, color: COLORS.primary },
-                    { label: "Compras concluídas", val: buyerStats.completedOrders, color: COLORS.primary },
-                    { label: "Favoritos", val: buyerStats.favoriteProducts, color: COLORS.gold },
-                  ]
-                : [
-                    { label: "Total de produtos", val: userProducts.length, color: COLORS.text },
-                    { label: "Produtos activos", val: activeProducts, color: COLORS.primary },
-                    { label: "Total de comentários", val: totalComments, color: COLORS.primary },
-                    { label: "Total de gostos", val: totalLikes, color: COLORS.gold },
-                  ]
-              ).map((row) => (
-                <View key={row.label} style={[styles.listCard, styles.rowBetween]}>
-                  <Text style={styles.statsRowLabel}>{row.label}</Text>
-                  <Text style={[styles.statsRowValue, { color: row.color }]}>{row.val.toLocaleString()}</Text>
+            <View style={styles.statsGrid}>
+              {statisticsRows.map((row) => (
+                <View key={row.label} style={styles.statsTile}>
+                  <Text style={[styles.statsTileValue, { color: row.color }]}>{row.val.toLocaleString()}</Text>
+                  <Text style={styles.statsTileLabel}>{row.label}</Text>
                 </View>
               ))}
-
               {isAgente && (
                 <Text style={styles.statsNote}>
                   Cada utilizador indicado vale pontos que podes trocar por benefícios na plataforma.
@@ -1094,7 +1172,7 @@ export default function ProfileScreen() {
             </View>
           )}
 
-          {/* RODAPÉ (igual ao login) */}
+          {/* RODAPÉ */}
           <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}>
             <Text style={styles.footerText}>© {new Date().getFullYear()} AgriLink</Text>
             <Text style={styles.footerText}>
@@ -1104,11 +1182,39 @@ export default function ProfileScreen() {
         </View>
       </ScrollView>
 
+      {/* EDITAR PERFIL */}
+      <Modal visible={editMode} transparent animationType="slide" onRequestClose={() => setEditMode(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+          <Pressable style={styles.modalOverlay} onPress={() => setEditMode(false)}>
+            <Pressable
+              style={[styles.sheetPanel, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={styles.sheetHandle} />
+              <Text style={styles.settingsTitle}>Editar perfil</Text>
+              <View style={{ gap: 14 }}>
+                <Field label="Nome completo" value={profileData.full_name} onChangeText={(v) => setProfileData((p) => ({ ...p, full_name: v }))} />
+                <Field label="Telefone" value={profileData.phone} onChangeText={(v) => setProfileData((p) => ({ ...p, phone: v }))} keyboardType="phone-pad" />
+                <Field label="Email" value={profileData.email} onChangeText={(v) => setProfileData((p) => ({ ...p, email: v }))} keyboardType="email-address" />
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
+                  <TouchableOpacity style={[styles.primaryBtn, { flex: 1 }]} onPress={updateProfile} activeOpacity={0.85}>
+                    <Text style={styles.primaryBtnText}>Guardar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.pillOutline, { flex: 1 }]} onPress={() => setEditMode(false)} activeOpacity={0.85}>
+                    <Text style={styles.pillOutlineText}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* DEFINIÇÕES */}
       <Modal visible={settingsOpen} transparent animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setSettingsOpen(false)}>
           <Pressable
-            style={[styles.settingsSheet, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}
+            style={[styles.sheetPanel, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.sheetHandle} />
@@ -1119,8 +1225,9 @@ export default function ProfileScreen() {
               {([
                 { code: "pt-AO", label: t("settings.portuguese") },
                 { code: "fr-CD", label: t("settings.french") },
+                { code: "en-ZA", label: t("settings.english") },
               ] as const).map((option) => {
-                const selected = i18n.language === option.code;
+                const selected = i18n.language === option.code || i18n.language.startsWith(`${option.code}-`);
                 return (
                   <TouchableOpacity
                     key={option.code}
@@ -1153,6 +1260,19 @@ export default function ProfileScreen() {
               <Icon name="chevron-right" size={16} color={COLORS.faint} />
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={styles.settingsRow}
+              activeOpacity={0.8}
+              onPress={signOut}
+              accessibilityRole="button"
+              accessibilityLabel={t("profile.logout")}
+            >
+              <View style={[styles.settingsIcon, { backgroundColor: COLORS.dangerSoft }]}>
+                <Icon name="log-out" size={18} color={COLORS.danger} />
+              </View>
+              <Text style={[styles.settingsRowText, { color: COLORS.danger }]}>{t("profile.logout")}</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={[styles.pillOutline, { marginTop: 8 }]} onPress={() => setSettingsOpen(false)} activeOpacity={0.85}>
               <Text style={styles.pillOutlineText}>{t("settings.close")}</Text>
             </TouchableOpacity>
@@ -1168,183 +1288,190 @@ export default function ProfileScreen() {
 // =====================================================
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F5F8F4" },
+  screen: { flex: 1, backgroundColor: COLORS.white },
   centerScreen: { flex: 1, backgroundColor: COLORS.background, alignItems: "center", justifyContent: "center", gap: 14, padding: 24 },
 
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 10 },
-  headerTitle: { fontSize: 21, fontWeight: "800", color: COLORS.text, letterSpacing: -0.35 },
-  headerBtn: {
-    width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center",
-    backgroundColor: COLORS.soft, borderWidth: 1, borderColor: COLORS.border,
+  // Barra superior
+  topBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 8, paddingBottom: 6, backgroundColor: COLORS.white,
   },
+  topTitle: { flex: 1, textAlign: "center", fontSize: 17, fontWeight: "800", color: COLORS.text },
+  iconBtn: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
 
-  sheet: {
-    width: "92%",
-    alignSelf: "center",
-    backgroundColor: COLORS.white,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 18,
-    paddingTop: 22,
-    paddingBottom: 18,
-    marginTop: 10,
-    shadowColor: COLORS.deep,
-    shadowOpacity: 0.035,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 1,
-  },
+  // Capa
+  cover: { height: COVER_HEIGHT, backgroundColor: COLORS.soft, overflow: "hidden" },
+  coverBlob: { position: "absolute", borderRadius: 999, backgroundColor: COLORS.primary },
+  coverBlobA: { width: 190, height: 190, right: -50, top: -80, opacity: 0.12 },
+  coverBlobB: { width: 120, height: 120, left: -30, bottom: -60, opacity: 0.08 },
 
+  // Perfil
+  profileBody: { paddingHorizontal: 16, paddingBottom: 6 },
+  avatarRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: -(AVATAR / 2) },
   avatarWrap: {
-    position: "relative", alignSelf: "center", marginBottom: 13,
-    width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2,
-    backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center",
-    borderWidth: 3, borderColor: "#FFFFFF",
-    ...SHADOW_SOFT,
+    width: AVATAR + 8, height: AVATAR + 8, borderRadius: (AVATAR + 8) / 2,
+    backgroundColor: COLORS.white, alignItems: "center", justifyContent: "center",
   },
-  avatarImg: { width: "100%", height: "100%", borderRadius: AVATAR / 2 },
-  avatarInitial: { fontSize: 34, fontWeight: "800", color: "#FFFFFF" },
   avatarEdit: {
-    position: "absolute", bottom: 0, right: 0, width: 28, height: 28, borderRadius: 14,
-    backgroundColor: COLORS.primary, borderWidth: 2.5, borderColor: "#FFFFFF",
+    position: "absolute", bottom: 2, right: 2, width: 26, height: 26, borderRadius: 13,
+    backgroundColor: COLORS.primary, borderWidth: 2.5, borderColor: COLORS.white,
     alignItems: "center", justifyContent: "center",
   },
+  actionsRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 6 },
+  outlineBtn: {
+    flexDirection: "row", alignItems: "center", gap: 7, height: 38, paddingHorizontal: 16,
+    borderRadius: 999, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.white,
+  },
+  outlineBtnText: { fontSize: 13.5, fontWeight: "800", color: COLORS.text },
+  squareBtn: {
+    width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: COLORS.border,
+    alignItems: "center", justifyContent: "center", backgroundColor: COLORS.white,
+  },
 
-  nameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
-  memberName: { fontSize: 22, fontWeight: "800", color: COLORS.text, flexShrink: 1, textAlign: "center" },
-  rolePill: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "center", marginTop: 8, paddingHorizontal: 13, paddingVertical: 6, borderRadius: 999 },
-  roleDot: { width: 7, height: 7, borderRadius: 4 },
-  roleText: { fontSize: 12.5, fontWeight: "800", textTransform: "capitalize" },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12 },
+  memberName: { fontSize: 22, fontWeight: "800", color: COLORS.text, flexShrink: 1, letterSpacing: -0.3 },
 
-  infoBlock: { marginTop: 22, gap: 2, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: "#EDF1EC", borderRadius: 16, backgroundColor: "#FBFCFA" },
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 11, minHeight: 44 },
-  infoIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center" },
-  infoValue: { flex: 1, fontSize: 13.5, color: COLORS.text, fontWeight: "600" },
+  handleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" },
+  handleBtn: { flexDirection: "row", alignItems: "center", gap: 5 },
+  handleText: { fontSize: 13.5, color: COLORS.muted, fontWeight: "600" },
+  rolePill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  roleDot: { width: 6, height: 6, borderRadius: 3 },
+  roleText: { fontSize: 12, fontWeight: "800", textTransform: "capitalize" },
 
-  memberActions: { flexDirection: "row", gap: 10, marginTop: 16 },
-  historyLink: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    marginTop: 12, padding: 10, borderRadius: 10,
+  metaWrap: { flexDirection: "row", flexWrap: "wrap", columnGap: 16, rowGap: 6, marginTop: 12 },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%" },
+  metaText: { fontSize: 13, color: COLORS.muted, fontWeight: "500", flexShrink: 1 },
+
+  // Estatísticas em linha
+  statsRow: { flexDirection: "row", marginTop: 16, paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: COLORS.border },
+  statItem: { flex: 1, alignItems: "center" },
+  statDivider: { borderLeftWidth: 1, borderLeftColor: COLORS.border },
+  statValue: { fontSize: 19, fontWeight: "800" },
+  statLabel: { fontSize: 12, color: COLORS.muted, fontWeight: "600", marginTop: 2 },
+
+  // Atalhos
+  highlightsScroll: { flexGrow: 0 },
+  highlightsContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6, gap: 18 },
+  highlight: { alignItems: "center", width: 64 },
+  highlightCircle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: COLORS.border },
+  highlightLabel: { fontSize: 11.5, fontWeight: "700", color: COLORS.text, marginTop: 6, textAlign: "center" },
+
+  // Tabs
+  tabsBar: {
+    backgroundColor: COLORS.white, marginTop: 10, paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+  },
+  tabsTrack: {
+    flexDirection: "row", gap: 6, padding: 5, borderRadius: 22,
     backgroundColor: COLORS.field, borderWidth: 1, borderColor: COLORS.border,
   },
-  historyLinkIcon: { width: 40, height: 40, borderRadius: 14, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center" },
-  historyLinkTextBlock: { flex: 1 },
-  historyLinkTitle: { color: COLORS.text, fontSize: 13, fontWeight: "800" },
-  historyLinkSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
-
-  pillButton: {
-    height: 42, borderRadius: 10, backgroundColor: COLORS.primary,
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    ...SHADOW_SOFT,
+  tabItem: { flex: 1, alignItems: "center", gap: 5, paddingVertical: 9, paddingHorizontal: 2, borderRadius: 17 },
+  tabItemActive: {
+    backgroundColor: COLORS.primary,
+    shadowColor: COLORS.primary, shadowOpacity: 0.28, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3,
   },
-  pillButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
-  pillOutline: {
-    height: 42, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
-    backgroundColor: COLORS.background, alignItems: "center", justifyContent: "center",
+  tabIconBubble: {
+    width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center",
+    backgroundColor: COLORS.soft,
   },
-  pillOutlineText: { fontSize: 15, fontWeight: "700", color: COLORS.text },
-  roundOutline: {
-    width: 42, height: 42, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
-    backgroundColor: COLORS.background, alignItems: "center", justifyContent: "center",
+  tabIconBubbleActive: { backgroundColor: "rgba(255,255,255,0.2)" },
+  tabLabel: { fontSize: 11.5, fontWeight: "700", color: COLORS.muted },
+  tabLabelActive: { color: "#FFFFFF", fontWeight: "800" },
+  tabBadge: {
+    position: "absolute", top: -4, right: -6, minWidth: 17, height: 17, borderRadius: 9,
+    backgroundColor: COLORS.danger, alignItems: "center", justifyContent: "center", paddingHorizontal: 4,
+    borderWidth: 2, borderColor: COLORS.field,
   },
-  smallPill: { height: 36, paddingHorizontal: 14, borderRadius: 10, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
-  smallPillText: { fontSize: 13, fontWeight: "800", color: "#FFFFFF" },
+  tabBadgeText: { fontSize: 9.5, fontWeight: "800", color: "#FFFFFF" },
 
-  codeChip: {
-    flexDirection: "row", alignItems: "center", alignSelf: "center", gap: 7,
-    marginTop: 18, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: COLORS.field,
-  },
-  codeChipLabel: { fontSize: 12, color: COLORS.muted, fontWeight: "600" },
-  codeChipValue: { fontSize: 12.5, color: COLORS.text, fontWeight: "800", letterSpacing: 0.5 },
-
-  statsRow: { flexDirection: "row", gap: 9, marginTop: 17 },
-  statTile: { flex: 1, backgroundColor: "#FBFCFA", borderRadius: 16, borderWidth: 1, borderColor: "#EDF1EC", paddingVertical: 12, paddingHorizontal: 7, alignItems: "center" },
-  statValue: { fontSize: 21, fontWeight: "800" },
-  statLabel: { fontSize: 10.5, color: COLORS.muted, fontWeight: "600", marginTop: 4, textAlign: "center" },
-
-  agentCodeCard: { borderRadius: 10, padding: 14, marginTop: 10, alignItems: "center" },
-  agentCodeLabel: { fontSize: 12, color: COLORS.muted, fontWeight: "600" },
-  agentCodeValue: { fontSize: 22, fontWeight: "800", letterSpacing: 1.5, marginTop: 2 },
-
-  tabsScroll: { marginTop: 22, marginBottom: 14, flexGrow: 0 },
-  tabChip: {
-    flexDirection: "row", alignItems: "center", gap: 7, height: 40, paddingHorizontal: 15,
-    borderRadius: 10, backgroundColor: COLORS.field,
-  },
-  tabChipActive: { backgroundColor: COLORS.primary },
-  tabChipText: { fontSize: 13, fontWeight: "700", color: COLORS.muted },
-  tabBadge: { minWidth: 18, height: 18, borderRadius: 9, backgroundColor: COLORS.danger, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
-  tabBadgeText: { fontSize: 10, fontWeight: "800", color: "#FFFFFF" },
-
-  listCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 12,
-    shadowColor: COLORS.deep,
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  listCardTitle: { fontSize: 15, fontWeight: "800", color: COLORS.text },
-  listCardSub: { fontSize: 13, color: COLORS.muted, marginTop: 4 },
-  listCardMeta: { fontSize: 12, color: COLORS.faint, marginTop: 3 },
-  listCardPrice: { fontSize: 14.5, fontWeight: "800", color: COLORS.primary },
-
-  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-
-  interactionsRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  interactionsText: { fontSize: 12, color: COLORS.muted, marginRight: 8, fontWeight: "600" },
-
-  removeLink: { marginTop: 10, alignSelf: "flex-start" },
+  // Feed
+  feed: { backgroundColor: COLORS.white, minHeight: 320 },
+  post: { paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  postHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  postAuthor: { fontSize: 14, fontWeight: "800", color: COLORS.text },
+  postTime: { fontSize: 12, color: COLORS.faint, marginTop: 1 },
+  postTitle: { fontSize: 17, fontWeight: "800", color: COLORS.text, letterSpacing: -0.2 },
+  postSub: { fontSize: 13.5, color: COLORS.muted, marginTop: 3, flexShrink: 1 },
+  postBody: { fontSize: 13.5, color: COLORS.text, lineHeight: 20, marginTop: 8 },
+  postPrice: { fontSize: 15, fontWeight: "800", color: COLORS.primary, marginTop: 8 },
+  routeRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 3 },
+  tagRow: { flexDirection: "row", marginTop: 10 },
+  tag: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: COLORS.soft, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  tagText: { fontSize: 12, fontWeight: "700", color: COLORS.primary },
+  postFooter: { flexDirection: "row", alignItems: "center", gap: 18, marginTop: 12 },
+  reaction: { flexDirection: "row", alignItems: "center", gap: 6 },
+  reactionText: { fontSize: 13, color: COLORS.muted, fontWeight: "700" },
   removeLinkText: { fontSize: 12.5, color: COLORS.danger, fontWeight: "700" },
 
-  statusPill: { paddingHorizontal: 11, paddingVertical: 4, borderRadius: 999, marginLeft: 8 },
+  orderTotals: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  orderActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
+  smallActionBtn: { flexDirection: "row", alignItems: "center", gap: 6, height: 36, paddingHorizontal: 14, borderRadius: 999 },
+  smallActionText: { fontSize: 12.5, fontWeight: "800" },
+
+  referralRow: { flexDirection: "row", alignItems: "center" },
+  referralPoints: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.goldSoft, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  referralPointsText: { fontSize: 13, fontWeight: "800", color: COLORS.gold },
+
+  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   statusPillText: { fontSize: 11, fontWeight: "800" },
 
-  emptyState: { alignItems: "center", paddingVertical: 32, paddingHorizontal: 20, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12 },
-  emptyIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  // Estatísticas (grelha)
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, padding: 16 },
+  statsTile: {
+    width: "48%", flexGrow: 1, backgroundColor: COLORS.field, borderRadius: 16,
+    borderWidth: 1, borderColor: COLORS.border, paddingVertical: 16, paddingHorizontal: 14,
+  },
+  statsTileValue: { fontSize: 26, fontWeight: "800" },
+  statsTileLabel: { fontSize: 12.5, color: COLORS.muted, fontWeight: "600", marginTop: 4 },
+  statsNote: { width: "100%", fontSize: 12.5, color: COLORS.muted, lineHeight: 19, textAlign: "center", marginTop: 4, paddingHorizontal: 8 },
+
+  // Sourcing
+  sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  formBlock: { gap: 14, padding: 16, backgroundColor: COLORS.field, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  blockTitle: { fontSize: 16, fontWeight: "800", color: COLORS.text },
+  blockSubtitle: { fontSize: 12.5, color: COLORS.muted, marginTop: 2 },
+  smallPill: { height: 36, paddingHorizontal: 14, borderRadius: 999, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
+  smallPillText: { fontSize: 13, fontWeight: "800", color: "#FFFFFF" },
+
+  // Estado vazio
+  emptyState: { alignItems: "center", paddingVertical: 48, paddingHorizontal: 28 },
+  emptyIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center", marginBottom: 12 },
   emptyMessage: { fontSize: 15, fontWeight: "800", color: COLORS.text, textAlign: "center" },
   emptySub: { fontSize: 13, color: COLORS.muted, marginTop: 6, textAlign: "center", lineHeight: 19 },
 
-  blockTitle: { fontSize: 17, fontWeight: "800", color: COLORS.text },
-  blockSubtitle: { fontSize: 12.5, color: COLORS.muted, marginTop: 2 },
-
+  // Formulários
   fieldLabel: { fontSize: 13.5, fontWeight: "700", color: COLORS.text, marginBottom: 7 },
   fieldRequired: { fontSize: 11, fontWeight: "600", color: COLORS.primary },
   fieldInput: {
-    height: 46, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    height: 46, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12,
     paddingHorizontal: 13, fontSize: 14, color: COLORS.text, backgroundColor: COLORS.field,
   },
   fieldInputFocused: { borderColor: COLORS.primary, backgroundColor: "#FFFFFF" },
 
-  orderActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
-  smallActionBtn: { flexDirection: "row", alignItems: "center", gap: 6, height: 36, paddingHorizontal: 14, borderRadius: 999 },
-  smallActionText: { fontSize: 12.5, fontWeight: "800" },
+  primaryBtn: {
+    height: 44, borderRadius: 999, backgroundColor: COLORS.primary,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+  },
+  primaryBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
+  pillOutline: {
+    height: 44, borderRadius: 999, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.white, alignItems: "center", justifyContent: "center",
+  },
+  pillOutlineText: { fontSize: 15, fontWeight: "700", color: COLORS.text },
 
-  referralCard: { flexDirection: "row", alignItems: "center" },
-  referralAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center" },
-  referralPoints: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: COLORS.goldSoft, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
-  referralPointsText: { fontSize: 13, fontWeight: "800", color: COLORS.gold },
-
-  statsRowLabel: { fontSize: 14, color: COLORS.muted, fontWeight: "600" },
-  statsRowValue: { fontSize: 22, fontWeight: "800" },
-  statsNote: { fontSize: 12.5, color: COLORS.muted, lineHeight: 19, textAlign: "center", marginTop: 6, paddingHorizontal: 8 },
-
-  footer: { alignItems: "center", marginTop: 32, gap: 3 },
+  // Rodapé
+  footer: { alignItems: "center", marginTop: 28, gap: 3 },
   footerText: { fontSize: 11.5, color: "#8A968C" },
   footerBrand: { fontWeight: "800", color: COLORS.dark, letterSpacing: 0.5 },
 
+  // Modais
   modalOverlay: { flex: 1, backgroundColor: "rgba(10,40,20,0.5)", justifyContent: "flex-end" },
-  settingsSheet: { backgroundColor: COLORS.background, borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingHorizontal: 22, paddingTop: 12 },
+  sheetPanel: { backgroundColor: COLORS.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingTop: 12 },
   sheetHandle: { width: 42, height: 5, borderRadius: 3, backgroundColor: COLORS.border, alignSelf: "center", marginBottom: 18 },
-  settingsTitle: { fontSize: 22, fontWeight: "800", color: COLORS.text, marginBottom: 12 },
+  settingsTitle: { fontSize: 20, fontWeight: "800", color: COLORS.text, marginBottom: 14 },
   settingsLanguageLabel: { fontSize: 13, fontWeight: "700", color: COLORS.muted, marginBottom: 8 },
   languageOptions: { flexDirection: "row", gap: 8, marginBottom: 8 },
-  languageOption: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.white },
+  languageOption: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, borderRadius: 999, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.white },
   languageOptionSelected: { borderColor: COLORS.primary, backgroundColor: COLORS.soft },
   languageOptionText: { fontSize: 12, fontWeight: "700", color: COLORS.muted, textAlign: "center" },
   languageOptionTextSelected: { color: COLORS.primary },

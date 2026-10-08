@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../../components/Icon';
 import ProcessingScreen from '../../components/ProcessingScreen';
 import { supabase } from '../../lib/supabase';
+import { useUserRole } from '../../context/RoleContext';
 
 type ProductDetails = {
   id: string;
@@ -42,6 +43,7 @@ export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { isGuest } = useUserRole();
   const [product, setProduct] = useState<ProductDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -138,14 +140,14 @@ export default function ProductDetailsScreen() {
                   <Text style={styles.value}>{product.farmer_name}</Text>
                 </>
               )}
-              {!!product.contact && (
+              {!!product.contact && !isGuest ? (
                 <TouchableOpacity
                   style={styles.contactButton}
                   onPress={() => void contactProducer()}
                 >
                   <Text style={styles.contactButtonText}>Contactar produtor</Text>
                 </TouchableOpacity>
-              )}
+              ) : null}
             </View>
           </>
         ) : null}

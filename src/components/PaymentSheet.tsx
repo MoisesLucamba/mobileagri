@@ -626,8 +626,7 @@ function Countdown({ expiresAt }: { expiresAt: string }) {
   );
 }
 
-function hasAnyAvailable(availability: any, hasData: boolean) {
-  if (!hasData) return true;
+function hasAnyAvailable(availability: any) {
   return PAYMENT_PROVIDERS.some((p) => availability[p.id]?.enabled === true);
 }
 
@@ -653,6 +652,8 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [availability, setAvailability] = useState<any>({});
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
   const [payment, setPayment] = useState<any>(null);
   const [order, setOrder] = useState<any>(null);
   const [isPreview, setIsPreview] = useState(false);
@@ -669,9 +670,8 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
 
   const provider = PAYMENT_PROVIDERS.find((p) => p.id === providerId) ?? null;
   const estimate = useMemo(() => quantity * unitPrice, [quantity, unitPrice]);
-  const hasAvailabilityData = Object.keys(availability).length > 0;
-  const anyAvailable = hasAnyAvailable(availability, hasAvailabilityData);
-  const isAvailable = (id: string) => (hasAvailabilityData ? availability[id]?.enabled === true : true);
+  const anyAvailable = hasAnyAvailable(availability);
+  const isAvailable = (id: string) => availability[id]?.enabled === true;
   const stepIndex = step === "awaiting" ? 1 : step === "success" || step === "failed" ? 2 : 0;
   const isProcessing = step === "creating";
 
@@ -690,6 +690,9 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
       setError("");
       setPayment(null);
       setOrder(null);
+      setAvailability({});
+      setAvailabilityError("");
+      setAvailabilityLoading(true);
       setIsPreview(false);
       orderRef.current = null;
       idemKey.current = newIdempotencyKey();
@@ -702,7 +705,20 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
       ]).start();
 
       let alive = true;
-      loadProviderAvailability().then((map: any) => alive && setAvailability(map));
+      loadProviderAvailability()
+        .then((map: any) => {
+          if (alive) setAvailability(map);
+        })
+        .catch((loadError) => {
+          console.error("Não foi possível verificar os métodos de pagamento:", loadError);
+          if (alive) {
+            setAvailability({});
+            setAvailabilityError("Não foi possível verificar a ligação de pagamento. Tenta novamente.");
+          }
+        })
+        .finally(() => {
+          if (alive) setAvailabilityLoading(false);
+        });
       return () => {
         alive = false;
       };
@@ -758,6 +774,7 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
     stopWatch.current = watchPayment(intentId, {
       fetcher,
       onUpdate: (next: any) => {
+        setError("");
         setPayment((prev: any) => ({ ...(prev ?? {}), ...next }));
         const status = effectiveStatus(next);
         if (status === "succeeded") {
@@ -768,7 +785,25 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
           setStep("failed");
         }
       },
+      onError: (pollError: unknown) => {
+        console.error("Não foi possível consultar o estado do pagamento:", pollError);
+        setError("Sem ligação para confirmar o pagamento. A verificação será repetida automaticamente.");
+      },
     });
+  };
+
+  const retryAvailability = async () => {
+    setAvailabilityLoading(true);
+    setAvailabilityError("");
+    try {
+      setAvailability(await loadProviderAvailability());
+    } catch (loadError) {
+      console.error("Não foi possível verificar os métodos de pagamento:", loadError);
+      setAvailability({});
+      setAvailabilityError("Não foi possível verificar a ligação de pagamento. Tenta novamente.");
+    } finally {
+      setAvailabilityLoading(false);
+    }
   };
 
   const handleCreated = ({ payment: created, order: createdOrder }: any, fetcher?: any) => {
@@ -964,6 +999,15 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
 
       <FadeSlide delay={180}>
         <Text style={styles.label}>Como queres pagar?</Text>
+        {availabilityLoading ? (
+          <Text style={styles.availabilityMessage}>A verificar os métodos de pagamento…</Text>
+        ) : availabilityError ? (
+          <Pressable style={styles.availabilityError} onPress={() => void retryAvailability()}>
+            <Text style={styles.availabilityErrorText}>{availabilityError} Toca para tentar novamente.</Text>
+          </Pressable>
+        ) : !anyAvailable ? (
+          <Text style={styles.availabilityMessage}>Nenhum método de pagamento está ativo neste momento.</Text>
+        ) : null}
         {PAYMENT_PROVIDERS.map((p) => (
           <MethodCard
             key={p.id}
@@ -1008,9 +1052,9 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
       ) : null}
 
       <PressableScale
-        style={[styles.primaryBtn, !anyAvailable && styles.btnDisabled]}
+        style={[styles.primaryBtn, (!anyAvailable || availabilityLoading) && styles.btnDisabled]}
         onPress={submit}
-        disabled={!anyAvailable}
+        disabled={!anyAvailable || availabilityLoading}
       >
         <Text style={styles.primaryBtnText}>Continuar para pagamento</Text>
         <Icon name="arrow-right" size={18} color="#FFFFFF" />
@@ -1311,6 +1355,9 @@ const styles = StyleSheet.create({
   },
   processingTitle: { fontSize: 18, fontWeight: "800", color: COLORS.text, textAlign: "center", marginTop: 18 },
   processingBody: { fontSize: 12, color: COLORS.faint, textAlign: "center" },
+  availabilityMessage: { marginBottom: 8, color: COLORS.muted, fontSize: 11.5, lineHeight: 16 },
+  availabilityError: { marginBottom: 8, padding: 10, borderRadius: 9, backgroundColor: COLORS.redSoft },
+  availabilityErrorText: { color: COLORS.red, fontSize: 11.5, lineHeight: 16 },
   pList: { alignSelf: "stretch", marginTop: 16, gap: 10, paddingHorizontal: 24 },
   pRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   pIconBox: { width: 22, height: 22, alignItems: "center", justifyContent: "center" },

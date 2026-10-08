@@ -1,36 +1,32 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "expo-router";
 import {
   Alert,
   Animated,
   Dimensions,
   Easing,
   Image,
+  LayoutAnimation,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
-  StyleSheet,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { supabase } from "../lib/supabase";
 import Icon from "./Icon";
 import MapViewer from "./MapViewer";
-
-const COLORS = {
-  primary: "#2E8B4F",
-  primaryDark: "#25703F",
-  tint: "#E9F5EC",
-  text: "#16231C",
-  muted: "#78877D",
-  faint: "#AEB8AC",
-  line: "#E8ECE6",
-  red: "#DD5138",
-  white: "#FFFFFF",
-};
+import { COLORS, PressableScale, SHADOW, ShineButton } from "./ui";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const CARD_WIDTH = SCREEN_WIDTH - 36; // 18px de cada lado, igual ao resto do feed
+const CARD_WIDTH = SCREEN_WIDTH - 32;
+const IMG_W = CARD_WIDTH - 20; // 10px de respiro de cada lado
+const IMG_H = Math.round(IMG_W * 0.78);
 
 export type Comment = {
   id: string;
@@ -82,10 +78,11 @@ function formatKz(price?: number) {
 
 function formatHarvestDate(value?: string | null) {
   if (!value) return null;
-  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
   if (!year || !month || !day) return null;
-  return new Intl.DateTimeFormat('pt-AO', { day: '2-digit', month: 'short', year: 'numeric' })
-    .format(new Date(year, month - 1, day));
+  return new Intl.DateTimeFormat("pt-AO", { day: "2-digit", month: "short", year: "numeric" }).format(
+    new Date(year, month - 1, day)
+  );
 }
 
 function timeAgo(iso: string) {
@@ -110,21 +107,21 @@ function initialsOf(name?: string) {
 
 /* ------------------------------- avatar -------------------------------- */
 
-function Avatar({ uri, name, size = 40 }: { uri?: string | null; name?: string; size?: number }) {
+function Avatar({ uri, name, size = 40, ring }: { uri?: string | null; name?: string; size?: number; ring?: boolean }) {
   const [failed, setFailed] = useState(false);
   const showImage = !!uri && !failed;
   const initials = initialsOf(name);
 
-  return (
+  const inner = (
     <View
       style={{
-        width: size,
-        height: size,
+        width: ring ? size - 4 : size,
+        height: ring ? size - 4 : size,
         borderRadius: size / 2,
         overflow: "hidden",
         backgroundColor: COLORS.tint,
-        borderWidth: 1,
-        borderColor: COLORS.line,
+        borderWidth: ring ? 2 : 0,
+        borderColor: COLORS.white,
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -143,27 +140,57 @@ function Avatar({ uri, name, size = 40 }: { uri?: string | null; name?: string; 
       )}
     </View>
   );
+
+  if (!ring) return inner;
+  // anel verde em degradé à volta da foto do produtor
+  return (
+    <LinearGradient
+      colors={[COLORS.primaryLight, "#A6E3B8"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{ width: size, height: size, borderRadius: size / 2, alignItems: "center", justifyContent: "center" }}
+    >
+      {inner}
+    </LinearGradient>
+  );
 }
 
-/* ---------------------------- micro-animação ---------------------------- */
+/* ------------------------ pílula de ação (like/comentar) ------------------------ */
 
-type PressableScaleProps = {
-  children: React.ReactNode;
-  className?: string;
-  onPress?: () => void;
+function ActionPill({
+  icon,
+  count,
+  active,
+  activeColor,
+  activeBg,
+  filled,
+  onPress,
+  disabled,
+  pop,
+}: {
+  icon: "heart" | "message";
+  count: number;
+  active?: boolean;
+  activeColor: string;
+  activeBg: string;
+  filled?: boolean;
+  onPress: () => void;
   disabled?: boolean;
-};
-
-function PressableScale({ children, className, onPress, disabled }: PressableScaleProps) {
-  const sc = useRef(new Animated.Value(1)).current;
-  const to = (v: number) =>
-    Animated.spring(sc, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
+  pop?: Animated.Value;
+}) {
   return (
-    <Pressable onPress={onPress} disabled={disabled} onPressIn={() => to(0.95)} onPressOut={() => to(1)}>
-      <Animated.View style={{ transform: [{ scale: sc }] }}>
-        <View className={className}>{children}</View>
+    <PressableScale
+      onPress={onPress}
+      disabled={disabled}
+      scale={0.92}
+      className="h-[38px] flex-row items-center gap-[6px] rounded-[10px] px-[13px]"
+      style={{ backgroundColor: active ? activeBg : "#F3F6F2" }}
+    >
+      <Animated.View style={pop ? { transform: [{ scale: pop }] } : undefined}>
+        <Icon name={icon} size={icon === "heart" ? 19 : 18} filled={filled} color={active ? activeColor : COLORS.muted} />
       </Animated.View>
-    </Pressable>
+      <Text style={{ fontSize: 13, fontWeight: "800", color: active ? activeColor : COLORS.muted }}>{count}</Text>
+    </PressableScale>
   );
 }
 
@@ -176,6 +203,7 @@ export default function ProductCard({
   onOpenPreOrder,
   onRequireLogin,
 }: Props) {
+  const router = useRouter();
   const [photoIndex, setPhotoIndex] = useState(0);
   const [liking, setLiking] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -183,28 +211,38 @@ export default function ProductCard({
   const [sendingComment, setSendingComment] = useState(false);
   const [mapVisible, setMapVisible] = useState(false);
 
+  // entrada suave do cartão
   const enter = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     Animated.timing(enter, {
       toValue: 1,
-      duration: 380,
+      duration: 420,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
   }, []);
 
+  // "pop" do coração ao gostar
+  const heartPop = useRef(new Animated.Value(1)).current;
+  const prevLiked = useRef(product.is_liked);
+  useEffect(() => {
+    if (product.is_liked && !prevLiked.current) {
+      Animated.sequence([
+        Animated.spring(heartPop, { toValue: 1.4, useNativeDriver: true, speed: 40, bounciness: 14 }),
+        Animated.spring(heartPop, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 8 }),
+      ]).start();
+    }
+    prevLiked.current = product.is_liked;
+  }, [product.is_liked]);
+
   const isMock = product.id.startsWith("mock-");
   const photos = Array.isArray(product.photos) && product.photos.length > 0 ? product.photos : [];
   const hasLocation = typeof product.location_lat === "number" && typeof product.location_lng === "number";
+  const harvest = formatHarvestDate(product.harvest_date);
 
-  const nextPhoto = () => {
-    if (photos.length <= 1) return;
-    setPhotoIndex((i) => (i + 1) % photos.length);
-  };
-  const prevPhoto = () => {
-    if (photos.length <= 1) return;
-    setPhotoIndex((i) => (i - 1 + photos.length) % photos.length);
+  const onPhotoScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const i = Math.round(e.nativeEvent.contentOffset.x / IMG_W);
+    if (i !== photoIndex && i >= 0 && i < photos.length) setPhotoIndex(i);
   };
 
   const openMap = () => {
@@ -213,6 +251,10 @@ export default function ProductCard({
       return;
     }
     setMapVisible(true);
+  };
+
+  const openUserProfile = () => {
+    if (!isMock && product.user_id) router.push(`/profile/${product.user_id}`);
   };
 
   const toggleLike = async () => {
@@ -254,6 +296,7 @@ export default function ProductCard({
 
   const loadComments = async () => {
     const opening = !showComments;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setShowComments(opening);
     if (!opening || isMock || product.commentsLoaded) return;
 
@@ -294,6 +337,7 @@ export default function ProductCard({
 
       if (error) throw error;
 
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       onProductUpdate({
         ...product,
         comments: [...(product.comments || []), data as Comment],
@@ -314,30 +358,50 @@ export default function ProductCard({
     <>
       <Animated.View
         style={[
-          s.card,
           {
+            width: CARD_WIDTH,
+            alignSelf: "center",
+            marginBottom: 18,
+            borderRadius: 12,
+            backgroundColor: COLORS.white,
             opacity: enter,
-            transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+            transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }],
           },
+          SHADOW.soft,
         ]}
       >
         <View className="overflow-hidden rounded-[12px] bg-white">
-          {/* Cabeçalho: foto + nome do produtor */}
-          <View className="flex-row items-center gap-[10px] px-3 pb-[10px] pt-3">
-            <Avatar uri={product.user_avatar} name={product.farmer_name} size={40} />
+          {/* Cabeçalho */}
+          <View className="flex-row items-center gap-[10px] px-[14px] pb-3 pt-[14px]">
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={openUserProfile}
+              disabled={isMock || !product.user_id}
+              accessibilityRole="link"
+              accessibilityLabel={`Abrir perfil de ${product.farmer_name}`}
+            >
+              <Avatar uri={product.user_avatar} name={product.farmer_name} size={44} ring />
+            </TouchableOpacity>
 
             <View className="flex-1">
-              <View className="flex-row items-center gap-1">
-                <Text className="shrink text-[14px] font-extrabold text-[#16231C]" numberOfLines={1}>
+              <TouchableOpacity
+                className="flex-row items-center gap-1 self-start"
+                activeOpacity={0.75}
+                onPress={openUserProfile}
+                disabled={isMock || !product.user_id}
+                accessibilityRole="link"
+                accessibilityLabel={`Abrir perfil de ${product.farmer_name}`}
+              >
+                <Text className="shrink text-[14.5px] font-extrabold text-[#16231C]" numberOfLines={1}>
                   {product.farmer_name}
                 </Text>
                 {product.user_verified ? <Icon name="check-circle" size={14} color={COLORS.primary} /> : null}
                 {isMock ? (
-                  <View className="ml-1 rounded-[4px] bg-[#FBEBD3] px-[6px] py-[2px]">
+                  <View className="ml-1 rounded-[4px] bg-[#FBEBD3] px-[7px] py-[2px]">
                     <Text className="text-[9px] font-black text-[#B9741A]">DEMO</Text>
                   </View>
                 ) : null}
-              </View>
+              </TouchableOpacity>
               <View className="mt-[2px] flex-row items-center gap-1">
                 <Icon name="pin" size={11} color={COLORS.faint} />
                 <Text className="shrink text-[11.5px] text-[#78877D]" numberOfLines={1}>
@@ -346,133 +410,156 @@ export default function ProductCard({
               </View>
             </View>
 
-            <PressableScale className="h-9 w-9 items-center justify-center rounded-[10px] bg-[#E9F5EC]" onPress={openMap}>
-              <Icon name="map" size={17} color={hasLocation ? COLORS.primary : COLORS.faint} />
+            <PressableScale
+              className="h-9 w-9 items-center justify-center rounded-[10px] bg-[#E9F5EC]"
+              onPress={openMap}
+              scale={0.9}
+            >
+              <Icon name="map" size={18} color={hasLocation ? COLORS.primary : COLORS.faint} />
             </PressableScale>
           </View>
 
-          {/* Imagens */}
-          <View className="mx-3 overflow-hidden rounded-[8px] bg-[#F4F6F2]" style={{ aspectRatio: 4 / 3 }}>
+          {/* Galeria: desliza com o dedo */}
+          <View
+            style={{
+              width: IMG_W,
+              height: IMG_H,
+              marginHorizontal: 10,
+              borderRadius: 8,
+              overflow: "hidden",
+              backgroundColor: "#F0F4EE",
+            }}
+          >
             {photos.length > 0 ? (
-              <Image source={{ uri: photos[photoIndex] }} className="h-full w-full" resizeMode="cover" />
+              <ScrollView
+                horizontal
+                pagingEnabled
+                nestedScrollEnabled
+                showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={16}
+                decelerationRate="fast"
+                onScroll={onPhotoScroll}
+              >
+                {photos.map((uri, i) => (
+                  <Image key={`${uri}-${i}`} source={{ uri }} style={{ width: IMG_W, height: IMG_H }} resizeMode="cover" />
+                ))}
+              </ScrollView>
             ) : (
               <View className="h-full w-full items-center justify-center">
                 <Icon name="image" size={34} color={COLORS.faint} />
               </View>
             )}
 
+            {/* véu suave em baixo para os pontos ficarem legíveis */}
+            <LinearGradient
+              pointerEvents="none"
+              colors={["rgba(0,0,0,0)", "rgba(10,20,14,0.38)"]}
+              style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 80 }}
+            />
+
+            {/* Quantidade */}
+            <View className="absolute left-[10px] top-[10px] flex-row items-center gap-[5px] rounded-[6px] bg-[rgba(255,255,255,0.88)] px-[10px] py-[5px]">
+              <View className="h-[6px] w-[6px] rounded-full bg-[#2E8B4F]" />
+              <Text className="text-[11px] font-extrabold text-[#16231C]">
+                {Number(product.quantity).toLocaleString("pt-AO")} kg disponíveis
+              </Text>
+            </View>
+
             {photos.length > 1 ? (
               <>
-                <TouchableOpacity
-                  className="absolute left-2 top-1/2 -mt-4 h-8 w-8 items-center justify-center rounded-[8px] bg-[rgba(22,35,28,0.45)]"
-                  onPress={prevPhoto}
-                >
-                  <Icon name="chevron-left" size={18} color={COLORS.white} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="absolute right-2 top-1/2 -mt-4 h-8 w-8 items-center justify-center rounded-[8px] bg-[rgba(22,35,28,0.45)]"
-                  onPress={nextPhoto}
-                >
-                  <Icon name="chevron-right" size={18} color={COLORS.white} />
-                </TouchableOpacity>
+                <View className="absolute right-[10px] top-[10px] rounded-[6px] bg-[rgba(22,35,28,0.55)] px-[9px] py-[5px]">
+                  <Text className="text-[11px] font-bold text-white">
+                    {photoIndex + 1}/{photos.length}
+                  </Text>
+                </View>
                 <View className="absolute bottom-[10px] flex-row gap-[5px] self-center">
                   {photos.map((_, i) => (
                     <View
                       key={i}
                       className={
                         i === photoIndex
-                          ? "h-[5px] w-4 rounded-full bg-white"
-                          : "h-[5px] w-[5px] rounded-full bg-[rgba(255,255,255,0.55)]"
+                          ? "h-[5px] w-[18px] rounded-full bg-white"
+                          : "h-[5px] w-[5px] rounded-full bg-[rgba(255,255,255,0.6)]"
                       }
                     />
                   ))}
                 </View>
               </>
             ) : null}
-
-            {/* Quantidade */}
-            <View className="absolute left-2 top-2 rounded-[6px] bg-[rgba(22,35,28,0.6)] px-2 py-1">
-              <Text className="text-[10.5px] font-bold text-white">
-                {Number(product.quantity).toLocaleString("pt-AO")} kg disponíveis
-              </Text>
-            </View>
-
-            {/* Contador de fotos */}
-            {photos.length > 1 ? (
-              <View className="absolute right-2 top-2 rounded-[6px] bg-[rgba(22,35,28,0.6)] px-2 py-1">
-                <Text className="text-[10.5px] font-bold text-white">
-                  {photoIndex + 1}/{photos.length}
-                </Text>
-              </View>
-            ) : null}
           </View>
 
           {/* Info */}
-          <View className="px-3 pb-3 pt-3">
+          <View className="px-[14px] pb-[14px] pt-[14px]">
             <View className="flex-row items-center justify-between">
-              <Text className="mr-[10px] shrink text-[17px] font-black text-[#16231C]">{product.product_type}</Text>
-              <View className="rounded-[8px] bg-[#E9F5EC] px-[10px] py-[5px]">
-                <Text className="text-[14px] font-black text-[#25703F]">
-                  {formatKz(product.price)}
-                  <Text className="text-[11px] font-semibold text-[#5B7A66]"> /kg</Text>
-                </Text>
+              <Text className="mr-[10px] shrink text-[19px] font-black tracking-tight text-[#16231C]">
+                {product.product_type}
+              </Text>
+              <View className="flex-row items-baseline">
+                <Text className="text-[18px] font-black text-[#237040]">{formatKz(product.price)}</Text>
+                <Text className="text-[11.5px] font-semibold text-[#78877D]"> /kg</Text>
               </View>
             </View>
 
             {product.description ? (
-              <Text className="mt-1.5 text-[12.5px] leading-[18px] text-[#78877D]" numberOfLines={3}>
+              <Text className="mt-1.5 text-[13px] leading-[19px] text-[#78877D]" numberOfLines={3}>
                 {product.description}
               </Text>
             ) : null}
 
-            {formatHarvestDate(product.harvest_date) ? (
-              <View className="mt-2 flex-row items-center gap-[6px]">
-                <Icon name="clock" size={14} color={COLORS.primary} />
-                <Text className="text-[11.5px] font-semibold text-[#5B7A66]">
-                  Colheita prevista: {formatHarvestDate(product.harvest_date)}
-                </Text>
+            {harvest ? (
+              <View className="mt-[10px] flex-row items-center gap-[6px] self-start rounded-[8px] bg-[#F1F8F3] px-[10px] py-[5px]">
+                <Icon name="clock" size={13} color={COLORS.primary} />
+                <Text className="text-[11.5px] font-bold text-[#4F7A5E]">Colheita prevista: {harvest}</Text>
               </View>
             ) : null}
 
             {/* Ações */}
-            <View className="mt-3 flex-row items-center gap-[18px] border-t border-[#E8ECE6] pt-3">
-              <PressableScale className="flex-row items-center gap-[5px]" onPress={toggleLike} disabled={liking}>
-                <Icon
-                  name="heart"
-                  size={20}
-                  filled={product.is_liked}
-                  color={product.is_liked ? COLORS.red : COLORS.muted}
-                />
-                <Text className="text-[12.5px] font-bold text-[#78877D]">{product.likes_count}</Text>
-              </PressableScale>
+            <View className="mt-[14px] flex-row items-center gap-[8px]">
+              <ActionPill
+                icon="heart"
+                count={product.likes_count}
+                active={product.is_liked}
+                activeColor={COLORS.red}
+                activeBg={COLORS.redSoft}
+                filled={product.is_liked}
+                onPress={toggleLike}
+                disabled={liking}
+                pop={heartPop}
+              />
+              <ActionPill
+                icon="message"
+                count={product.comments?.length ?? 0}
+                active={showComments}
+                activeColor={COLORS.primaryDark}
+                activeBg={COLORS.tint}
+                onPress={loadComments}
+              />
 
-              <PressableScale className="flex-row items-center gap-[5px]" onPress={loadComments}>
-                <Icon name="message" size={18} color={showComments ? COLORS.primary : COLORS.muted} />
-                <Text className="text-[12.5px] font-bold text-[#78877D]">{product.comments?.length ?? 0}</Text>
-              </PressableScale>
-
-              <TouchableOpacity activeOpacity={0.85} onPress={() => onOpenPreOrder(product)} style={s.buyBtn}>
-                <Icon name="cart" size={16} color={COLORS.white} />
-                <Text style={s.buyText}>Comprar</Text>
-              </TouchableOpacity>
+              <ShineButton
+                label="Comprar"
+                icon="cart"
+                height={40}
+                onPress={() => onOpenPreOrder(product)}
+                style={{ marginLeft: "auto" }}
+              />
             </View>
 
             {/* Comentários */}
             {showComments ? (
-              <View className="mt-3 border-t border-[#E8ECE6] pt-3">
+              <View className="mt-[14px] pt-1">
                 {(product.comments || []).length === 0 ? (
-                  <Text className="mb-2 text-xs italic text-[#AEB8AC]">Sê o primeiro a comentar.</Text>
+                  <Text className="mb-2 text-[12.5px] italic text-[#AEB8AC]">Sê o primeiro a comentar.</Text>
                 ) : (
                   product.comments.map((c) => (
                     <View key={c.id} className="mb-[10px] flex-row items-start gap-2">
-                      <Avatar uri={c.user_avatar} name={c.user_name} size={28} />
-                      <View className="flex-1 rounded-[8px] bg-[#F4F7F3] px-[10px] py-[7px]">
+                      <Avatar uri={c.user_avatar} name={c.user_name} size={30} />
+                      <View className="flex-1 rounded-[8px] bg-[#F3F6F2] px-3 py-2">
                         {c.user_name ? (
                           <Text className="text-[11.5px] font-extrabold text-[#16231C]" numberOfLines={1}>
                             {c.user_name}
                           </Text>
                         ) : null}
-                        <Text className="text-[12.5px] text-[#16231C]">{c.comment_text}</Text>
+                        <Text className="text-[13px] text-[#16231C]">{c.comment_text}</Text>
                         <Text className="mt-px text-[10px] text-[#AEB8AC]">{timeAgo(c.created_at)}</Text>
                       </View>
                     </View>
@@ -481,7 +568,7 @@ export default function ProductCard({
 
                 <View className="mt-1 flex-row items-center gap-2">
                   <TextInput
-                    className="h-10 flex-1 rounded-[10px] border border-[#E8ECE6] bg-[#F9FAF8] px-3 text-[13px] text-[#16231C]"
+                    className="h-10 flex-1 rounded-[10px] bg-[#F3F6F2] px-4 text-[13.5px] text-[#16231C]"
                     value={commentText}
                     onChangeText={setCommentText}
                     placeholder="Escreve um comentário..."
@@ -492,14 +579,16 @@ export default function ProductCard({
                     onSubmitEditing={sendComment}
                     editable={!sendingComment}
                   />
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    onPress={sendComment}
-                    disabled={!canSend}
-                    style={[s.sendBtn, !canSend && { opacity: 0.45 }]}
-                  >
-                    <Icon name="send" size={15} color={COLORS.white} />
-                  </TouchableOpacity>
+                  <Pressable onPress={sendComment} disabled={!canSend} style={{ opacity: canSend ? 1 : 0.45 }}>
+                    <LinearGradient
+                      colors={[COLORS.primaryLight, COLORS.primaryDark]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={{ width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" }}
+                    >
+                      <Icon name="send" size={16} color={COLORS.white} />
+                    </LinearGradient>
+                  </Pressable>
                 </View>
               </View>
             ) : null}
@@ -522,40 +611,3 @@ export default function ProductCard({
     </>
   );
 }
-
-// Estilos nativos: cartão plano (borda fina, sombra quase nula) e botões verdes.
-const s = StyleSheet.create({
-  card: {
-    width: CARD_WIDTH,
-    alignSelf: "center",
-    marginBottom: 14,
-    borderRadius: 12,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: COLORS.line,
-    shadowColor: "#16231C",
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  buyBtn: {
-    marginLeft: "auto",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    height: 38,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: COLORS.primary,
-  },
-  buyText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
-  sendBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});

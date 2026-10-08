@@ -1,5 +1,4 @@
-import * as Linking from 'expo-linking';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -34,6 +33,7 @@ import Icon, { IconName } from '../components/Icon';
 import { normalizeAngolaAuthPhone } from '../lib/authPhone';
 import { signInWithGoogle } from '../lib/googleAuth';
 import { supabase } from '../lib/supabase';
+import { useUserRole } from '../context/RoleContext';
 
 // Mesma paleta do ProductCard
 const COLORS = {
@@ -142,6 +142,7 @@ export default function LoginScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { enterGuest } = useUserRole();
   const passwordRef = useRef<TextInput>(null);
 
   const [email, setEmail] = useState('');
@@ -149,9 +150,10 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [focused, setFocused] = useState<'email' | 'password' | null>(null);
 
-  const busy = loading || googleLoading;
+  const busy = loading || googleLoading || guestLoading;
 
   // ================================
   // GOOGLE
@@ -228,33 +230,16 @@ export default function LoginScreen() {
   // ================================
   // RECUPERAR PASSWORD
   // ================================
-  const handleForgotPassword = async () => {
-    const recoveryEmail = email.trim().toLowerCase();
-    if (!recoveryEmail.includes('@')) {
-      Alert.alert(t('login.recoverPassword'), t('login.enterEmailFirst'));
-      return;
-    }
-
+  const handleEnterGuest = async () => {
     try {
-      setLoading(true);
-
-      const redirectTo = Linking.createURL('reset-password');
-      const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, { redirectTo });
-
-      if (error) {
-        Alert.alert(t('login.errorTitle'), error.message);
-        return;
-      }
-
-      Alert.alert(
-        t('login.emailSent'),
-        t('login.recoveryLinkSent')
-      );
+      setGuestLoading(true);
+      await enterGuest();
+      router.replace('/home');
     } catch (error) {
-      console.log('Erro ao recuperar password:', error);
-      Alert.alert(t('login.errorTitle'), t('login.recoveryError'));
+      console.error('Não foi possível iniciar o modo visitante:', error);
+      Alert.alert(t('login.errorTitle'), t('login.unexpectedError'));
     } finally {
-      setLoading(false);
+      setGuestLoading(false);
     }
   };
 
@@ -359,7 +344,7 @@ export default function LoginScreen() {
           </Animated.View>
 
           <Animated.View entering={enter(560)} style={styles.forgotWrap}>
-            <TouchableOpacity onPress={handleForgotPassword} disabled={busy} hitSlop={8}>
+            <TouchableOpacity onPress={() => router.push('/forgot-password' as Href)} disabled={busy} hitSlop={8}>
               <Text style={styles.forgotText}>{t('login.forgotPassword')}</Text>
             </TouchableOpacity>
           </Animated.View>
@@ -402,6 +387,22 @@ export default function LoginScreen() {
             <Text style={styles.registerText}>{t('login.noAccount')}</Text>
             <TouchableOpacity onPress={handleRegister} disabled={busy} hitSlop={8}>
               <Text style={styles.registerLink}>{t('login.createAccount')}</Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <Animated.View entering={enter(850)} style={styles.guestCard}>
+            <View style={styles.guestCopy}>
+              <Icon name="eye" size={18} color={COLORS.primary} />
+              <Text style={styles.guestDescription}>{t('guest.description')}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleEnterGuest}
+              disabled={busy}
+              style={[styles.guestButton, busy && styles.disabled]}
+            >
+              <Text style={styles.guestButtonText}>
+                {guestLoading ? 'A abrir…' : t('guest.continue')}
+              </Text>
             </TouchableOpacity>
           </Animated.View>
 
@@ -535,6 +536,26 @@ const styles = StyleSheet.create({
   },
   registerText: { fontSize: 13.5, color: COLORS.muted },
   registerLink: { fontSize: 13.5, fontWeight: '800', color: COLORS.primaryDark, marginLeft: 6 },
+  guestCard: {
+    marginTop: 18,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+  },
+  guestCopy: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  guestDescription: { flex: 1, color: COLORS.muted, fontSize: 11.5, lineHeight: 16 },
+  guestButton: {
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 9,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 9,
+  },
+  guestButtonText: { color: COLORS.primaryDark, fontSize: 12, fontWeight: '800' },
 
   legalText: { fontSize: 11.5, lineHeight: 17, color: COLORS.muted, textAlign: 'center' },
   legalLink: { color: COLORS.primaryDark, fontWeight: '700' },

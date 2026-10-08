@@ -49,6 +49,12 @@ O APK de distribuição interna é compilado na nuvem pelo EAS Build; não é ne
 
 O app usa o Supabase para autenticação e dados. Defina `EXPO_PUBLIC_SUPABASE_URL` e `EXPO_PUBLIC_SUPABASE_ANON_KEY` no `.env` para builds locais e no ambiente EAS `preview`/`production` para builds na nuvem. Sem esses valores, os recursos ligados ao Supabase não conseguirão conectar.
 
+## Pontos Verdes
+
+Os Pontos Verdes reúnem stock de vários produtores em locais físicos de levantamento e permitem reservar pequenas quantidades para o próprio dia ou para o dia seguinte. Nesta primeira versão, o pedido é reservado na app e pago no ponto durante o levantamento; o pagamento online não é usado para este fluxo.
+
+Antes de ativar a funcionalidade, aplique no Supabase, por ordem, as migrações `20261008173000_install_admin_ads_and_dashboard.sql` e `20261008182000_green_points.sql` (além das migrações anteriores do projeto). Um administrador cria os pontos, cadastra produtos com stock e informa um preço de mercado superior ao preço do ponto. Os pedidos reservam o stock de forma atómica no banco de dados.
+
 ## Cadastro e códigos por e-mail
 
 O cadastro recomenda a confirmação por e-mail e grava os dados do utilizador na tabela pública `users` depois da confirmação OTP. A tabela deve aceitar `id`, `full_name`, `phone`, `email`, `user_type` e `updated_at`, com `id` único e políticas RLS que permitam ao utilizador autenticado consultar, inserir e atualizar apenas o próprio registo. O esquema e as políticas pertencem ao projeto Supabase e não são criados pelo cliente mobile.

@@ -1,9 +1,11 @@
 import * as ImagePicker from 'expo-image-picker';
 import { type Href, useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useState } from 'react';
 import {
     Alert,
     Image,
+    InteractionManager,
     KeyboardAvoidingView,
     Platform,
     RefreshControl,
@@ -21,6 +23,7 @@ import Icon from '../components/Icon';
 import ProcessingScreen from '../components/ProcessingScreen';
 import {
     AgrilinkAd,
+    getAgrilinkAdErrorCode,
     loadAgrilinkAds,
     publishAgrilinkAd,
     setAgrilinkAdStatus,
@@ -44,6 +47,7 @@ const MAX_IMAGES = 8;
 function AdsManagerContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [targetUrl, setTargetUrl] = useState('');
@@ -57,23 +61,30 @@ function AdsManagerContent() {
 
   const refresh = useCallback(async () => {
     try {
+      const loadedAds = await loadAgrilinkAds();
+      setAds(loadedAds);
       setError('');
-      setAds(await loadAgrilinkAds());
-    } catch (loadError: any) {
-      setError(loadError?.message || 'Não foi possível carregar os anúncios.');
+    } catch (loadError) {
+      const errorCode = getAgrilinkAdErrorCode(loadError);
+      setError(errorCode
+        ? t(`ads.${errorCode}`)
+        : loadError instanceof Error ? loadError.message : t('ads.publishError'));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    refresh();
+    const task = InteractionManager.runAfterInteractions(() => {
+      void refresh();
+    });
+    return () => task.cancel();
   }, [refresh]);
 
   const pickImages = async () => {
     if (images.length >= MAX_IMAGES) {
-      Alert.alert('Limite de imagens', `Cada anúncio aceita até ${MAX_IMAGES} imagens.`);
+      Alert.alert(t('ads.maxImagesTitle'), t('ads.maxImagesMessage', { maximum: MAX_IMAGES }));
       return;
     }
 
@@ -82,6 +93,7 @@ function AdsManagerContent() {
       allowsMultipleSelection: true,
       selectionLimit: MAX_IMAGES - images.length,
       quality: 0.8,
+      base64: true,
       orderedSelection: true,
       preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
     });
@@ -97,21 +109,21 @@ function AdsManagerContent() {
     const cleanTitle = title.trim();
     const cleanDescription = description.trim();
     const cleanUrl = targetUrl.trim();
-    if (cleanTitle.length < 3) return setError('O título deve ter pelo menos 3 caracteres.');
-    if (cleanDescription.length < 10) return setError('A descrição deve ter pelo menos 10 caracteres.');
-    if (images.length < 3) return setError('Adicione pelo menos 3 imagens ao anúncio.');
+    if (cleanTitle.length < 3) return setError(t('ads.invalidTitle'));
+    if (cleanDescription.length < 10) return setError(t('ads.invalidDescription'));
+    if (images.length < 3) return setError(t('ads.missingImages'));
     if (images.some((image) => Number(image.fileSize || 0) > 12 * 1024 * 1024)) {
-      return setError('Cada imagem deve ter no máximo 12 MB.');
+      return setError(t('ads.imageTooLarge'));
     }
 
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(cleanUrl);
     } catch {
-      return setError('Introduza um link válido começado por https:// ou http://.');
+      return setError(t('ads.invalidUrl'));
     }
     if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
-      return setError('O link deve começar por https:// ou http://.');
+      return setError(t('ads.httpUrl'));
     }
 
     setSaving(true);
@@ -123,9 +135,12 @@ function AdsManagerContent() {
       setTargetUrl('');
       setImages([]);
       await refresh();
-      Alert.alert('Anúncio publicado', 'O anúncio está ativo e pode aparecer no feed.');
-    } catch (publishError: any) {
-      setError(publishError?.message || 'Não foi possível publicar o anúncio.');
+      Alert.alert(t('ads.publishedTitle'), t('ads.publishedMessage'));
+    } catch (publishError) {
+      const errorCode = getAgrilinkAdErrorCode(publishError);
+      setError(errorCode
+        ? t(`ads.${errorCode}`)
+        : publishError instanceof Error ? publishError.message : t('ads.publishError'));
     } finally {
       setSaving(false);
     }
@@ -136,8 +151,14 @@ function AdsManagerContent() {
     try {
       const updated = await setAgrilinkAdStatus(ad.id, ad.status === 'active' ? 'paused' : 'active');
       setAds((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch (statusError: any) {
-      Alert.alert('Não foi possível alterar o anúncio', statusError?.message || 'Tente novamente.');
+    } catch (statusError) {
+      const errorCode = getAgrilinkAdErrorCode(statusError);
+      Alert.alert(
+        t('ads.statusError'),
+        errorCode
+          ? t(`ads.${errorCode}`)
+          : statusError instanceof Error ? statusError.message : t('ads.tryAgain'),
+      );
     } finally {
       setBusyAdId(null);
     }
@@ -158,38 +179,38 @@ function AdsManagerContent() {
             <Icon name="chevron-left" size={21} color={COLORS.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.eyebrow}>DASHBOARD · PUBLICIDADE</Text>
-            <Text style={styles.title}>Agrilink Ads</Text>
+            <Text style={styles.eyebrow}>{t('ads.eyebrow')}</Text>
+            <Text style={styles.title}>{t('ads.title')}</Text>
           </View>
         </View>
 
         <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Novo anúncio</Text>
-          <Text style={styles.sectionCaption}>Os anúncios aparecem no feed com identificação própria e avaliação por estrelas.</Text>
+          <Text style={styles.sectionTitle}>{t('ads.newAd')}</Text>
+          <Text style={styles.sectionCaption}>{t('ads.formCaption')}</Text>
 
-          <Text style={styles.label}>Título</Text>
+          <Text style={styles.label}>{t('ads.adTitle')}</Text>
           <TextInput
             value={title}
             onChangeText={setTitle}
             maxLength={120}
-            placeholder="Ex.: Feira agrícola de Luanda"
+            placeholder={t('ads.titlePlaceholder')}
             placeholderTextColor={COLORS.faint}
             style={styles.input}
           />
 
-          <Text style={styles.label}>Descrição</Text>
+          <Text style={styles.label}>{t('ads.description')}</Text>
           <TextInput
             value={description}
             onChangeText={setDescription}
             maxLength={3000}
-            placeholder="Apresente a campanha ou o serviço…"
+            placeholder={t('ads.descriptionPlaceholder')}
             placeholderTextColor={COLORS.faint}
             multiline
             textAlignVertical="top"
             style={[styles.input, styles.descriptionInput]}
           />
 
-          <Text style={styles.label}>Link de destino</Text>
+          <Text style={styles.label}>{t('ads.targetLink')}</Text>
           <TextInput
             value={targetUrl}
             onChangeText={setTargetUrl}
@@ -204,12 +225,12 @@ function AdsManagerContent() {
 
           <View style={styles.imagesHeading}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.label, { marginBottom: 3 }]}>Imagens</Text>
-              <Text style={styles.imageCount}>{images.length} de {MAX_IMAGES} · mínimo 3</Text>
+              <Text style={[styles.label, { marginBottom: 3 }]}>{t('ads.images')}</Text>
+              <Text style={styles.imageCount}>{t('ads.minimumImages', { count: images.length, maximum: MAX_IMAGES })}</Text>
             </View>
             <TouchableOpacity style={styles.addImagesButton} onPress={pickImages} disabled={saving}>
               <Icon name="image" size={16} color={COLORS.primary} />
-              <Text style={styles.addImagesText}>Selecionar</Text>
+              <Text style={styles.addImagesText}>{t('ads.selectImages')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -221,7 +242,7 @@ function AdsManagerContent() {
                   <TouchableOpacity
                     style={styles.removeImage}
                     onPress={() => setImages((current) => current.filter((_, imageIndex) => imageIndex !== index))}
-                    accessibilityLabel="Remover imagem"
+                    accessibilityLabel={t('ads.removeImage')}
                   >
                     <Icon name="close" size={13} color="#FFFFFF" />
                   </TouchableOpacity>
@@ -233,26 +254,28 @@ function AdsManagerContent() {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           <TouchableOpacity style={[styles.publishButton, saving && styles.disabled]} onPress={publish} disabled={saving}>
             <Icon name="send" size={16} color="#FFFFFF" />
-            <Text style={styles.publishText}>{saving ? 'A publicar…' : 'Publicar anúncio'}</Text>
+            <Text style={styles.publishText}>{saving ? t('ads.publishing') : t('ads.publish')}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.listHeading}>
-          <Text style={styles.sectionTitle}>Campanhas</Text>
+          <Text style={styles.sectionTitle}>{t('ads.campaigns')}</Text>
           <Text style={styles.imageCount}>{ads.length}</Text>
         </View>
 
         {ads.length === 0 ? (
-          <Text style={styles.emptyText}>Os anúncios criados aparecerão aqui.</Text>
+          <Text style={styles.emptyText}>{t('ads.noAds')}</Text>
         ) : null}
         {ads.map((ad) => (
           <View key={ad.id} style={styles.campaignRow}>
             {ad.image_urls[0] ? <Image source={{ uri: ad.image_urls[0] }} style={styles.campaignImage} /> : null}
             <View style={styles.campaignCopy}>
               <Text style={styles.campaignTitle} numberOfLines={1}>{ad.title}</Text>
+              <Text style={styles.campaignDescription} numberOfLines={1}>{ad.description}</Text>
               <Text style={styles.campaignMeta} numberOfLines={1}>
-                {ad.status === 'active' ? 'Ativo' : ad.status === 'paused' ? 'Pausado' : 'Rascunho'} · {ad.image_urls.length} imagens · {Number(ad.rating_average || 0).toFixed(1)} ★ ({ad.rating_count})
+                {ad.status === 'active' ? t('ads.active') : ad.status === 'paused' ? t('ads.paused') : t('ads.draft')} · {ad.image_urls.length} {t('ads.images').toLowerCase()} · {Number(ad.rating_average || 0).toFixed(1)} ★ ({ad.rating_count})
               </Text>
+              <Text style={styles.campaignLink} numberOfLines={1}>{ad.target_url}</Text>
             </View>
             <TouchableOpacity
               style={[styles.statusButton, ad.status === 'active' && styles.statusButtonActive]}
@@ -260,7 +283,7 @@ function AdsManagerContent() {
               disabled={busyAdId === ad.id}
             >
               <Text style={[styles.statusButtonText, ad.status === 'active' && styles.statusButtonTextActive]}>
-                {busyAdId === ad.id ? 'A atualizar…' : ad.status === 'active' ? 'Pausar' : 'Ativar'}
+                {busyAdId === ad.id ? t('ads.updating') : ad.status === 'active' ? t('ads.pause') : t('ads.activate')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -284,7 +307,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
   backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: COLORS.surface },
   eyebrow: { color: COLORS.primary, fontSize: 10, fontWeight: '800' },
-  title: { marginTop: 3, color: COLORS.text, fontSize: 24, fontWeight: '800' },
+  title: { marginTop: 3, color: COLORS.text, fontSize: 21, fontWeight: '800' },
   formSection: { padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.surface },
   sectionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
   sectionCaption: { marginTop: 5, marginBottom: 14, color: COLORS.muted, fontSize: 11.5, lineHeight: 17 },
@@ -305,11 +328,13 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.6 },
   listHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 26, marginBottom: 8 },
   emptyText: { paddingVertical: 22, color: COLORS.muted, fontSize: 12, textAlign: 'center' },
-  campaignRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  campaignImage: { width: 52, height: 52, borderRadius: 9, backgroundColor: COLORS.border },
+  campaignRow: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  campaignImage: { width: 58, height: 68, borderRadius: 10, backgroundColor: COLORS.border },
   campaignCopy: { flex: 1 },
   campaignTitle: { color: COLORS.text, fontSize: 12.5, fontWeight: '800' },
-  campaignMeta: { marginTop: 4, color: COLORS.muted, fontSize: 10 },
+  campaignDescription: { marginTop: 3, color: COLORS.muted, fontSize: 10.5 },
+  campaignMeta: { marginTop: 3, color: COLORS.muted, fontSize: 9.5 },
+  campaignLink: { marginTop: 3, color: COLORS.primary, fontSize: 9.5, fontWeight: '600' },
   statusButton: { minWidth: 58, minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, borderRadius: 9, borderWidth: 1, borderColor: COLORS.border },
   statusButtonActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   statusButtonText: { color: COLORS.text, fontSize: 10.5, fontWeight: '800' },

@@ -19,6 +19,7 @@ import Icon, { IconName } from '../components/Icon';
 import ProductCard, { Product as CardProduct } from '@/components/ProductCard';
 import PaymentSheet from '@/components/PaymentSheet';
 import ProcessingScreen from '../components/ProcessingScreen';
+import { useUserRole } from '../context/RoleContext';
 
 /* =========================================================
    TEMA — mesma paleta do Home e do ProductCard
@@ -179,6 +180,7 @@ function isMissingColumn(error: any) {
 
 export default function SearchPage() {
   const router = useRouter();
+  const { isGuest } = useUserRole();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedTerm, setDebouncedTerm] = useState('');
@@ -762,7 +764,7 @@ export default function SearchPage() {
 
   const renderTabs = () => (
     <View style={styles.tabsContainer}>
-      {TABS.map((tab) => {
+      {(isGuest ? TABS.filter((tab) => tab.id !== 'users') : TABS).map((tab) => {
         const active = activeTab === tab.id;
 
         return (
@@ -806,7 +808,7 @@ export default function SearchPage() {
           />
         )}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, isGuest && styles.guestListContent]}
         ListHeaderComponent={
           <>
             {renderHeader()}
@@ -918,6 +920,7 @@ export default function SearchPage() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: T.canvas },
   listContent: { paddingBottom: 30 },
+  guestListContent: { paddingBottom: 180 },
 
   header: {
     backgroundColor: T.white,

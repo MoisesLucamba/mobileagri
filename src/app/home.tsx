@@ -1,23 +1,25 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
-    Alert,
-    Animated,
-    Easing,
-    Image,
-    LayoutAnimation,
-    Modal,
-    Platform,
-    Pressable,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    Text,
-    UIManager,
-    View,
+  Alert,
+  Animated,
+  Easing,
+  Image,
+  LayoutAnimation,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  Text,
+  UIManager,
+  View,
 } from "react-native";
 
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -27,9 +29,11 @@ import AgrilinkAdCard from "../components/AgrilinkAdCard";
 import BottomToolbar from "../components/BottomToolbar";
 import Icon, { IconName } from "../components/Icon";
 import ProcessingScreen from "../components/ProcessingScreen";
+import { COLORS, PressableScale, SHADOW } from "../components/ui";
 import { useUserRole } from "../context/RoleContext";
 import { AgrilinkAd, isAgrilinkAdmin, loadAgrilinkAds, rateAgrilinkAd } from "../lib/agrilinkAds";
 import { supabase } from "../lib/supabase";
+import { AppLanguage, changeAppLanguage, LANGUAGE_STORAGE_KEY } from "../constants/i18n";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -37,21 +41,13 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 
 const Logo = require("../assets/images/logo.jpeg");
 
-// Paleta partilhada com o ProductCard (verde um pouco mais claro)
-const COLORS = {
-  primary: "#2E8B4F",
-  primaryDark: "#25703F",
-  tint: "#E9F5EC",
-  text: "#16231C",
-  muted: "#78877D",
-  line: "#E8ECE6",
-  bg: "#F6F8F5",
-  white: "#FFFFFF",
-};
-
-const COUNTRIES = [
-  { code: "AO", name: "Angola", flag: "🇦🇴", currency: "Kz" },
-  { code: "CD", name: "RDC", flag: "🇨🇩", currency: "FC" },
+const COUNTRY_STORAGE_KEY = "agrilink-country";
+const COUNTRIES: { code: string; flag: string; currency: string; language: AppLanguage }[] = [
+  { code: "AO", flag: "🇦🇴", currency: "Kz", language: "pt-AO" },
+  { code: "CD", flag: "🇨🇩", currency: "FC", language: "fr-CD" },
+  { code: "ZA", flag: "🇿🇦", currency: "ZAR", language: "en-ZA" },
+  { code: "NA", flag: "🇳🇦", currency: "NAD", language: "en-ZA" },
+  { code: "ZM", flag: "🇿🇲", currency: "ZMW", language: "en-ZA" },
 ];
 
 const CATEGORIES: { id: string; name: string; icon: IconName }[] = [
@@ -71,19 +67,19 @@ const CATEGORIES: { id: string; name: string; icon: IconName }[] = [
 ];
 
 const CATEGORY_TRANSLATION_KEYS: Record<string, string> = {
-  all: 'home.all',
-  frutas: 'home.fruits',
-  citrus: 'home.citrus',
-  legumes: 'home.vegetables',
-  verduras: 'home.greens',
-  cereais: 'home.grains',
-  temperos: 'home.spices',
-  pescado: 'home.fish',
-  carnes: 'home.meat',
-  ovos: 'home.eggs',
-  paes: 'home.bread',
-  lacteos: 'home.dairy',
-  bebidas: 'home.drinks',
+  all: "home.all",
+  frutas: "home.fruits",
+  citrus: "home.citrus",
+  legumes: "home.vegetables",
+  verduras: "home.greens",
+  cereais: "home.grains",
+  temperos: "home.spices",
+  pescado: "home.fish",
+  carnes: "home.meat",
+  ovos: "home.eggs",
+  paes: "home.bread",
+  lacteos: "home.dairy",
+  bebidas: "home.drinks",
 };
 
 const CATEGORY_MAP: Record<string, string[]> = {
@@ -102,141 +98,68 @@ const CATEGORY_MAP: Record<string, string[]> = {
 };
 
 // Os mocks só aparecem quando NÃO existem produtos reais no Supabase.
+const mockProduct = (
+  n: string,
+  type: string,
+  description: string,
+  quantity: number,
+  harvest_date: string,
+  price: number,
+  province: string,
+  municipality: string,
+  farmer: string,
+  photos: string[],
+  likes: number,
+  lat: number,
+  lng: number,
+  verified: boolean,
+  daysAgo: number
+): Product => ({
+  id: `mock-${type.toLowerCase()}-${n}`,
+  product_type: type,
+  description,
+  quantity,
+  harvest_date,
+  price,
+  province_id: province,
+  municipality_id: municipality,
+  farmer_name: farmer,
+  contact: `+244 900 000 ${n}`,
+  photos,
+  status: "active",
+  created_at: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+  user_id: `mock-user-${n}`,
+  location_lat: lat,
+  location_lng: lng,
+  likes_count: likes,
+  is_liked: false,
+  comments: [],
+  commentsLoaded: true,
+  user_verified: verified,
+});
+
 const MOCK_PRODUCTS: Product[] = [
-  {
-    id: "mock-tomate-001",
-    product_type: "Tomate",
-    description: "Tomate fresco selecionado, ideal para mercados, restaurantes e distribuidores.",
-    quantity: 2500,
-    harvest_date: "2026-09-25",
-    price: 850,
-    province_id: "Bengo",
-    municipality_id: "Dande",
-    farmer_name: "Agro Bengo",
-    contact: "+244 900 000 001",
-    photos: [
-      "https://images.unsplash.com/photo-1546094096-0df4bcaaa337?w=1200",
-      "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=1200",
-      "https://images.unsplash.com/photo-1561136594-7f68413baa99?w=1200",
-    ],
-    status: "active",
-    created_at: new Date().toISOString(),
-    user_id: "mock-user-001",
-    location_lat: -8.8,
-    location_lng: 13.2,
-    likes_count: 24,
-    is_liked: false,
-    comments: [],
-    commentsLoaded: true,
-    user_verified: true,
-  },
-  {
-    id: "mock-mandioca-002",
-    product_type: "Mandioca",
-    description: "Mandioca fresca para fornecimento em quantidade. Disponível para compradores B2B.",
-    quantity: 8000,
-    harvest_date: "2026-10-02",
-    price: 420,
-    province_id: "Uíge",
-    municipality_id: "Uíge",
-    farmer_name: "Cooperativa Uíge Verde",
-    contact: "+244 900 000 002",
-    photos: [
-      "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=1200",
-      "https://images.unsplash.com/photo-1603048719539-9ecb4f1f3b4f?w=1200",
-      "https://images.unsplash.com/photo-1582515073490-399813b9d3a2?w=1200",
-    ],
-    status: "active",
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    user_id: "mock-user-002",
-    location_lat: -7.6,
-    location_lng: 15.1,
-    likes_count: 17,
-    is_liked: false,
-    comments: [],
-    commentsLoaded: true,
-    user_verified: true,
-  },
-  {
-    id: "mock-milho-003",
-    product_type: "Milho",
-    description: "Milho amarelo produzido por agricultores locais, disponível para compradores e distribuidores.",
-    quantity: 12000,
-    harvest_date: "2026-10-10",
-    price: 650,
-    province_id: "Huambo",
-    municipality_id: "Huambo",
-    farmer_name: "Agro Huambo",
-    contact: "+244 900 000 003",
-    photos: [
-      "https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=1200",
-      "https://images.unsplash.com/photo-1601593768792-7c4e7c0d7c6b?w=1200",
-      "https://images.unsplash.com/photo-1603048719539-9ecb4f1f3b4f?w=1200",
-    ],
-    status: "active",
-    created_at: new Date(Date.now() - 172800000).toISOString(),
-    user_id: "mock-user-003",
-    location_lat: -12.7,
-    location_lng: 15.7,
-    likes_count: 31,
-    is_liked: false,
-    comments: [],
-    commentsLoaded: true,
-    user_verified: true,
-  },
-  {
-    id: "mock-banana-004",
-    product_type: "Banana",
-    description: "Banana fresca para comercialização. Produção disponível para supermercados e distribuidores.",
-    quantity: 4500,
-    harvest_date: "2026-09-28",
-    price: 700,
-    province_id: "Malanje",
-    municipality_id: "Malanje",
-    farmer_name: "Fazenda Malanje",
-    contact: "+244 900 000 004",
-    photos: [
-      "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=1200",
-      "https://images.unsplash.com/photo-1528825871115-3581a5387919?w=1200",
-      "https://images.unsplash.com/photo-1603833665858-e61d17a86224?w=1200",
-    ],
-    status: "active",
-    created_at: new Date(Date.now() - 259200000).toISOString(),
-    user_id: "mock-user-004",
-    location_lat: -9.5,
-    location_lng: 16.3,
-    likes_count: 12,
-    is_liked: false,
-    comments: [],
-    commentsLoaded: true,
-    user_verified: false,
-  },
+  mockProduct("001", "Tomate", "Tomate fresco selecionado, ideal para mercados, restaurantes e distribuidores.", 2500, "2026-09-25", 850, "Bengo", "Dande", "Agro Bengo", [
+    "https://images.unsplash.com/photo-1546094096-0df4bcaaa337?w=1200",
+    "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=1200",
+    "https://images.unsplash.com/photo-1561136594-7f68413baa99?w=1200",
+  ], 24, -8.8, 13.2, true, 0),
+  mockProduct("002", "Mandioca", "Mandioca fresca para fornecimento em quantidade. Disponível para compradores B2B.", 8000, "2026-10-02", 420, "Uíge", "Uíge", "Cooperativa Uíge Verde", [
+    "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=1200",
+    "https://images.unsplash.com/photo-1603048719539-9ecb4f1f3b4f?w=1200",
+    "https://images.unsplash.com/photo-1582515073490-399813b9d3a2?w=1200",
+  ], 17, -7.6, 15.1, true, 1),
+  mockProduct("003", "Milho", "Milho amarelo produzido por agricultores locais, disponível para compradores e distribuidores.", 12000, "2026-10-10", 650, "Huambo", "Huambo", "Agro Huambo", [
+    "https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=1200",
+    "https://images.unsplash.com/photo-1601593768792-7c4e7c0d7c6b?w=1200",
+    "https://images.unsplash.com/photo-1603048719539-9ecb4f1f3b4f?w=1200",
+  ], 31, -12.7, 15.7, true, 2),
+  mockProduct("004", "Banana", "Banana fresca para comercialização. Produção disponível para supermercados e distribuidores.", 4500, "2026-09-28", 700, "Malanje", "Malanje", "Fazenda Malanje", [
+    "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=1200",
+    "https://images.unsplash.com/photo-1528825871115-3581a5387919?w=1200",
+    "https://images.unsplash.com/photo-1603833665858-e61d17a86224?w=1200",
+  ], 12, -9.5, 16.3, false, 3),
 ];
-
-/* ------------------------- micro-animação de toque ------------------------- */
-
-function PressableScale({
-  children,
-  onPress,
-  className,
-  scale = 0.96,
-}: {
-  children: React.ReactNode;
-  onPress?: () => void;
-  className?: string;
-  scale?: number;
-}) {
-  const sc = useRef(new Animated.Value(1)).current;
-  const to = (v: number) =>
-    Animated.spring(sc, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
-  return (
-    <Pressable onPress={onPress} onPressIn={() => to(scale)} onPressOut={() => to(1)}>
-      <Animated.View style={{ transform: [{ scale: sc }] }}>
-        <View className={className}>{children}</View>
-      </Animated.View>
-    </Pressable>
-  );
-}
 
 /* ------------------------------ categoria pill ------------------------------ */
 
@@ -254,12 +177,15 @@ function CategoryPill({
   return (
     <PressableScale
       onPress={onPress}
-      className={`h-[36px] flex-row items-center gap-[6px] rounded-[10px] border px-[12px] ${
-        selected ? "border-[#2E8B4F] bg-[#2E8B4F]" : "border-[#E8ECE6] bg-white"
-      }`}
+      scale={0.93}
+      className="h-[40px] flex-row items-center gap-[7px] rounded-[10px] px-[15px]"
+      style={[
+        { backgroundColor: selected ? COLORS.primary : COLORS.white },
+        selected ? SHADOW.glow : SHADOW.tiny,
+      ]}
     >
-      <Icon name={category.icon} size={15} color={selected ? COLORS.white : COLORS.muted} />
-      <Text className={`text-[12.5px] ${selected ? "font-bold text-white" : "font-semibold text-[#16231C]"}`}>
+      <Icon name={category.icon} size={16} color={selected ? COLORS.white : COLORS.primary} />
+      <Text className={`text-[13px] ${selected ? "font-extrabold text-white" : "font-bold text-[#16231C]"}`}>
         {label}
       </Text>
     </PressableScale>
@@ -269,8 +195,8 @@ function CategoryPill({
 /* ================================== HOME ================================== */
 
 type HomeFeedItem =
-  | { key: string; type: 'product'; product: Product }
-  | { key: string; type: 'ad'; ad: AgrilinkAd };
+  | { key: string; type: "product"; product: Product }
+  | { key: string; type: "ad"; ad: AgrilinkAd };
 
 export default function HomeScreen() {
   const { role, loading: roleLoading } = useUserRole();
@@ -282,6 +208,7 @@ function HomeFeed() {
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { isGuest } = useUserRole();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [ads, setAds] = useState<AgrilinkAd[]>([]);
@@ -296,28 +223,43 @@ function HomeFeed() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(COUNTRY_STORAGE_KEY)
+      .then((savedCode) => {
+        const savedCountry = COUNTRIES.find((country) => country.code === savedCode);
+        if (mounted && savedCountry) setSelectedCountry(savedCountry);
+      })
+      .catch((error) => {
+        console.warn("[Country] Não foi possível restaurar o país selecionado:", error);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const [paymentProduct, setPaymentProduct] = useState<Product | null>(null);
   const [paymentVisible, setPaymentVisible] = useState(false);
 
-  // animação do scroll: a sombra do header aparece ao descer
+  // a sombra do header surge suavemente ao descer
   const scrollY = useRef(new Animated.Value(0)).current;
-  const headerBorder = scrollY.interpolate({
-    inputRange: [0, 24],
+  const headerShadow = scrollY.interpolate({
+    inputRange: [0, 30],
     outputRange: [0, 1],
     extrapolate: "clamp",
   });
 
-  // modal dos países
+  // modal dos países: fundo esbate, folha desliza
   const sheetAnim = useRef(new Animated.Value(0)).current;
   const openCountryModal = () => {
     setCountryModalVisible(true);
     sheetAnim.setValue(0);
-    Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 5 }).start();
+    Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 4 }).start();
   };
   const closeCountryModal = () => {
     Animated.timing(sheetAnim, {
       toValue: 0,
-      duration: 180,
+      duration: 200,
       easing: Easing.in(Easing.cubic),
       useNativeDriver: true,
     }).start(() => setCountryModalVisible(false));
@@ -333,7 +275,7 @@ function HomeFeed() {
       data: { session },
     } = await supabase.auth.getSession();
     if (!session) {
-      router.replace("/login");
+      if (!isGuest) router.replace("/login");
       return;
     }
     setCurrentUserId(session.user.id);
@@ -368,7 +310,7 @@ function HomeFeed() {
       const [adminAllowed, activeAds] = await Promise.all([
         userId ? isAgrilinkAdmin().catch(() => false) : Promise.resolve(false),
         loadAgrilinkAds({ activeOnly: true, userId }).catch((adsError) => {
-          console.warn('Não foi possível carregar publicidade:', adsError);
+          console.warn("Não foi possível carregar publicidade:", adsError);
           return [] as AgrilinkAd[];
         }),
       ]);
@@ -405,16 +347,12 @@ function HomeFeed() {
       }
       setHasRealProducts(true);
 
-      // Fotos de perfil dos produtores (tabela "users", coluna "avatar_url" —
-      // a mesma que o ecrã de perfil atualiza). Falha em silêncio e o cartão
-      // mostra as iniciais.
+      // Fotos de perfil dos produtores (tabela "users", coluna "avatar_url").
+      // Falha em silêncio e o cartão mostra as iniciais.
       try {
         const userIds = Array.from(new Set(loadedProducts.map((p) => p.user_id).filter(Boolean)));
         if (userIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from("users")
-            .select("id, avatar_url")
-            .in("id", userIds);
+          const { data: profiles } = await supabase.from("users").select("id, avatar_url").in("id", userIds);
           if (profiles) {
             const avatarById = new Map<string, string | null>(
               profiles.map((p: any) => [p.id, p.avatar_url ?? null])
@@ -461,7 +399,7 @@ function HomeFeed() {
     useCallback(() => {
       checkSession();
       loadProducts();
-    }, [])
+    }, [isGuest])
   );
 
   const onRefresh = async () => {
@@ -476,9 +414,13 @@ function HomeFeed() {
   const handleAdRating = useCallback(async (adId: string, rating: number) => {
     const result = await rateAgrilinkAd(adId, rating);
     if (!result) return;
-    setAds((current) => current.map((ad) => ad.id === adId
-      ? { ...ad, current_rating: rating, rating_average: result.rating_average, rating_count: result.rating_count }
-      : ad));
+    setAds((current) =>
+      current.map((ad) =>
+        ad.id === adId
+          ? { ...ad, current_rating: rating, rating_average: result.rating_average, rating_count: result.rating_count }
+          : ad
+      )
+    );
   }, []);
 
   const selectCategory = (id: string) => {
@@ -512,7 +454,7 @@ function HomeFeed() {
   }, [products, search, selectedCategory]);
 
   const feedItems = useMemo<HomeFeedItem[]>(() => {
-    const includeAds = selectedCategory === 'all' && !search.trim();
+    const includeAds = selectedCategory === "all" && !search.trim();
     const rankedAds = includeAds
       ? [...ads].sort((a, b) => {
           const scoreA = Number(a.rating_average || 0) + Math.log2(Number(a.rating_count || 0) + 1) * 0.025;
@@ -520,24 +462,26 @@ function HomeFeed() {
           return scoreB - scoreA || b.created_at.localeCompare(a.created_at);
         })
       : [];
-    const rotation = rankedAds.length > 1
-      ? Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000)) % rankedAds.length
-      : 0;
+    const rotation =
+      rankedAds.length > 1 ? Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000)) % rankedAds.length : 0;
     const rotatedAds = rankedAds.slice(rotation).concat(rankedAds.slice(0, rotation));
     const items: HomeFeedItem[] = [];
     let adIndex = 0;
 
     filteredProducts.forEach((product, index) => {
-      items.push({ key: `product:${product.id}`, type: 'product', product });
-      const isSlot = (index + 1) % 4 === 0 || (index === filteredProducts.length - 1 && filteredProducts.length < 4);
+      items.push({ key: `product:${product.id}`, type: "product", product });
+      const isSlot =
+        (index + 1) % 4 === 0 || (index === filteredProducts.length - 1 && filteredProducts.length < 4);
       if (isSlot && adIndex < rotatedAds.length) {
         const ad = rotatedAds[adIndex++];
-        items.push({ key: `ad:${ad.id}`, type: 'ad', ad });
+        items.push({ key: `ad:${ad.id}`, type: "ad", ad });
       }
     });
 
     return items;
   }, [ads, filteredProducts, search, selectedCategory]);
+
+  const adsCount = useMemo(() => feedItems.filter((item) => item.type === "ad").length, [feedItems]);
 
   const openPayment = (product: Product) => {
     if (product.id.startsWith("mock-")) {
@@ -579,77 +523,91 @@ function HomeFeed() {
 
   /* ---------------------------------- render ---------------------------------- */
 
-  return (
-    <SafeAreaView className="flex-1 bg-[#F6F8F5]">
-      <StatusBar barStyle="dark-content" backgroundColor="#F6F8F5" />
+  const headerHeight = 78 + insets.top;
 
-      <View className="flex-1 bg-[#F6F8F5]">
+  return (
+    <SafeAreaView className="flex-1 bg-[#F5F8F4]">
+      <StatusBar barStyle="dark-content" backgroundColor="#F5F8F4" />
+
+      <View className="flex-1 bg-[#F5F8F4]">
         {/* HEADER */}
         <View
-          className="z-10 flex-row items-center justify-between border-b border-[#E8ECE6] bg-white px-[18px] pb-3"
-          style={{ paddingTop: insets.top + 14, height: 78 + insets.top }}
+          className="z-10 flex-row items-center justify-between bg-white px-[18px] pb-3"
+          style={{ paddingTop: insets.top + 14, height: headerHeight }}
         >
           <Image source={Logo} style={{ width: 138, height: 48 }} resizeMode="contain" />
 
-          <View className="flex-row items-center gap-2">
+          <View className="flex-row items-center gap-[10px]">
             <PressableScale
               onPress={openCountryModal}
-              className="flex-row items-center gap-2 rounded-[10px] bg-[#E9F5EC] px-[10px] py-[6px]"
+              className="flex-row items-center gap-2 rounded-[10px] bg-[#E9F5EC] py-[6px] pl-[10px] pr-[12px]"
             >
-              <Text className="text-[19px]">{selectedCountry.flag}</Text>
+              <Text className="text-[20px]">{selectedCountry.flag}</Text>
               <View>
-                <Text className="text-[10px] font-semibold text-[#78877D]">{t('home.country')}</Text>
-                <Text className="text-[12px] font-extrabold text-[#16231C]">{selectedCountry.name}</Text>
+                <Text className="text-[10px] font-semibold text-[#78877D]">{t("home.country")}</Text>
+                <Text className="text-[12px] font-extrabold text-[#16231C]">
+                  {t(`home.countries.${selectedCountry.code}`)}
+                </Text>
               </View>
-              <Icon name="chevron-down" size={16} color={COLORS.text} />
+              <Icon name="chevron-down" size={15} color={COLORS.text} />
             </PressableScale>
 
-            <PressableScale
-              onPress={() => router.push("/notifications")}
-              className="h-10 w-10 items-center justify-center rounded-[10px] bg-[#E9F5EC]"
-            >
-              <Icon name="bell" size={20} color={COLORS.text} />
-              {unreadNotifications > 0 ? (
-                <View className="absolute -right-1 -top-1 h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-[#DD5138] px-1">
-                  {unreadNotifications <= 9 ? (
-                    <Text className="text-[10px] font-extrabold text-white">{unreadNotifications}</Text>
-                  ) : null}
-                </View>
-              ) : null}
-            </PressableScale>
+            {!isGuest ? (
+              <PressableScale
+                onPress={() => router.push("/notifications")}
+                scale={0.9}
+                className="h-10 w-10 items-center justify-center rounded-[10px] bg-[#E9F5EC]"
+              >
+                <Icon name="bell" size={20} color={COLORS.text} />
+                {unreadNotifications > 0 ? (
+                  <View className="absolute -right-0.5 -top-0.5 h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-[#E0523A] px-1">
+                    {unreadNotifications <= 9 ? (
+                      <Text className="text-[10px] font-extrabold text-white">{unreadNotifications}</Text>
+                    ) : null}
+                  </View>
+                ) : null}
+              </PressableScale>
+            ) : null}
           </View>
         </View>
 
-        {/* sombra suave que aparece ao fazer scroll */}
+        {/* sombra em degradé que desce do header ao fazer scroll */}
         <Animated.View
           pointerEvents="none"
-          className="absolute left-0 right-0 z-[9] h-[10px] bg-[rgba(22,35,28,0.05)]"
-          style={{ top: 78 + insets.top, opacity: headerBorder }}
-        />
+          style={{ position: "absolute", left: 0, right: 0, top: headerHeight, height: 18, zIndex: 9, opacity: headerShadow }}
+        >
+          <LinearGradient colors={["rgba(22,35,28,0.09)", "rgba(22,35,28,0)"]} style={{ flex: 1 }} />
+        </Animated.View>
 
         {/* FEED */}
         <Animated.FlatList
           data={feedItems}
           keyExtractor={(item: HomeFeedItem) => item.key}
-          renderItem={({ item }: { item: HomeFeedItem }) => item.type === 'product' ? (
-            <ProductCard
-              product={item.product}
-              currentUserId={currentUserId}
-              onProductUpdate={handleProductUpdate}
-              onOpenPreOrder={openPayment}
-              onRequireLogin={requireLogin}
-            />
-          ) : (
-            <AgrilinkAdCard
-              ad={item.ad}
-              currentUserId={currentUserId}
-              onRequireLogin={requireLogin}
-              onRate={handleAdRating}
-            />
-          )}
+          renderItem={({ item }: { item: HomeFeedItem }) =>
+            item.type === "product" ? (
+              <ProductCard
+                product={item.product}
+                currentUserId={currentUserId}
+                onProductUpdate={handleProductUpdate}
+                onOpenPreOrder={openPayment}
+                onRequireLogin={requireLogin}
+              />
+            ) : (
+              <AgrilinkAdCard
+                ad={item.ad}
+                currentUserId={currentUserId}
+                onRequireLogin={requireLogin}
+                onRate={handleAdRating}
+              />
+            )
+          }
           contentContainerStyle={{ paddingTop: 4, paddingBottom: 120 + insets.bottom }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
+          initialNumToRender={3}
+          maxToRenderPerBatch={4}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS === "android"}
           onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
             useNativeDriver: true,
           })}
@@ -659,21 +617,71 @@ function HomeFeed() {
               {/* Pesquisa */}
               <PressableScale
                 onPress={() => router.push("/search")}
-                className="mx-[18px] mb-5 mt-4 h-[46px] flex-row items-center gap-[10px] rounded-[12px] border border-[#E8ECE6] bg-white px-4"
+                className="mx-4 mb-4 mt-4 h-[50px] flex-row items-center gap-[10px] rounded-[12px] bg-white pl-[18px] pr-[7px]"
+                style={SHADOW.soft}
                 scale={0.98}
               >
-                <Icon name="search" size={17} color={COLORS.muted} />
-                <Text className="text-[15px] text-[#78877D]">{t('home.search')}</Text>
+                <Icon name="search" size={18} color={COLORS.muted} />
+                <Text className="flex-1 text-[15px] text-[#78877D]">{t("home.search")}</Text>
+                <LinearGradient
+                  colors={[COLORS.primaryLight, COLORS.primaryDark]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{ width: 38, height: 38, borderRadius: 9, alignItems: "center", justifyContent: "center" }}
+                >
+                  <Icon name="search" size={16} color={COLORS.white} />
+                </LinearGradient>
               </PressableScale>
+
+              {/* Duas entradas principais */}
+              <View className="mx-4 mb-5 flex-row gap-3">
+                <View style={[{ flex: 1, borderRadius: 12 }, SHADOW.glow]}>
+                  <LinearGradient
+                    colors={[COLORS.primaryLight, COLORS.primaryDark]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{ borderRadius: 12, padding: 14, minHeight: 84, justifyContent: "space-between", overflow: "hidden" }}
+                  >
+                    {/* círculos de luz decorativos */}
+                    <View
+                      pointerEvents="none"
+                      style={{ position: "absolute", right: -22, top: -22, width: 84, height: 84, borderRadius: 42, backgroundColor: "rgba(255,255,255,0.14)" }}
+                    />
+                    <View
+                      pointerEvents="none"
+                      style={{ position: "absolute", right: 18, bottom: -30, width: 60, height: 60, borderRadius: 30, backgroundColor: "rgba(255,255,255,0.08)" }}
+                    />
+                    <View className="h-8 w-8 items-center justify-center rounded-full bg-[rgba(255,255,255,0.22)]">
+                      <Icon name="cart" size={16} color={COLORS.white} />
+                    </View>
+                    <Text className="mt-2 text-[13px] font-extrabold text-white">{t("home.buyPlatform")}</Text>
+                  </LinearGradient>
+                </View>
+
+                <PressableScale fill onPress={() => router.push("/green-points")} scale={0.96}>
+                  <View
+                    style={[
+                      { flex: 1, borderRadius: 12, backgroundColor: COLORS.white, padding: 14, minHeight: 84, justifyContent: "space-between" },
+                      SHADOW.soft,
+                    ]}
+                  >
+                    <View className="h-8 w-8 items-center justify-center rounded-full bg-[#E9F5EC]">
+                      <Icon name="pin" size={16} color={COLORS.primary} />
+                    </View>
+                    <Text className="mt-2 text-[13px] font-extrabold text-[#237040]">{t("home.buyGreenPoints")}</Text>
+                  </View>
+                </PressableScale>
+              </View>
 
               {isAdmin && (
                 <PressableScale
-                  onPress={() => router.push('/dashboard' as any)}
-                  className="mx-[18px] mb-4 min-h-[42px] flex-row items-center justify-between rounded-[10px] border border-[#CFE9D6] bg-white px-3"
+                  onPress={() => router.push("/dashboard" as any)}
+                  className="mx-4 mb-5 min-h-[46px] flex-row items-center justify-between rounded-[10px] bg-white px-4"
+                  style={SHADOW.tiny}
                 >
                   <View className="flex-row items-center gap-2">
                     <Icon name="bar-chart" size={16} color={COLORS.primary} />
-                    <Text className="text-[12px] font-extrabold text-[#25703F]">{t('home.admin')}</Text>
+                    <Text className="text-[12.5px] font-extrabold text-[#237040]">{t("home.admin")}</Text>
                   </View>
                   <Icon name="arrow-right" size={15} color={COLORS.primary} />
                 </PressableScale>
@@ -681,14 +689,17 @@ function HomeFeed() {
 
               {/* Categorias */}
               <View className="mb-3 flex-row items-center justify-between px-[18px]">
-                <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">{t('home.categories')}</Text>
-                <Text className="text-[11px] font-semibold text-[#78877D]">{CATEGORIES.length - 1} {t('home.options')}</Text>
+                <Text className="text-[18px] font-black tracking-tight text-[#16231C]">{t("home.categories")}</Text>
+                <Text className="text-[11.5px] font-semibold text-[#78877D]">
+                  {CATEGORIES.length - 1} {t("home.options")}
+                </Text>
               </View>
 
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 4, gap: 8 }}
+                decelerationRate="fast"
+                contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 14, gap: 10 }}
               >
                 {CATEGORIES.map((category) => (
                   <CategoryPill
@@ -702,24 +713,24 @@ function HomeFeed() {
               </ScrollView>
 
               {/* Título do feed */}
-              <View className="mb-3 mt-6 flex-row items-center justify-between px-[18px]">
+              <View className="mb-3 mt-3 flex-row items-center justify-between px-[18px]">
                 <View className="shrink pr-2">
                   <View className="flex-row items-center gap-2">
-                    <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">{t('home.feed')}</Text>
+                    <Text className="text-[18px] font-black tracking-tight text-[#16231C]">{t("home.feed")}</Text>
                     {!hasRealProducts ? (
-                      <View className="rounded-[4px] border border-[#F1D1A5] bg-[#FBEBD3] px-[6px] py-[2px]">
-                        <Text className="text-[8px] font-black tracking-wider text-[#B9741A]">{t('home.demo')}</Text>
+                      <View className="rounded-[4px] bg-[#FBEBD3] px-[7px] py-[2px]">
+                        <Text className="text-[8.5px] font-black tracking-wider text-[#B9741A]">{t("home.demo")}</Text>
                       </View>
                     ) : null}
                   </View>
                   <Text className="mt-0.5 text-[12px] text-[#78877D]">
-                    {hasRealProducts ? t('home.realInventory') : t('home.demoInventory')}
+                    {hasRealProducts ? t("home.realInventory") : t("home.demoInventory")}
                   </Text>
                 </View>
 
-                <View className="min-h-[26px] items-center justify-center rounded-[8px] bg-[#E9F5EC] px-[9px] py-1">
-                  <Text className="text-[10px] font-extrabold text-[#25703F]">
-                    {t('home.productsAndAds', { products: filteredProducts.length, ads: feedItems.filter((item) => item.type === 'ad').length })}
+                <View className="min-h-[28px] items-center justify-center rounded-[8px] bg-[#E9F5EC] px-[11px] py-1">
+                  <Text className="text-[10.5px] font-extrabold text-[#237040]">
+                    {t("home.productsAndAds", { products: filteredProducts.length, ads: adsCount })}
                   </Text>
                 </View>
               </View>
@@ -730,20 +741,20 @@ function HomeFeed() {
               <View className="h-[80px] w-[80px] items-center justify-center rounded-[16px] bg-[#E9F5EC]">
                 <Icon name="sprout" size={40} color={COLORS.primary} />
               </View>
-              <Text className="mt-[15px] text-center text-[17px] font-extrabold text-[#16231C]">
-                {t('home.emptyTitle')}
+              <Text className="mt-[16px] text-center text-[17px] font-extrabold text-[#16231C]">
+                {t("home.emptyTitle")}
               </Text>
               <Text className="mt-[7px] text-center text-[13px] leading-5 text-[#78877D]">
-                {t('home.emptyDescription')}
+                {t("home.emptyDescription")}
               </Text>
               <PressableScale
                 onPress={() => {
                   selectCategory("all");
                   setSearch("");
                 }}
-                className="mt-[17px] rounded-[10px] bg-[#E9F5EC] px-5 py-[11px]"
+                className="mt-[18px] rounded-[10px] bg-[#E9F5EC] px-6 py-[12px]"
               >
-                <Text className="text-[13px] font-extrabold text-[#25703F]">{t('home.clearFilters')}</Text>
+                <Text className="text-[13px] font-extrabold text-[#237040]">{t("home.clearFilters")}</Text>
               </PressableScale>
             </View>
           }
@@ -751,8 +762,8 @@ function HomeFeed() {
             filteredProducts.length > 0 ? (
               <View className="flex-row items-center justify-center gap-[7px] py-[25px]">
                 <Icon name="check-circle" size={18} color={COLORS.primary} />
-                <Text className="text-[11px] text-[#78877D]">
-                  {hasRealProducts ? t('home.realPosts') : t('home.demoPosts')}
+                <Text className="text-[11.5px] text-[#78877D]">
+                  {hasRealProducts ? t("home.realPosts") : t("home.demoPosts")}
                 </Text>
               </View>
             ) : null
@@ -764,19 +775,21 @@ function HomeFeed() {
 
       {/* MODAL PAÍSES */}
       <Modal visible={countryModalVisible} transparent animationType="none" onRequestClose={closeCountryModal}>
-        <Animated.View className="flex-1 justify-end bg-[rgba(15,20,17,0.5)]" style={{ opacity: sheetAnim }}>
+        <View className="flex-1 justify-end">
+          <Animated.View
+            pointerEvents="none"
+            style={{ ...absoluteFill, backgroundColor: "rgba(15,20,17,0.5)", opacity: sheetAnim }}
+          />
           <Pressable style={{ flex: 1 }} onPress={closeCountryModal} />
           <Animated.View
-            className="rounded-t-[16px] bg-white px-5 pb-[30px] pt-[13px]"
+            className="rounded-t-[16px] bg-white px-5 pb-[34px] pt-[12px]"
             style={{
-              transform: [{ translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [300, 0] }) }],
+              transform: [{ translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [380, 0] }) }],
             }}
           >
-            <View className="mb-5 h-[4px] w-10 self-center rounded-full bg-[#E8ECE6]" />
-            <Text className="text-[20px] font-extrabold text-[#16231C]">{t('home.chooseCountry')}</Text>
-            <Text className="mb-5 mt-[5px] text-[13px] text-[#78877D]">
-              {t('home.countryDescription')}
-            </Text>
+            <View className="mb-5 h-[5px] w-11 self-center rounded-full bg-[#E3E8E1]" />
+            <Text className="text-[21px] font-black tracking-tight text-[#16231C]">{t("home.chooseCountry")}</Text>
+            <Text className="mb-5 mt-[5px] text-[13px] text-[#78877D]">{t("home.countryDescription")}</Text>
 
             {COUNTRIES.map((country) => {
               const selected = country.code === selectedCountry.code;
@@ -784,20 +797,31 @@ function HomeFeed() {
                 <PressableScale
                   key={country.code}
                   scale={0.98}
-                  onPress={() => {
+                  onPress={async () => {
                     setSelectedCountry(country);
                     closeCountryModal();
+                    try {
+                      await AsyncStorage.setItem(COUNTRY_STORAGE_KEY, country.code);
+                      await changeAppLanguage(country.language);
+                      await AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, country.language);
+                    } catch (error) {
+                      console.error("[Country] Não foi possível guardar país/idioma:", error);
+                      Alert.alert(t("settings.languageSaveError"));
+                    }
                   }}
-                  className={`mb-[10px] min-h-[66px] flex-row items-center rounded-[12px] border px-3 ${
-                    selected ? "border-[#9ED5AC] bg-[#E9F5EC]" : "border-[#E8ECE6] bg-white"
-                  }`}
+                  className="mb-[10px] min-h-[66px] flex-row items-center rounded-[12px] px-3"
+                  style={{ backgroundColor: selected ? COLORS.tint : "#F7F9F6" }}
                 >
-                  <View className="h-[44px] w-[44px] items-center justify-center rounded-[10px] bg-[#F6F8F5]">
+                  <View className="h-[44px] w-[44px] items-center justify-center rounded-[10px] bg-white">
                     <Text className="text-[26px]">{country.flag}</Text>
                   </View>
                   <View className="ml-3 flex-1">
-                    <Text className="text-[14px] font-extrabold text-[#16231C]">{country.name}</Text>
-                    <Text className="mt-[3px] text-[11px] text-[#78877D]">{t('home.currency', { currency: country.currency })}</Text>
+                    <Text className="text-[14.5px] font-extrabold text-[#16231C]">
+                      {t(`home.countries.${country.code}`)}
+                    </Text>
+                    <Text className="mt-[3px] text-[11.5px] text-[#78877D]">
+                      {t("home.currency", { currency: country.currency })}
+                    </Text>
                   </View>
                   {selected ? (
                     <View className="h-7 w-7 items-center justify-center rounded-full bg-[#2E8B4F]">
@@ -808,7 +832,7 @@ function HomeFeed() {
               );
             })}
           </Animated.View>
-        </Animated.View>
+        </View>
       </Modal>
 
       {/* PAGAMENTO */}
@@ -822,3 +846,5 @@ function HomeFeed() {
     </SafeAreaView>
   );
 }
+
+const absoluteFill = { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 } as const;

@@ -36,6 +36,7 @@ import { getMunicipalityLabel, getProvinceLabel, getProvincesForCountry } from '
 import { normalizeAngolaAuthPhone } from '../lib/authPhone';
 import { signInWithGoogle } from '../lib/googleAuth';
 import { supabase } from '../lib/supabase';
+import { useUserRole } from '../context/RoleContext';
 
 // Mesma paleta do ProductCard
 const COLORS = {
@@ -147,10 +148,12 @@ export default function Register() {
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { enterGuest } = useUserRole();
 
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [verificationModalVisible, setVerificationModalVisible] = useState(false);
   const [verificationChannel, setVerificationChannel] = useState<VerificationChannel>('email');
   const [errorMessage, setErrorMessage] = useState('');
@@ -184,7 +187,20 @@ export default function Register() {
   const municipalityLabel = getMunicipalityLabel(countryCode);
   const availableMunicipalities =
     availableProvinces.find((p) => p.id === selectedProvince)?.municipalities || [];
-  const busy = loading || googleLoading;
+  const busy = loading || googleLoading || guestLoading;
+
+  const handleEnterGuest = async () => {
+    try {
+      setGuestLoading(true);
+      await enterGuest();
+      router.replace('/home');
+    } catch (error) {
+      console.error('Não foi possível iniciar o modo visitante:', error);
+      setErrorMessage(t('register.unexpectedError'));
+    } finally {
+      setGuestLoading(false);
+    }
+  };
 
   // Barra de progresso animada
   const progressPercent = ((currentStep + 1) / steps.length) * 100;
@@ -755,6 +771,18 @@ export default function Register() {
             </TouchableOpacity>
           </View>
 
+          <TouchableOpacity
+            style={[styles.guestButton, busy && styles.disabled]}
+            onPress={() => void handleEnterGuest()}
+            disabled={busy}
+            accessibilityRole="button"
+          >
+            <Icon name="eye" size={17} color={COLORS.primary} />
+            <Text style={styles.guestButtonText}>
+              {guestLoading ? 'A abrir…' : t('guest.continue')}
+            </Text>
+          </TouchableOpacity>
+
           <View style={{ flex: 1, minHeight: 24 }} />
 
           {/* TERMOS E FOOTER */}
@@ -1079,6 +1107,19 @@ const styles = StyleSheet.create({
   },
   loginText: { fontSize: 13.5, color: COLORS.muted },
   loginLink: { fontSize: 13.5, fontWeight: '800', color: COLORS.primaryDark, marginLeft: 6 },
+  guestButton: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    borderRadius: 10,
+    backgroundColor: COLORS.white,
+  },
+  guestButtonText: { color: COLORS.primaryDark, fontSize: 12.5, fontWeight: '800' },
 
   legalText: { fontSize: 11.5, lineHeight: 17, color: COLORS.muted, textAlign: 'center' },
   legalLink: { color: COLORS.primaryDark, fontWeight: '700' },

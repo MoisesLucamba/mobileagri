@@ -15,12 +15,15 @@ import Icon from './Icon';
 
 const COLORS = {
   primary: '#1F6B3A',
+  primarySoft: '#EAF3EA',
   text: '#16231C',
   muted: '#78877D',
   faint: '#AEB8AC',
-  border: '#EAE4D6',
+  border: '#E9E2D3',
   gold: '#D79427',
+  goldSoft: '#FBF1E1',
   surface: '#FFFFFF',
+  canvas: '#FFFCF6',
 };
 
 const CARD_WIDTH = Dimensions.get('window').width - 36;
@@ -37,6 +40,13 @@ export default function AgrilinkAdCard({ ad, currentUserId, onRequireLogin, onRa
   const [imageIndex, setImageIndex] = useState(0);
   const currentRating = Number(ad.current_rating || 0);
   const filledStars = currentRating || Math.round(Number(ad.rating_average || 0));
+  const targetHost = (() => {
+    try {
+      return new URL(ad.target_url).hostname.replace(/^www\./, '');
+    } catch {
+      return ad.target_url;
+    }
+  })();
 
   const openAd = () => {
     Linking.openURL(ad.target_url).catch(() => Alert.alert('Link indisponível', 'Não foi possível abrir este anúncio.'));
@@ -61,11 +71,11 @@ export default function AgrilinkAdCard({ ad, currentUserId, onRequireLogin, onRa
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={styles.brandIcon}>
-          <Icon name="star" size={16} color={COLORS.primary} filled />
+          <Icon name="image" size={16} color={COLORS.primary} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.brand}>AgriLink</Text>
-          <Text style={styles.sponsored}>PUBLICIDADE</Text>
+          <Text style={styles.sponsored}>PROMOÇÃO PATROCINADA</Text>
         </View>
         <TouchableOpacity onPress={openAd} style={styles.linkIcon} accessibilityLabel="Abrir anúncio">
           <Icon name="arrow-right" size={17} color={COLORS.primary} />
@@ -85,6 +95,9 @@ export default function AgrilinkAdCard({ ad, currentUserId, onRequireLogin, onRa
             <Image key={`${ad.id}-${index}`} source={{ uri: url }} style={styles.image} resizeMode="cover" />
           ))}
         </ScrollView>
+        <View style={styles.promoBadge}>
+          <Text style={styles.promoBadgeText}>EM DESTAQUE</Text>
+        </View>
         <View style={styles.imageCount}>
           <Text style={styles.imageCountText}>{imageIndex + 1}/{ad.image_urls.length}</Text>
         </View>
@@ -93,6 +106,10 @@ export default function AgrilinkAdCard({ ad, currentUserId, onRequireLogin, onRa
       <View style={styles.body}>
         <Text style={styles.title}>{ad.title}</Text>
         <Text style={styles.description}>{ad.description}</Text>
+        <View style={styles.destination}>
+          <Icon name="share" size={13} color={COLORS.muted} />
+          <Text style={styles.destinationText} numberOfLines={1}>{targetHost}</Text>
+        </View>
 
         <View style={styles.ratingRow}>
           <View style={styles.stars}>
@@ -124,22 +141,40 @@ export default function AgrilinkAdCard({ ad, currentUserId, onRequireLogin, onRa
 }
 
 const styles = StyleSheet.create({
-  card: { width: CARD_WIDTH, alignSelf: 'center', marginBottom: 18, overflow: 'hidden', borderRadius: 16, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  card: {
+    width: CARD_WIDTH,
+    alignSelf: 'center',
+    marginBottom: 18,
+    overflow: 'hidden',
+    borderRadius: 22,
+    backgroundColor: COLORS.canvas,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#604B20',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
   header: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 13 },
-  brandIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#EAF3EA' },
+  brandIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: COLORS.primarySoft },
   brand: { color: COLORS.text, fontSize: 12.5, fontWeight: '800' },
-  sponsored: { marginTop: 2, color: COLORS.muted, fontSize: 8.5, fontWeight: '800' },
-  linkIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#F1EFE8' },
-  imageFrame: { width: CARD_WIDTH, height: 218, backgroundColor: '#F1EFE8' },
-  image: { width: CARD_WIDTH, height: 218 },
+  sponsored: { marginTop: 3, color: COLORS.gold, fontSize: 8.5, fontWeight: '900', letterSpacing: 0.65 },
+  linkIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: COLORS.goldSoft },
+  imageFrame: { width: CARD_WIDTH, height: 224, backgroundColor: '#F1EFE8' },
+  image: { width: CARD_WIDTH, height: 224 },
+  promoBadge: { position: 'absolute', left: 11, top: 11, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 7, backgroundColor: COLORS.gold },
+  promoBadgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900', letterSpacing: 0.7 },
   imageCount: { position: 'absolute', right: 10, bottom: 10, minWidth: 40, alignItems: 'center', paddingVertical: 4, paddingHorizontal: 7, borderRadius: 10, backgroundColor: 'rgba(22,35,28,0.72)' },
   imageCountText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
-  body: { padding: 14 },
-  title: { color: COLORS.text, fontSize: 17, fontWeight: '800' },
+  body: { padding: 16 },
+  title: { color: COLORS.text, fontSize: 18, fontWeight: '900' },
   description: { marginTop: 5, color: COLORS.muted, fontSize: 12.5, lineHeight: 18 },
+  destination: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 9 },
+  destinationText: { flex: 1, color: COLORS.muted, fontSize: 10.5, fontWeight: '600' },
   ratingRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 10 },
   stars: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   ratingText: { color: COLORS.muted, fontSize: 10.5 },
-  openButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 9, borderRadius: 11, backgroundColor: COLORS.primary },
+  openButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 9, borderRadius: 13, backgroundColor: COLORS.primary },
   openButtonText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800' },
 });

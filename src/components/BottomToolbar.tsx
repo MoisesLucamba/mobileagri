@@ -45,13 +45,15 @@ export default function BottomToolbar() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const { role, loading } = useUserRole();
+  const { role, loading, isGuest } = useUserRole();
 
   const action = role ? ROLE_ACTIONS[role] : FALLBACK_ACTION;
   const homeRoute = role === "motorista" ? "/notifications" : "/home";
   const homeIcon = role === "motorista" ? "bell" : "home";
   const bottom = Math.max(insets.bottom, 8) + 12;
   const isActive = (path: string) => pathname === path;
+
+  if (isGuest) return null;
 
   return (
     <View

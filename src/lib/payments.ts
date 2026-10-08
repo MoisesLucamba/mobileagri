@@ -44,7 +44,8 @@ export function effectiveStatus(p: any): string {
 }
 
 export async function loadProviderAvailability() {
-  const { data } = await supabase.from("payment_providers").select("id, enabled");
+  const { data, error } = await supabase.from("payment_providers").select("id, enabled");
+  if (error) throw error;
   return Object.fromEntries((data ?? []).map((r) => [r.id, { enabled: r.enabled }]));
 }
 
@@ -70,20 +71,37 @@ export async function createOrderPayment(args: {
       idempotency_key: args.idempotencyKey,
     },
   });
-  if (error) throw new Error("Não foi possível iniciar o pagamento. Tenta novamente.");
+  if (error) {
+    throw new Error(error.message || "Não foi possível iniciar o pagamento. Tenta novamente.");
+  }
+  if (!data?.payment || !data?.order) {
+    throw new Error("O serviço de pagamento respondeu sem os dados esperados.");
+  }
   return { payment: data.payment, order: data.order };
 }
 
 const fetchIntent = async (id: string) => {
-  const { data } = await supabase.from("payment_intents").select("*").eq("id", id).single();
+  const { data, error } = await supabase.from("payment_intents").select("*").eq("id", id).single();
+  if (error) throw error;
   return data;
 };
 
 export function watchPayment(
   intentId: string,
-  { fetcher = fetchIntent, onUpdate, intervalMs = 3000 }: any,
+  {
+    fetcher = fetchIntent,
+    onUpdate,
+    onError,
+    intervalMs = 3000,
+  }: {
+    fetcher?: (id: string) => Promise<any>;
+    onUpdate: (payment: any) => void;
+    onError?: (error: unknown) => void;
+    intervalMs?: number;
+  },
 ) {
   let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const tick = async () => {
     if (stopped) return;
     try {
@@ -93,11 +111,16 @@ export function watchPayment(
         const s = effectiveStatus(next);
         if (["succeeded", "failed", "cancelled", "expired", "refunded"].includes(s)) return;
       }
-    } catch {}
-    setTimeout(tick, intervalMs);
+    } catch (error) {
+      onError?.(error);
+    }
+    if (!stopped) timer = setTimeout(tick, intervalMs);
   };
   tick();
-  return () => { stopped = true; };
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  };
 }
 
 // Só para __DEV__
