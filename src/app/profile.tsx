@@ -1,11 +1,11 @@
 import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
-  Dimensions,
   Image,
   Modal,
   Pressable,
@@ -22,9 +22,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Icon, { IconName } from "../components/Icon";
+import { normalizeRole } from "../constants/roleActions";
+import { useUserRole } from "../context/RoleContext";
+import i18n, { AppLanguage, LANGUAGE_STORAGE_KEY } from "../constants/i18n";
+import ProcessingScreen from "../components/ProcessingScreen";
 import { supabase } from "../lib/supabase";
 
-const { height: SCREEN_H } = Dimensions.get("window");
 const AVATAR = 92;
 
 // =====================================================
@@ -113,6 +116,16 @@ type SourcingRequest = {
   created_at: string;
 };
 
+type DriverLoad = {
+  id: string;
+  product_name: string;
+  weight_kg: number;
+  origin_label: string;
+  destination_label: string;
+  pickup_date: string | null;
+  status: string;
+};
+
 // =====================================================
 // MICRO COMPONENTES
 // =====================================================
@@ -167,8 +180,10 @@ function StatusPill({ status }: { status: string }) {
     active: { bg: COLORS.soft, color: COLORS.primary, label: "Activo" },
     inactive: { bg: COLORS.goldSoft, color: COLORS.gold, label: "Inactivo" },
     removed: { bg: COLORS.dangerSoft, color: COLORS.danger, label: "Removido" },
+    open: { bg: COLORS.soft, color: COLORS.primary, label: "Disponível" },
     pending: { bg: COLORS.goldSoft, color: COLORS.gold, label: "Pendente" },
     accepted: { bg: COLORS.soft, color: COLORS.primary, label: "Aceite" },
+    in_transit: { bg: COLORS.blueSoft, color: COLORS.blue, label: "Em trânsito" },
     rejected: { bg: COLORS.dangerSoft, color: COLORS.danger, label: "Rejeitado" },
     completed: { bg: COLORS.soft, color: COLORS.primary, label: "Concluído" },
   };
@@ -240,13 +255,16 @@ const TABS_BY_ROLE: Record<string, { id: string; label: string; icon: IconName }
     { id: "statistics", label: "Estatísticas", icon: "bar-chart" },
   ],
   motorista: [
+    { id: "deliveries", label: "Entregas", icon: "truck" },
     { id: "statistics", label: "Estatísticas", icon: "bar-chart" },
   ],
 };
 
 export default function ProfileScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { role: contextRole } = useUserRole();
 
   const [authUser, setAuthUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -265,6 +283,8 @@ export default function ProfileScreen() {
   const [productStats, setProductStats] = useState<Record<string, { likes: number; comments: number }>>({});
   const [agentStats, setAgentStats] = useState({ totalReferrals: 0, totalPoints: 0, recentReferrals: [] as any[] });
   const [buyerStats, setBuyerStats] = useState({ completedOrders: 0, favoriteProducts: 0 });
+  const [driverLoads, setDriverLoads] = useState<DriverLoad[]>([]);
+  const [driverCapacity, setDriverCapacity] = useState<number | null>(null);
 
   const [showSourcingForm, setShowSourcingForm] = useState(false);
   const [sourcingForm, setSourcingForm] = useState({ product_name: "", quantity: "", delivery_date: "", description: "" });
@@ -272,13 +292,16 @@ export default function ProfileScreen() {
 
   const [profileData, setProfileData] = useState({ full_name: "", phone: "", email: "" });
 
-  const isComprador = userProfile?.user_type === "comprador";
-  const isAgente = userProfile?.user_type === "agente";
-  const isAgricultor = userProfile?.user_type === "agricultor";
-  const roleAccent = ROLE_ACCENT[userProfile?.user_type] || COLORS.primary;
+  const userRole = normalizeRole(userProfile?.user_type) ?? contextRole;
+  const isComprador = userRole === "comprador";
+  const isAgente = userRole === "agente";
+  const isAgricultor = userRole === "agricultor";
+  const isMotorista = userRole === "motorista";
+  const roleAccent = ROLE_ACCENT[userRole ?? ""] || COLORS.primary;
   const memberCode = userProfile?.agent_code || (authUser?.id ? authUser.id.slice(0, 8).toUpperCase() : "—");
 
-  const tabs = TABS_BY_ROLE[userProfile?.user_type] || TABS_BY_ROLE.agricultor;
+  const tabs = TABS_BY_ROLE[userRole ?? ""] || TABS_BY_ROLE.agricultor;
+  const visibleTab = tabs.some((tab) => tab.id === activeTab) ? activeTab : tabs[0].id;
 
   // ===================================================
   // FETCHES (lógica inalterada)
@@ -390,6 +413,26 @@ export default function ProfileScreen() {
     setBuyerStats({ completedOrders: completedCount || 0, favoriteProducts: likesCount || 0 });
   }, []);
 
+  const fetchDriverLoads = useCallback(async (userId: string, metadataCapacity?: unknown) => {
+    const [{ data, error }, { data: driverProfile, error: profileError }] = await Promise.all([
+      supabase
+        .from("freight_loads")
+        .select("id, product_name, weight_kg, origin_label, destination_label, pickup_date, status")
+        .eq("driver_id", userId)
+        .order("pickup_date", { ascending: false, nullsFirst: false }),
+      supabase.from("profiles").select("load_capacity_kg").eq("id", userId).maybeSingle(),
+    ]);
+
+    if (error) {
+      console.error("Não foi possível carregar as entregas do motorista:", error);
+      return;
+    }
+    if (profileError) console.warn("Não foi possível carregar a capacidade do motorista:", profileError);
+    setDriverLoads((data || []) as DriverLoad[]);
+    const capacity = Number(driverProfile?.load_capacity_kg ?? metadataCapacity);
+    setDriverCapacity(Number.isFinite(capacity) && capacity > 0 ? capacity : null);
+  }, []);
+
   const loadAll = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -400,32 +443,55 @@ export default function ProfileScreen() {
       }
       setAuthUser(user);
 
-      const { data: profileRow } = await supabase.from("users").select("*").eq("id", user.id).maybeSingle();
-      setUserProfile(profileRow);
+      const { data: profileRow, error: profileError } = await supabase.from("users").select("*").eq("id", user.id).maybeSingle();
+      if (profileError) console.warn("Não foi possível carregar os dados do perfil:", profileError);
+      const metadata = user.user_metadata ?? {};
+      const resolvedRole = normalizeRole(profileRow?.user_type ?? metadata.user_type) ?? contextRole;
+      setUserProfile({
+        ...metadata,
+        ...profileRow,
+        user_type: resolvedRole ?? profileRow?.user_type ?? metadata.user_type,
+        full_name: profileRow?.full_name || metadata.full_name || "",
+        phone: profileRow?.phone || metadata.phone || user.phone || "",
+        email: profileRow?.email || user.email || metadata.contact_email || "",
+        province_id: profileRow?.province_id || metadata.province_id || "",
+        load_capacity_kg: profileRow?.load_capacity_kg ?? metadata.load_capacity_kg,
+      });
       setProfileData({
-        full_name: profileRow?.full_name || "",
-        phone: profileRow?.phone || "",
-        email: profileRow?.email || user.email || "",
+        full_name: profileRow?.full_name || metadata.full_name || "",
+        phone: profileRow?.phone || metadata.phone || user.phone || "",
+        email: profileRow?.email || user.email || metadata.contact_email || "",
       });
 
-      const type = profileRow?.user_type;
-      if (type === "comprador") {
+      if (resolvedRole === "comprador") {
         await Promise.all([fetchFichasRecebimento(user.id), fetchSourcingRequests(user.id), fetchBuyerStats(user.id)]);
+      } else if (resolvedRole === "motorista") {
+        await fetchDriverLoads(user.id, user.user_metadata?.load_capacity_kg);
       } else {
         await Promise.all([fetchUserProducts(user.id), fetchReceivedOrders(user.id)]);
       }
-      if (type === "agente") await fetchAgentStats(user.id);
+      if (resolvedRole === "agente") await fetchAgentStats(user.id);
     } catch (e) {
       console.log(e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [fetchUserProducts, fetchFichasRecebimento, fetchReceivedOrders, fetchSourcingRequests, fetchBuyerStats, fetchAgentStats]);
+  }, [contextRole, fetchUserProducts, fetchFichasRecebimento, fetchReceivedOrders, fetchSourcingRequests, fetchBuyerStats, fetchAgentStats, fetchDriverLoads]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
   const onRefresh = () => { setRefreshing(true); loadAll(); };
+
+  const changeLanguage = async (language: AppLanguage) => {
+    try {
+      await i18n.changeLanguage(language);
+      await AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    } catch (error) {
+      console.warn("[i18n] Não foi possível guardar o idioma:", error);
+      Alert.alert(t("settings.languageSaveError"));
+    }
+  };
 
   // ===================================================
   // AÇÕES (lógica inalterada)
@@ -613,24 +679,26 @@ export default function ProfileScreen() {
         { value: buyerStats.favoriteProducts, label: "Favoritos", color: COLORS.gold },
       ];
     }
+    if (isMotorista) {
+      return [
+        { value: driverLoads.filter((load) => load.status === "in_transit").length, label: "Em trânsito", color: COLORS.blue },
+        { value: driverLoads.filter((load) => load.status === "delivered").length, label: "Entregues", color: COLORS.primary },
+        { value: driverCapacity ? `${driverCapacity.toLocaleString("pt-AO")} kg` : "—", label: "Capacidade", color: COLORS.gold },
+      ];
+    }
     return [
       { value: activeProducts, label: "Produtos activos", color: COLORS.primary },
       { value: totalComments, label: "Comentários", color: COLORS.primary },
       { value: totalLikes, label: "Gostos", color: COLORS.gold },
     ];
-  }, [isAgente, isComprador, agentStats, fichasRecebimento, buyerStats, activeProducts, totalComments, totalLikes]);
+  }, [isAgente, isComprador, isMotorista, agentStats, fichasRecebimento, buyerStats, activeProducts, totalComments, totalLikes, driverLoads, driverCapacity]);
 
   // ===================================================
   // ESTADOS DE CARREGAMENTO / SEM SESSÃO
   // ===================================================
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.centerScreen}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>A carregar o teu perfil...</Text>
-      </SafeAreaView>
-    );
+    return <ProcessingScreen />;
   }
 
   if (!authUser) {
@@ -672,11 +740,11 @@ export default function ProfileScreen() {
               onPress={() => router.back()}
               activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel="Voltar"
+              accessibilityLabel={t("login.back")}
             >
               <Icon name="arrow-left" size={20} color={COLORS.primary} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle} numberOfLines={1}>O meu perfil</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>{t("profile.title")}</Text>
           </View>
           <View style={{ flexDirection: "row", gap: 10 }}>
             <TouchableOpacity style={styles.headerBtn} onPress={() => setSettingsOpen(true)} activeOpacity={0.8}>
@@ -684,6 +752,8 @@ export default function ProfileScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t("profile.logout")}
               activeOpacity={0.8}
               onPress={async () => { await supabase.auth.signOut(); router.replace("/login"); }}
             >
@@ -694,16 +764,14 @@ export default function ProfileScreen() {
 
         {/* PAINEL BRANCO */}
         <View style={styles.sheet}>
-          <TouchableOpacity onPress={changeAvatar} activeOpacity={0.9} style={styles.avatarWrap}>
+          <TouchableOpacity onPress={changeAvatar} disabled={avatarLoading} activeOpacity={0.9} style={styles.avatarWrap}>
             {userProfile?.avatar_url ? (
               <Image source={{ uri: userProfile.avatar_url }} style={styles.avatarImg} />
             ) : (
               <Text style={styles.avatarInitial}>{profileName.charAt(0).toUpperCase()}</Text>
             )}
             <View style={styles.avatarEdit}>
-              {avatarLoading
-                ? <ActivityIndicator size="small" color="#FFFFFF" />
-                : <Icon name="camera" size={13} color="#FFFFFF" />}
+              <Icon name="camera" size={13} color="#FFFFFF" />
             </View>
           </TouchableOpacity>
 
@@ -736,22 +804,24 @@ export default function ProfileScreen() {
                   </TouchableOpacity>
                 )}
               </View>
-              <TouchableOpacity
-                style={styles.historyLink}
-                onPress={() => router.push("/historicopagamentos")}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel="Abrir histórico de compras e pagamentos"
-              >
-                <View style={styles.historyLinkIcon}>
-                  <Icon name="receipt" size={19} color={COLORS.primary} />
-                </View>
-                <View style={styles.historyLinkTextBlock}>
-                  <Text style={styles.historyLinkTitle}>Histórico de compras e pagamentos</Text>
-                  <Text style={styles.historyLinkSubtitle}>Pedidos e movimentos da carteira</Text>
-                </View>
-                <Icon name="chevron-right" size={18} color={COLORS.faint} />
-              </TouchableOpacity>
+              {!isMotorista && (
+                <TouchableOpacity
+                  style={styles.historyLink}
+                  onPress={() => router.push("/historicopagamentos")}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Abrir histórico de compras e pagamentos"
+                >
+                  <View style={styles.historyLinkIcon}>
+                    <Icon name="receipt" size={19} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.historyLinkTextBlock}>
+                    <Text style={styles.historyLinkTitle}>Histórico de compras e pagamentos</Text>
+                    <Text style={styles.historyLinkSubtitle}>Pedidos e movimentos da carteira</Text>
+                  </View>
+                  <Icon name="chevron-right" size={18} color={COLORS.faint} />
+                </TouchableOpacity>
+              )}
             </>
           ) : (
             <View style={{ marginTop: 20, gap: 14 }}>
@@ -794,7 +864,7 @@ export default function ProfileScreen() {
             {tabs.map((tab) => (
               <TabChip
                 key={tab.id}
-                active={activeTab === tab.id}
+                active={visibleTab === tab.id}
                 onPress={() => setActiveTab(tab.id)}
                 icon={tab.icon}
                 label={tab.label}
@@ -803,8 +873,29 @@ export default function ProfileScreen() {
             ))}
           </ScrollView>
 
+          {visibleTab === "deliveries" && isMotorista && (
+            driverLoads.length === 0 ? (
+              <EmptyState icon="truck" message="Ainda não tens entregas atribuídas" sub="As cargas que aceitares aparecerão aqui." />
+            ) : (
+              <View style={{ gap: 10 }}>
+                {driverLoads.map((load) => (
+                  <View key={load.id} style={styles.listCard}>
+                    <View style={styles.rowBetween}>
+                      <Text style={[styles.listCardTitle, { flex: 1 }]} numberOfLines={1}>{load.product_name}</Text>
+                      <StatusPill status={load.status} />
+                    </View>
+                    <Text style={styles.listCardSub}>
+                      {Number(load.weight_kg || 0).toLocaleString("pt-AO")} kg · {load.origin_label} → {load.destination_label}
+                    </Text>
+                    {!!load.pickup_date && <Text style={styles.listCardMeta}>Recolha: {formatDate(load.pickup_date)}</Text>}
+                  </View>
+                ))}
+              </View>
+            )
+          )}
+
           {/* PRODUTOS / FICHAS */}
-          {activeTab === "products" && (
+          {visibleTab === "products" && (
             isComprador ? (
               fichasRecebimento.length === 0 ? (
                 <EmptyState icon="clipboard" message="Ainda não criaste fichas de recebimento" />
@@ -853,7 +944,7 @@ export default function ProfileScreen() {
           )}
 
           {/* SOURCING */}
-          {activeTab === "sourcing" && isComprador && (
+          {visibleTab === "sourcing" && isComprador && (
             <View style={{ gap: 14 }}>
               <View style={styles.rowBetween}>
                 <View style={{ flex: 1, paddingRight: 10 }}>
@@ -877,7 +968,7 @@ export default function ProfileScreen() {
                     disabled={submittingSourcing}
                     activeOpacity={0.85}
                   >
-                    {submittingSourcing ? <ActivityIndicator color="#FFF" /> : <Text style={styles.pillButtonText}>Enviar pedido</Text>}
+                    <Text style={styles.pillButtonText}>{submittingSourcing ? "A enviar…" : "Enviar pedido"}</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -901,7 +992,7 @@ export default function ProfileScreen() {
           )}
 
           {/* ENCOMENDAS RECEBIDAS */}
-          {activeTab === "orders" && (isAgricultor || isAgente) && (
+          {visibleTab === "orders" && (isAgricultor || isAgente) && (
             receivedOrders.length === 0 ? (
               <EmptyState icon="cart" message="Ainda não recebeste encomendas" sub="Vão aparecer aqui assim que alguém pré-encomendar um dos teus produtos." />
             ) : (
@@ -944,7 +1035,7 @@ export default function ProfileScreen() {
           )}
 
           {/* INDICAÇÕES */}
-          {activeTab === "referrals" && isAgente && (
+          {visibleTab === "referrals" && isAgente && (
             agentStats.recentReferrals.length === 0 ? (
               <EmptyState icon="users" message="Ainda não tens indicações" sub="Partilha o teu código para começares a ganhar pontos." />
             ) : (
@@ -969,7 +1060,7 @@ export default function ProfileScreen() {
           )}
 
           {/* ESTATÍSTICAS */}
-          {activeTab === "statistics" && (
+          {visibleTab === "statistics" && (
             <View style={{ gap: 10 }}>
               {(isAgente
                 ? [
@@ -1021,13 +1112,36 @@ export default function ProfileScreen() {
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.sheetHandle} />
-            <Text style={styles.settingsTitle}>Definições</Text>
+            <Text style={styles.settingsTitle}>{t("settings.title")}</Text>
+
+            <Text style={styles.settingsLanguageLabel}>{t("settings.language")}</Text>
+            <View style={styles.languageOptions}>
+              {([
+                { code: "pt-AO", label: t("settings.portuguese") },
+                { code: "fr-CD", label: t("settings.french") },
+              ] as const).map((option) => {
+                const selected = i18n.language === option.code;
+                return (
+                  <TouchableOpacity
+                    key={option.code}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => changeLanguage(option.code)}
+                    style={[styles.languageOption, selected && styles.languageOptionSelected]}
+                  >
+                    <Text style={[styles.languageOptionText, selected && styles.languageOptionTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             <TouchableOpacity style={styles.settingsRow} activeOpacity={0.8} onPress={() => { setSettingsOpen(false); router.push("/notifications"); }}>
               <View style={styles.settingsIcon}>
                 <Icon name="bell" size={18} color={COLORS.primary} />
               </View>
-              <Text style={styles.settingsRowText}>Notificações</Text>
+              <Text style={styles.settingsRowText}>{t("settings.notifications")}</Text>
               <Icon name="chevron-right" size={16} color={COLORS.faint} />
             </TouchableOpacity>
 
@@ -1035,12 +1149,12 @@ export default function ProfileScreen() {
               <View style={styles.settingsIcon}>
                 <Icon name="shield" size={18} color={COLORS.primary} />
               </View>
-              <Text style={styles.settingsRowText}>Segurança e privacidade</Text>
+              <Text style={styles.settingsRowText}>{t("settings.security")}</Text>
               <Icon name="chevron-right" size={16} color={COLORS.faint} />
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.pillOutline, { marginTop: 8 }]} onPress={() => setSettingsOpen(false)} activeOpacity={0.85}>
-              <Text style={styles.pillOutlineText}>Fechar</Text>
+              <Text style={styles.pillOutlineText}>{t("settings.close")}</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -1054,12 +1168,11 @@ export default function ProfileScreen() {
 // =====================================================
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.background },
+  screen: { flex: 1, backgroundColor: "#F5F8F4" },
   centerScreen: { flex: 1, backgroundColor: COLORS.background, alignItems: "center", justifyContent: "center", gap: 14, padding: 24 },
-  loadingText: { fontSize: 14, color: COLORS.muted },
 
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingBottom: 64 },
-  headerTitle: { fontSize: 22, fontWeight: "800", color: COLORS.text },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 10 },
+  headerTitle: { fontSize: 21, fontWeight: "800", color: COLORS.text, letterSpacing: -0.35 },
   headerBtn: {
     width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center",
     backgroundColor: COLORS.soft, borderWidth: 1, borderColor: COLORS.border,
@@ -1069,32 +1182,32 @@ const styles = StyleSheet.create({
     width: "92%",
     alignSelf: "center",
     backgroundColor: COLORS.white,
-    borderRadius: 12,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: COLORS.border,
-    paddingHorizontal: 12,
-    paddingTop: AVATAR / 2 + 14,
-    paddingBottom: 12,
-    minHeight: SCREEN_H * 0.8,
+    paddingHorizontal: 18,
+    paddingTop: 22,
+    paddingBottom: 18,
+    marginTop: 10,
     shadowColor: COLORS.deep,
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.035,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
     elevation: 1,
   },
 
   avatarWrap: {
-    position: "absolute", top: -AVATAR / 2, alignSelf: "center",
+    position: "relative", alignSelf: "center", marginBottom: 13,
     width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2,
-    backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center",
-    borderWidth: 4, borderColor: "#FFFFFF",
+    backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center",
+    borderWidth: 3, borderColor: "#FFFFFF",
     ...SHADOW_SOFT,
   },
   avatarImg: { width: "100%", height: "100%", borderRadius: AVATAR / 2 },
   avatarInitial: { fontSize: 34, fontWeight: "800", color: "#FFFFFF" },
   avatarEdit: {
     position: "absolute", bottom: 0, right: 0, width: 28, height: 28, borderRadius: 14,
-    backgroundColor: COLORS.secondary, borderWidth: 2.5, borderColor: "#FFFFFF",
+    backgroundColor: COLORS.primary, borderWidth: 2.5, borderColor: "#FFFFFF",
     alignItems: "center", justifyContent: "center",
   },
 
@@ -1104,12 +1217,12 @@ const styles = StyleSheet.create({
   roleDot: { width: 7, height: 7, borderRadius: 4 },
   roleText: { fontSize: 12.5, fontWeight: "800", textTransform: "capitalize" },
 
-  infoBlock: { marginTop: 22, gap: 12 },
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  infoIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center" },
-  infoValue: { flex: 1, fontSize: 14.5, color: COLORS.text, fontWeight: "600" },
+  infoBlock: { marginTop: 22, gap: 2, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: "#EDF1EC", borderRadius: 16, backgroundColor: "#FBFCFA" },
+  infoRow: { flexDirection: "row", alignItems: "center", gap: 11, minHeight: 44 },
+  infoIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center" },
+  infoValue: { flex: 1, fontSize: 13.5, color: COLORS.text, fontWeight: "600" },
 
-  memberActions: { flexDirection: "row", gap: 10, marginTop: 22 },
+  memberActions: { flexDirection: "row", gap: 10, marginTop: 16 },
   historyLink: {
     flexDirection: "row", alignItems: "center", gap: 10,
     marginTop: 12, padding: 10, borderRadius: 10,
@@ -1145,16 +1258,16 @@ const styles = StyleSheet.create({
   codeChipLabel: { fontSize: 12, color: COLORS.muted, fontWeight: "600" },
   codeChipValue: { fontSize: 12.5, color: COLORS.text, fontWeight: "800", letterSpacing: 0.5 },
 
-  statsRow: { flexDirection: "row", gap: 10, marginTop: 22 },
-  statTile: { flex: 1, backgroundColor: COLORS.white, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, paddingVertical: 13, paddingHorizontal: 8, alignItems: "center" },
-  statValue: { fontSize: 24, fontWeight: "800" },
-  statLabel: { fontSize: 11.5, color: COLORS.muted, fontWeight: "600", marginTop: 4, textAlign: "center" },
+  statsRow: { flexDirection: "row", gap: 9, marginTop: 17 },
+  statTile: { flex: 1, backgroundColor: "#FBFCFA", borderRadius: 16, borderWidth: 1, borderColor: "#EDF1EC", paddingVertical: 12, paddingHorizontal: 7, alignItems: "center" },
+  statValue: { fontSize: 21, fontWeight: "800" },
+  statLabel: { fontSize: 10.5, color: COLORS.muted, fontWeight: "600", marginTop: 4, textAlign: "center" },
 
   agentCodeCard: { borderRadius: 10, padding: 14, marginTop: 10, alignItems: "center" },
   agentCodeLabel: { fontSize: 12, color: COLORS.muted, fontWeight: "600" },
   agentCodeValue: { fontSize: 22, fontWeight: "800", letterSpacing: 1.5, marginTop: 2 },
 
-  tabsScroll: { marginTop: 24, marginBottom: 16, flexGrow: 0 },
+  tabsScroll: { marginTop: 22, marginBottom: 14, flexGrow: 0 },
   tabChip: {
     flexDirection: "row", alignItems: "center", gap: 7, height: 40, paddingHorizontal: 15,
     borderRadius: 10, backgroundColor: COLORS.field,
@@ -1229,6 +1342,12 @@ const styles = StyleSheet.create({
   settingsSheet: { backgroundColor: COLORS.background, borderTopLeftRadius: 36, borderTopRightRadius: 36, paddingHorizontal: 22, paddingTop: 12 },
   sheetHandle: { width: 42, height: 5, borderRadius: 3, backgroundColor: COLORS.border, alignSelf: "center", marginBottom: 18 },
   settingsTitle: { fontSize: 22, fontWeight: "800", color: COLORS.text, marginBottom: 12 },
+  settingsLanguageLabel: { fontSize: 13, fontWeight: "700", color: COLORS.muted, marginBottom: 8 },
+  languageOptions: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  languageOption: { flex: 1, minHeight: 42, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.white },
+  languageOptionSelected: { borderColor: COLORS.primary, backgroundColor: COLORS.soft },
+  languageOptionText: { fontSize: 12, fontWeight: "700", color: COLORS.muted, textAlign: "center" },
+  languageOptionTextSelected: { color: COLORS.primary },
   settingsRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
   settingsIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center" },
   settingsRowText: { flex: 1, fontSize: 15, color: COLORS.text, fontWeight: "700" },

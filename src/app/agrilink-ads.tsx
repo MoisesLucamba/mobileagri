@@ -1,8 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     Image,
     KeyboardAvoidingView,
@@ -19,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AdminOnly from '../components/AdminOnly';
 import Icon from '../components/Icon';
+import ProcessingScreen from '../components/ProcessingScreen';
 import {
     AgrilinkAd,
     loadAgrilinkAds,
@@ -143,6 +143,8 @@ function AdsManagerContent() {
     }
   };
 
+  if (loading) return <ProcessingScreen />;
+
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.canvas} />
@@ -152,7 +154,7 @@ function AdsManagerContent() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); refresh(); }} tintColor={COLORS.primary} />}
       >
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/dashboard')} accessibilityLabel="Voltar ao dashboard">
+          <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/dashboard' as Href)} accessibilityLabel="Voltar ao dashboard">
             <Icon name="chevron-left" size={21} color={COLORS.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
@@ -230,10 +232,8 @@ function AdsManagerContent() {
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           <TouchableOpacity style={[styles.publishButton, saving && styles.disabled]} onPress={publish} disabled={saving}>
-            {saving ? <ActivityIndicator color="#FFFFFF" /> : <>
-              <Icon name="send" size={16} color="#FFFFFF" />
-              <Text style={styles.publishText}>Publicar anúncio</Text>
-            </>}
+            <Icon name="send" size={16} color="#FFFFFF" />
+            <Text style={styles.publishText}>{saving ? 'A publicar…' : 'Publicar anúncio'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -242,8 +242,7 @@ function AdsManagerContent() {
           <Text style={styles.imageCount}>{ads.length}</Text>
         </View>
 
-        {loading ? <ActivityIndicator style={{ marginTop: 24 }} color={COLORS.primary} /> : null}
-        {!loading && ads.length === 0 ? (
+        {ads.length === 0 ? (
           <Text style={styles.emptyText}>Os anúncios criados aparecerão aqui.</Text>
         ) : null}
         {ads.map((ad) => (
@@ -260,11 +259,9 @@ function AdsManagerContent() {
               onPress={() => toggleStatus(ad)}
               disabled={busyAdId === ad.id}
             >
-              {busyAdId === ad.id ? <ActivityIndicator size="small" color={COLORS.primary} /> : (
-                <Text style={[styles.statusButtonText, ad.status === 'active' && styles.statusButtonTextActive]}>
-                  {ad.status === 'active' ? 'Pausar' : 'Ativar'}
-                </Text>
-              )}
+              <Text style={[styles.statusButtonText, ad.status === 'active' && styles.statusButtonTextActive]}>
+                {busyAdId === ad.id ? 'A atualizar…' : ad.status === 'active' ? 'Pausar' : 'Ativar'}
+              </Text>
             </TouchableOpacity>
           </View>
         ))}

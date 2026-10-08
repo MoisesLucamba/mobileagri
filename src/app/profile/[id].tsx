@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  ActivityIndicator,
   Alert,
   Animated,
   Easing,
@@ -16,9 +15,11 @@ import {
   View,
 } from "react-native";
 
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import ProcessingScreen from "../../components/ProcessingScreen";
 
 // Este ficheiro vive em src/app/profile/[id].tsx — um nível mais fundo
 // do que src/app/profile.tsx — por isso o caminho para lib tem mais "..".
@@ -54,7 +55,6 @@ const COLORS = {
   danger: "#DD5138",
   dangerSoft: "#FCE9E5",
 
-  skeleton: "#EDEAE1",
 };
 
 const RADIUS = { sm: 10, md: 14, lg: 18, xl: 24, pill: 999 };
@@ -157,57 +157,6 @@ function isMissingColumn(error: any) {
 
 function isMissingTable(error: any) {
   return error?.code === "42P01" || /relation .* does not exist/i.test(error?.message || "");
-}
-
-/* ------------------------------------------------------------------ */
-/* Skeleton                                                            */
-/* ------------------------------------------------------------------ */
-
-function Skeleton({
-  width,
-  height,
-  radius = RADIUS.sm,
-  style,
-}: {
-  width: number | `${number}%`;
-  height: number;
-  radius?: number;
-  style?: any;
-}) {
-  const pulse = useRef(new Animated.Value(0.4)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 720, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0.4, duration: 720, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-
-  return (
-    <Animated.View
-      style={[{ width, height, borderRadius: radius, backgroundColor: COLORS.skeleton, opacity: pulse }, style]}
-    />
-  );
-}
-
-function ProfileSkeleton() {
-  return (
-    <View style={styles.scrollContent}>
-      <Skeleton width="100%" height={190} radius={RADIUS.xl} style={{ marginBottom: 12 }} />
-      <View style={{ flexDirection: "row", gap: 9, marginBottom: 20 }}>
-        <Skeleton width="32%" height={92} radius={RADIUS.lg} />
-        <Skeleton width="32%" height={92} radius={RADIUS.lg} />
-        <Skeleton width="32%" height={92} radius={RADIUS.lg} />
-      </View>
-      <Skeleton width="100%" height={140} radius={RADIUS.lg} style={{ marginBottom: 20 }} />
-      <Skeleton width="100%" height={100} radius={RADIUS.lg} style={{ marginBottom: 10 }} />
-      <Skeleton width="100%" height={100} radius={RADIUS.lg} />
-    </View>
-  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -567,19 +516,7 @@ export default function PublicProfileScreen() {
   /* --- estados de ecrã ------------------------------------------------- */
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.screen} edges={["top"]}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.canvas} />
-        <View style={styles.headerBar}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={22} color={COLORS.primary} />
-          </Pressable>
-          <Text style={styles.headerBarTitle}>Perfil</Text>
-          <View style={{ width: 38 }} />
-        </View>
-        <ProfileSkeleton />
-      </SafeAreaView>
-    );
+    return <ProcessingScreen />;
   }
 
   if (notFound || (loadError && !profile)) {
@@ -668,11 +605,7 @@ export default function PublicProfileScreen() {
                   (pressed || startingChat) && { opacity: 0.85 },
                 ]}
               >
-                {startingChat ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Ionicons name="chatbubble-ellipses-outline" size={16} color="#FFFFFF" />
-                )}
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#FFFFFF" />
                 <Text style={styles.messageButtonText}>
                   {startingChat ? "A abrir…" : "Enviar mensagem"}
                 </Text>
@@ -761,7 +694,7 @@ export default function PublicProfileScreen() {
                   <ProductRow
                     key={product.id}
                     product={product}
-                    onPress={() => router.push(`/product/${product.id}` as any)}
+                    onPress={() => router.push({ pathname: '/product/[id]', params: { id: product.id } } as Href)}
                   />
                 ))}
               </View>

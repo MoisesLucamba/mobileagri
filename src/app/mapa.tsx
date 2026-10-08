@@ -7,7 +7,7 @@ import React, {
 } from "react";
 
 import {
-  ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Linking,
@@ -26,11 +26,12 @@ import {
 
 import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
-import { useRouter } from "expo-router";
+import { type Href, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../lib/supabase";
 import Icon, { IconName } from "../components/Icon";
+import ProcessingScreen from "../components/ProcessingScreen";
 
 // Mesmo logo e mesma pasta usados no ecrã de login
 const LOGO = require("../../assets/images/Agrilink_SD.png");
@@ -115,7 +116,7 @@ type RouteResult = {
   duration: number | null;
 };
 
-type LocStatus = "idle" | "granted" | "denied" | "off";
+type LocStatus = "idle" | "locating" | "granted" | "denied" | "off" | "unavailable";
 
 const LAYERS: { kind: Kind; label: string; icon: IconName; color: string }[] = [
   { kind: "produto", label: "Produtos", icon: "leaf", color: COLORS.primary },
@@ -447,6 +448,7 @@ export default function MapaScreen() {
   const [userLocation, setUserLocation] = useState<LatLng | null>(null);
   const [userAccuracy, setUserAccuracy] = useState<number | null>(null);
   const [locStatus, setLocStatus] = useState<LocStatus>("idle");
+  const [locationCanAskAgain, setLocationCanAskAgain] = useState(true);
 
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -467,6 +469,7 @@ export default function MapaScreen() {
   const entitiesRef = useRef<Entity[]>([]);
   const userRef = useRef<LatLng | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const locationRequestRef = useRef(0);
   const centeredRef = useRef(false);
   const routeReq = useRef(0);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -616,61 +619,96 @@ export default function MapaScreen() {
   /* ---------------- Geolocalização ---------------- */
 
   const startLocation = useCallback(async () => {
+    const requestId = ++locationRequestRef.current;
+    const isCurrentRequest = () => requestId === locationRequestRef.current;
+    setLocStatus("locating");
+
     try {
-      const perm = await Location.requestForegroundPermissionsAsync();
-      if (perm.status !== "granted") {
+      let permission = await Location.getForegroundPermissionsAsync();
+      if (permission.status !== "granted") {
+        permission = await Location.requestForegroundPermissionsAsync();
+      }
+      if (!isCurrentRequest()) return;
+      setLocationCanAskAgain(permission.canAskAgain);
+      if (!permission.granted) {
         setLocStatus("denied");
         return;
       }
 
-      const enabled = await Location.hasServicesEnabledAsync();
+      let enabled = await Location.hasServicesEnabledAsync();
+      if (!enabled && Platform.OS === "android") {
+        try {
+          await Location.enableNetworkProviderAsync();
+          enabled = await Location.hasServicesEnabledAsync();
+        } catch (providerError) {
+          console.warn("O utilizador não ativou a localização de alta precisão:", providerError);
+        }
+      }
+      if (!isCurrentRequest()) return;
       if (!enabled) {
         setLocStatus("off");
         return;
       }
 
-      setLocStatus("granted");
-
       const apply = (pos: Location.LocationObject) => {
+        if (!isCurrentRequest()) return;
+        hasPosition = true;
         setUserLocation({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         });
         setUserAccuracy(pos.coords.accuracy ?? null);
+        setLocStatus("granted");
       };
+      let hasPosition = false;
 
-      // posição rápida primeiro, depois a precisa
-      const last = await Location.getLastKnownPositionAsync();
+      const last = await Location.getLastKnownPositionAsync({
+        maxAge: 120_000,
+        requiredAccuracy: 1_000,
+      });
       if (last) apply(last);
+      if (!isCurrentRequest()) return;
 
       try {
         apply(
           await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
+            accuracy: Location.Accuracy.High,
+            mayShowUserSettingsDialog: true,
           }),
         );
-      } catch {
-        // o watch abaixo continua a tentar
+      } catch (locationError) {
+        console.warn("Não foi possível obter uma posição GPS atual:", locationError);
+        if (!hasPosition) setLocStatus("unavailable");
       }
 
+      if (!isCurrentRequest()) return;
       watchRef.current?.remove();
       watchRef.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced,
-          distanceInterval: 15,
-          timeInterval: 5000,
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 5,
+          timeInterval: 3000,
         },
         apply,
+        (watchError) => {
+          console.warn("Falha ao acompanhar a localização do dispositivo:", watchError);
+          if (isCurrentRequest() && !userRef.current) setLocStatus("unavailable");
+        },
       );
+      if (!isCurrentRequest()) {
+        watchRef.current.remove();
+        watchRef.current = null;
+      }
     } catch (e) {
       console.log("Mapa: erro de localização", e);
-      setLocStatus("off");
+      if (isCurrentRequest()) setLocStatus(userRef.current ? "granted" : "unavailable");
     }
   }, []);
 
   useEffect(() => {
     startLocation();
     return () => {
+      locationRequestRef.current++;
       watchRef.current?.remove();
       watchRef.current = null;
     };
@@ -832,10 +870,26 @@ export default function MapaScreen() {
   const recenter = () => {
     if (userLocation) {
       call("flyTo", userLocation.lat, userLocation.lng, 14);
-    } else if (locStatus === "denied" || locStatus === "off") {
-      Linking.openSettings().catch(() => {});
+      void startLocation();
+    } else if (locStatus === "denied" && !locationCanAskAgain) {
+      Alert.alert(
+        "Permissão de localização",
+        "Ative a permissão de localização para a AgriLink nas definições do dispositivo.",
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Abrir definições",
+            onPress: () => {
+              Linking.openSettings().catch((error) => {
+                console.warn("Não foi possível abrir as definições:", error);
+                Alert.alert("Definições indisponíveis", "Abra as definições do dispositivo e permita a localização para a AgriLink.");
+              });
+            },
+          },
+        ],
+      );
     } else {
-      startLocation();
+      void startLocation();
     }
   };
 
@@ -909,10 +963,16 @@ export default function MapaScreen() {
 
   const locBanner =
     locStatus === "denied"
-      ? "Ative a localização para ver a sua posição e as distâncias."
+      ? locationCanAskAgain
+        ? "Permita a localização para mostrar a sua posição real e as distâncias."
+        : "Ative a permissão de localização da AgriLink nas definições do dispositivo."
       : locStatus === "off"
-        ? "O GPS está desligado. Ligue-o para ver a sua posição."
-        : null;
+        ? "A localização está desligada. Ative o GPS para ver a sua posição real."
+        : locStatus === "locating"
+          ? "A procurar a posição GPS deste dispositivo..."
+          : locStatus === "unavailable"
+            ? "Não foi possível obter a localização. Verifique o GPS e tente novamente."
+            : null;
 
   const timeline: {
     state: "done" | "active" | "pending";
@@ -1036,7 +1096,7 @@ export default function MapaScreen() {
             returnKeyType="search"
             autoCorrect={false}
           />
-          {searching && <ActivityIndicator size="small" color={COLORS.primary} />}
+          {searching && <Text style={styles.searchStatus}>A procurar…</Text>}
           {!!search && !searching && (
             <TouchableOpacity
               onPress={() => {
@@ -1131,11 +1191,16 @@ export default function MapaScreen() {
         <TouchableOpacity
           style={[styles.locBanner, { top: insets.top + 204 }]}
           onPress={recenter}
+          disabled={locStatus === "locating"}
           activeOpacity={0.9}
         >
           <Icon name="navigation" size={19} color={COLORS.gold} />
           <Text style={styles.locBannerText}>{locBanner}</Text>
-          <Text style={styles.locBannerAction}>Ativar</Text>
+          {locStatus !== "locating" && (
+            <Text style={styles.locBannerAction}>
+              {locStatus === "denied" && !locationCanAskAgain ? "Definições" : "Tentar"}
+            </Text>
+          )}
         </TouchableOpacity>
       )}
 
@@ -1276,7 +1341,7 @@ export default function MapaScreen() {
               <TouchableOpacity
                 style={styles.roundAction}
                 onPress={() =>
-                  router.push({ pathname: "/product", params: { id: selected.rawId } })
+                  router.push({ pathname: "/product/[id]", params: { id: selected.rawId } } as Href)
                 }
                 activeOpacity={0.85}
               >
@@ -1477,13 +1542,7 @@ export default function MapaScreen() {
       )}
 
       {!mapFailed && (loading || !mapReady) && (
-        <View style={styles.overlay} pointerEvents="none">
-          <View style={styles.overlayCard}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.overlayTitle}>A carregar mapa</Text>
-            <Text style={styles.overlaySub}>Aguarde um momento...</Text>
-          </View>
-        </View>
+        <ProcessingScreen />
       )}
     </View>
   );
@@ -1556,6 +1615,7 @@ const styles = StyleSheet.create({
     ...SHADOW_FLOAT,
   },
   searchInput: { flex: 1, fontSize: 14, color: COLORS.text, padding: 0 },
+  searchStatus: { color: COLORS.muted, fontSize: 11, fontWeight: "600" },
   searchResults: {
     borderRadius: 12,
     backgroundColor: COLORS.white,
@@ -1826,7 +1886,7 @@ const styles = StyleSheet.create({
     ...SHADOW_FLOAT,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(249,250,248,0.92)",
     alignItems: "center",
     justifyContent: "center",

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Keyboard,
   Modal,
@@ -16,6 +15,7 @@ import { WebView, WebViewMessageEvent } from "react-native-webview";
 import * as Location from "expo-location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Icon from "./Icon";
+import i18n from "../constants/i18n";
 
 const COLORS = {
   primary: "#1F6B3A",
@@ -31,7 +31,8 @@ const COLORS = {
 
 const DEFAULT_CENTER = { lat: -8.839, lng: 13.289 }; // Luanda
 const NOMINATIM = "https://nominatim.openstreetmap.org";
-const HEADERS = { Accept: "application/json", "Accept-Language": "pt" };
+const mapLanguage = () => (i18n.language === "fr-CD" ? "fr" : "pt");
+const mapHeaders = () => ({ Accept: "application/json", "Accept-Language": mapLanguage() });
 
 export type Coords = { lat: number; lng: number };
 export type PickedLocation = { lat: number; lng: number; address: string };
@@ -153,8 +154,8 @@ export default function MapPicker({ visible, initialCoords, initialQuery, onClos
     const id = ++searchReq.current;
     setSearching(true);
     try {
-      const url = `${NOMINATIM}/search?format=jsonv2&limit=6&countrycodes=ao&accept-language=pt&q=${encodeURIComponent(q)}`;
-      const res = await fetch(url, { headers: HEADERS });
+      const url = `${NOMINATIM}/search?format=jsonv2&limit=6&countrycodes=ao&accept-language=${mapLanguage()}&q=${encodeURIComponent(q)}`;
+      const res = await fetch(url, { headers: mapHeaders() });
       const data = await res.json();
       if (id !== searchReq.current) return [];
       const list: SearchResult[] = (Array.isArray(data) ? data : [])
@@ -247,8 +248,8 @@ export default function MapPicker({ visible, initialCoords, initialQuery, onClos
     setResolving(true);
     const t = setTimeout(async () => {
       try {
-        const url = `${NOMINATIM}/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=pt&lat=${center.lat}&lon=${center.lng}`;
-        const res = await fetch(url, { headers: HEADERS });
+        const url = `${NOMINATIM}/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=${mapLanguage()}&lat=${center.lat}&lon=${center.lng}`;
+        const res = await fetch(url, { headers: mapHeaders() });
         const data = await res.json();
         if (id === reverseReq.current) setAddress(buildAddress(data));
       } catch {
@@ -348,7 +349,7 @@ export default function MapPicker({ visible, initialCoords, initialQuery, onClos
               onSubmitEditing={submitSearch}
             />
             {searching ? (
-              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.searchingLabel}>A procurar…</Text>
             ) : query.length > 0 ? (
               <Pressable
                 hitSlop={10}
@@ -424,16 +425,12 @@ export default function MapPicker({ visible, initialCoords, initialQuery, onClos
                 {center.lat.toFixed(5)}, {center.lng.toFixed(5)}
               </Text>
             </View>
-            {resolving ? <ActivityIndicator size="small" color={COLORS.primary} /> : null}
+            {resolving ? <Icon name="clock" size={16} color={COLORS.primary} /> : null}
           </View>
 
           <Pressable style={styles.locateBtn} onPress={locateMe} disabled={locating}>
-            {locating ? (
-              <ActivityIndicator size="small" color={COLORS.primary} />
-            ) : (
-              <Icon name="navigation" size={16} color={COLORS.primary} />
-            )}
-            <Text style={styles.locateText}>Usar a minha localização</Text>
+            <Icon name="navigation" size={16} color={COLORS.primary} />
+            <Text style={styles.locateText}>{locating ? "A obter localização…" : "Usar a minha localização"}</Text>
           </Pressable>
 
           <Pressable style={styles.confirmBtn} onPress={confirm}>
@@ -477,6 +474,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   searchInput: { flex: 1, fontSize: 14, color: COLORS.text, paddingVertical: 0 },
+  searchingLabel: { color: COLORS.muted, fontSize: 11, fontWeight: "600" },
 
   mapWrap: { flex: 1, backgroundColor: COLORS.canvas },
   webview: { flex: 1, backgroundColor: COLORS.canvas },

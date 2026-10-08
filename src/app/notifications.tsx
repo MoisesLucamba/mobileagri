@@ -15,11 +15,11 @@ import {
   Animated,
   Easing,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import ProcessingScreen from '../components/ProcessingScreen';
 import * as Haptics from 'expo-haptics';
 
 import {
@@ -789,29 +789,7 @@ export default function NotificationsScreen() {
   ========================================================== */
 
   if (loading) {
-    return (
-      <SafeAreaView
-        style={[
-          styles.screen,
-          styles.center,
-        ]}
-        edges={['top']}
-      >
-        <ActivityIndicator
-          size="large"
-          color={T.g900}
-        />
-
-        <Text
-          style={{
-            color: T.muted,
-            marginTop: 12,
-          }}
-        >
-          Carregando notificações...
-        </Text>
-      </SafeAreaView>
-    );
+    return <ProcessingScreen />;
   }
 
   /* ==========================================================

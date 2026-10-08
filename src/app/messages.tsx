@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
@@ -14,7 +13,8 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import ProcessingScreen from "../components/ProcessingScreen";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 
@@ -350,12 +350,7 @@ export default function MessagesScreen() {
   const groupedMessages = useMemo(() => messages, [messages]);
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.center} edges={["top", "bottom"]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.mutedText}>A carregar mensagens...</Text>
-      </SafeAreaView>
-    );
+    return <ProcessingScreen />;
   }
 
   if (!isConversationOpen) {
@@ -574,11 +569,7 @@ export default function MessagesScreen() {
             onPress={sendMessage}
             disabled={sending}
           >
-            {sending ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Ionicons name="send" size={18} color="#FFFFFF" />
-            )}
+            <Ionicons name="send" size={18} color="#FFFFFF" />
           </Pressable>
         </View>
       </KeyboardAvoidingView>

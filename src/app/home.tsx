@@ -1,6 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-    ActivityIndicator,
     Alert,
     Animated,
     Easing,
@@ -18,7 +17,8 @@ import {
     View,
 } from "react-native";
 
-import { useFocusEffect, useRouter } from "expo-router";
+import { Redirect, useFocusEffect, useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import PaymentSheet from "@/components/PaymentSheet";
@@ -26,6 +26,8 @@ import ProductCard, { Product } from "@/components/ProductCard";
 import AgrilinkAdCard from "../components/AgrilinkAdCard";
 import BottomToolbar from "../components/BottomToolbar";
 import Icon, { IconName } from "../components/Icon";
+import ProcessingScreen from "../components/ProcessingScreen";
+import { useUserRole } from "../context/RoleContext";
 import { AgrilinkAd, isAgrilinkAdmin, loadAgrilinkAds, rateAgrilinkAd } from "../lib/agrilinkAds";
 import { supabase } from "../lib/supabase";
 
@@ -67,6 +69,22 @@ const CATEGORIES: { id: string; name: string; icon: IconName }[] = [
   { id: "lacteos", name: "Lácteos", icon: "droplet" },
   { id: "bebidas", name: "Bebidas", icon: "wine" },
 ];
+
+const CATEGORY_TRANSLATION_KEYS: Record<string, string> = {
+  all: 'home.all',
+  frutas: 'home.fruits',
+  citrus: 'home.citrus',
+  legumes: 'home.vegetables',
+  verduras: 'home.greens',
+  cereais: 'home.grains',
+  temperos: 'home.spices',
+  pescado: 'home.fish',
+  carnes: 'home.meat',
+  ovos: 'home.eggs',
+  paes: 'home.bread',
+  lacteos: 'home.dairy',
+  bebidas: 'home.drinks',
+};
 
 const CATEGORY_MAP: Record<string, string[]> = {
   frutas: ["banana", "maçã", "maca", "manga", "abacaxi", "mamão", "mamao", "goiaba", "melancia", "abacate"],
@@ -224,10 +242,12 @@ function PressableScale({
 
 function CategoryPill({
   category,
+  label,
   selected,
   onPress,
 }: {
   category: (typeof CATEGORIES)[number];
+  label: string;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -240,7 +260,7 @@ function CategoryPill({
     >
       <Icon name={category.icon} size={15} color={selected ? COLORS.white : COLORS.muted} />
       <Text className={`text-[12.5px] ${selected ? "font-bold text-white" : "font-semibold text-[#16231C]"}`}>
-        {category.name}
+        {label}
       </Text>
     </PressableScale>
   );
@@ -253,6 +273,13 @@ type HomeFeedItem =
   | { key: string; type: 'ad'; ad: AgrilinkAd };
 
 export default function HomeScreen() {
+  const { role, loading: roleLoading } = useUserRole();
+  if (!roleLoading && role === "motorista") return <Redirect href="/entregas" />;
+  return <HomeFeed />;
+}
+
+function HomeFeed() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -547,14 +574,7 @@ export default function HomeScreen() {
   /* --------------------------------- loading --------------------------------- */
 
   if (loading) {
-    return (
-      <SafeAreaView className="flex-1 items-center justify-center bg-white">
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        <Image source={Logo} style={{ width: 200, height: 88 }} resizeMode="contain" />
-        <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 18 }} />
-        <Text className="mt-4 text-[13px] text-[#78877D]">A carregar publicações...</Text>
-      </SafeAreaView>
-    );
+    return <ProcessingScreen />;
   }
 
   /* ---------------------------------- render ---------------------------------- */
@@ -578,7 +598,7 @@ export default function HomeScreen() {
             >
               <Text className="text-[19px]">{selectedCountry.flag}</Text>
               <View>
-                <Text className="text-[10px] font-semibold text-[#78877D]">País</Text>
+                <Text className="text-[10px] font-semibold text-[#78877D]">{t('home.country')}</Text>
                 <Text className="text-[12px] font-extrabold text-[#16231C]">{selectedCountry.name}</Text>
               </View>
               <Icon name="chevron-down" size={16} color={COLORS.text} />
@@ -643,7 +663,7 @@ export default function HomeScreen() {
                 scale={0.98}
               >
                 <Icon name="search" size={17} color={COLORS.muted} />
-                <Text className="text-[15px] text-[#78877D]">Pesquisar produtos</Text>
+                <Text className="text-[15px] text-[#78877D]">{t('home.search')}</Text>
               </PressableScale>
 
               {isAdmin && (
@@ -653,7 +673,7 @@ export default function HomeScreen() {
                 >
                   <View className="flex-row items-center gap-2">
                     <Icon name="bar-chart" size={16} color={COLORS.primary} />
-                    <Text className="text-[12px] font-extrabold text-[#25703F]">Dashboard administrativo</Text>
+                    <Text className="text-[12px] font-extrabold text-[#25703F]">{t('home.admin')}</Text>
                   </View>
                   <Icon name="arrow-right" size={15} color={COLORS.primary} />
                 </PressableScale>
@@ -661,8 +681,8 @@ export default function HomeScreen() {
 
               {/* Categorias */}
               <View className="mb-3 flex-row items-center justify-between px-[18px]">
-                <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">Categorias</Text>
-                <Text className="text-[11px] font-semibold text-[#78877D]">{CATEGORIES.length - 1} opções</Text>
+                <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">{t('home.categories')}</Text>
+                <Text className="text-[11px] font-semibold text-[#78877D]">{CATEGORIES.length - 1} {t('home.options')}</Text>
               </View>
 
               <ScrollView
@@ -674,6 +694,7 @@ export default function HomeScreen() {
                   <CategoryPill
                     key={category.id}
                     category={category}
+                    label={t(CATEGORY_TRANSLATION_KEYS[category.id])}
                     selected={selectedCategory === category.id}
                     onPress={() => selectCategory(category.id)}
                   />
@@ -684,21 +705,21 @@ export default function HomeScreen() {
               <View className="mb-3 mt-6 flex-row items-center justify-between px-[18px]">
                 <View className="shrink pr-2">
                   <View className="flex-row items-center gap-2">
-                    <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">Feed</Text>
+                    <Text className="text-[17px] font-extrabold tracking-tight text-[#16231C]">{t('home.feed')}</Text>
                     {!hasRealProducts ? (
                       <View className="rounded-[4px] border border-[#F1D1A5] bg-[#FBEBD3] px-[6px] py-[2px]">
-                        <Text className="text-[8px] font-black tracking-wider text-[#B9741A]">DEMO</Text>
+                        <Text className="text-[8px] font-black tracking-wider text-[#B9741A]">{t('home.demo')}</Text>
                       </View>
                     ) : null}
                   </View>
                   <Text className="mt-0.5 text-[12px] text-[#78877D]">
-                    {hasRealProducts ? 'Produtos e publicidade identificada' : 'Produtos de demonstração e publicidade'}
+                    {hasRealProducts ? t('home.realInventory') : t('home.demoInventory')}
                   </Text>
                 </View>
 
                 <View className="min-h-[26px] items-center justify-center rounded-[8px] bg-[#E9F5EC] px-[9px] py-1">
                   <Text className="text-[10px] font-extrabold text-[#25703F]">
-                    {filteredProducts.length} produtos · {feedItems.filter((item) => item.type === 'ad').length} anúncios
+                    {t('home.productsAndAds', { products: filteredProducts.length, ads: feedItems.filter((item) => item.type === 'ad').length })}
                   </Text>
                 </View>
               </View>
@@ -710,10 +731,10 @@ export default function HomeScreen() {
                 <Icon name="sprout" size={40} color={COLORS.primary} />
               </View>
               <Text className="mt-[15px] text-center text-[17px] font-extrabold text-[#16231C]">
-                Nenhum produto encontrado
+                {t('home.emptyTitle')}
               </Text>
               <Text className="mt-[7px] text-center text-[13px] leading-5 text-[#78877D]">
-                Não encontramos produtos para os filtros selecionados.
+                {t('home.emptyDescription')}
               </Text>
               <PressableScale
                 onPress={() => {
@@ -722,7 +743,7 @@ export default function HomeScreen() {
                 }}
                 className="mt-[17px] rounded-[10px] bg-[#E9F5EC] px-5 py-[11px]"
               >
-                <Text className="text-[13px] font-extrabold text-[#25703F]">Limpar filtros</Text>
+                <Text className="text-[13px] font-extrabold text-[#25703F]">{t('home.clearFilters')}</Text>
               </PressableScale>
             </View>
           }
@@ -731,7 +752,7 @@ export default function HomeScreen() {
               <View className="flex-row items-center justify-center gap-[7px] py-[25px]">
                 <Icon name="check-circle" size={18} color={COLORS.primary} />
                 <Text className="text-[11px] text-[#78877D]">
-                  {hasRealProducts ? "Mostrando publicações reais" : "Publicações de demonstração"}
+                  {hasRealProducts ? t('home.realPosts') : t('home.demoPosts')}
                 </Text>
               </View>
             ) : null
@@ -752,9 +773,9 @@ export default function HomeScreen() {
             }}
           >
             <View className="mb-5 h-[4px] w-10 self-center rounded-full bg-[#E8ECE6]" />
-            <Text className="text-[20px] font-extrabold text-[#16231C]">Escolha o país</Text>
+            <Text className="text-[20px] font-extrabold text-[#16231C]">{t('home.chooseCountry')}</Text>
             <Text className="mb-5 mt-[5px] text-[13px] text-[#78877D]">
-              Selecione onde pretende comprar ou vender.
+              {t('home.countryDescription')}
             </Text>
 
             {COUNTRIES.map((country) => {
@@ -776,7 +797,7 @@ export default function HomeScreen() {
                   </View>
                   <View className="ml-3 flex-1">
                     <Text className="text-[14px] font-extrabold text-[#16231C]">{country.name}</Text>
-                    <Text className="mt-[3px] text-[11px] text-[#78877D]">Moeda: {country.currency}</Text>
+                    <Text className="mt-[3px] text-[11px] text-[#78877D]">{t('home.currency', { currency: country.currency })}</Text>
                   </View>
                   {selected ? (
                     <View className="h-7 w-7 items-center justify-center rounded-full bg-[#2E8B4F]">

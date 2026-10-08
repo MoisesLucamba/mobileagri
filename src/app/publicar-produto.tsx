@@ -9,7 +9,6 @@ import {
   Image,
   StyleSheet,
   Alert,
-  ActivityIndicator,
   Platform,
   StatusBar,
 } from 'react-native';
@@ -18,7 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import MapView, { Marker } from 'react-native-maps';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabase } from '../lib/supabase';
@@ -481,11 +480,7 @@ function PublicarProdutoScreen() {
             disabled={loading}
             activeOpacity={0.85}
           >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.submitBtnText}>Publicar produto</Text>
-            )}
+            <Text style={styles.submitBtnText}>{loading ? 'A publicar…' : 'Publicar produto'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

@@ -1,15 +1,11 @@
 // components/RoleGuard.tsx
 
 import React, { ReactNode } from 'react';
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useUserRole } from '../context/RoleContext';
-import { UserRole } from '../constants/roleActions';
+import { normalizeRole, type UserRole } from '../constants/roleActions';
+import ProcessingScreen from './ProcessingScreen';
 
 interface RoleGuardProps {
   allow: UserRole[];
@@ -23,21 +19,10 @@ export default function RoleGuard({
   const { role, loading } = useUserRole();
 
   if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2E7D32" />
-        <Text style={styles.text}>A verificar o teu perfil...</Text>
-      </View>
-    );
+    return <ProcessingScreen />;
   }
 
-  const normalizedRole = role
-    ? String(role).trim().toLowerCase()
-    : '';
-
-  console.log('Role atual:', role);
-  console.log('Role normalizado:', normalizedRole);
-  console.log('Roles permitidos:', allow);
+  const normalizedRole = normalizeRole(role);
 
   if (!normalizedRole) {
     return (
@@ -46,14 +31,12 @@ export default function RoleGuard({
         <Text style={styles.text}>
           Não foi encontrada uma função para este utilizador.
         </Text>
-        <Text style={styles.text}>
-          A função deve ser agricultor, agente ou comprador.
-        </Text>
+        <Text style={styles.text}>A função deve ser agricultor, agente, comprador ou motorista.</Text>
       </View>
     );
   }
 
-  if (!allow.includes(normalizedRole as UserRole)) {
+  if (!allow.includes(normalizedRole)) {
     return (
       <View style={styles.center}>
         <Text style={styles.title}>Acesso não autorizado</Text>

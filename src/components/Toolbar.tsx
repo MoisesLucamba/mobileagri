@@ -8,8 +8,8 @@ import {
   View,
 } from "react-native";
 
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { type Href, useRouter } from "expo-router";
 
 import { useUserRole } from "../context/RoleContext";
 import RoleActionButton from "./ui/RoleActionButton";
@@ -72,7 +72,7 @@ export default function Toolbar({
       <View style={styles.right}>
         <TouchableOpacity
           style={styles.iconButton}
-          onPress={() => router.push("/home")}
+          onPress={() => router.push((role === "motorista" ? "/entregas" : "/home") as Href)}
         >
           <Ionicons
             name="home-outline"

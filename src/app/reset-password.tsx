@@ -2,7 +2,6 @@ import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -16,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
 import { supabase } from '../lib/supabase';
+import ProcessingScreen from '../components/ProcessingScreen';
 
 const COLORS = {
   primary: '#16834A',
@@ -154,6 +154,8 @@ export default function ResetPasswordScreen() {
     setTimeout(() => router.replace('/home'), 900);
   };
 
+  if (checkingLink) return <ProcessingScreen />;
+
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
@@ -172,13 +174,6 @@ export default function ResetPasswordScreen() {
         <Text style={styles.eyebrow}>SEGURANÇA DA CONTA</Text>
         <Text style={styles.title}>Criar nova palavra-passe</Text>
         <Text style={styles.subtitle}>Defina uma palavra-passe nova para voltar a aceder à AgriLink.</Text>
-
-        {checkingLink ? (
-          <View style={styles.messageBox}>
-            <ActivityIndicator size="small" color={COLORS.primary} />
-            <Text style={styles.messageText}>A validar o link de recuperação…</Text>
-          </View>
-        ) : null}
 
         {error ? (
           <View style={[styles.messageBox, styles.errorBox]}>
@@ -235,7 +230,7 @@ export default function ResetPasswordScreen() {
             </View>
 
             <TouchableOpacity style={[styles.submitButton, saving && styles.disabled]} onPress={savePassword} disabled={saving}>
-              {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitText}>Guardar palavra-passe</Text>}
+              <Text style={styles.submitText}>{saving ? 'A guardar…' : 'Guardar palavra-passe'}</Text>
             </TouchableOpacity>
           </>
         ) : null}

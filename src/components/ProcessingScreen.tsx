@@ -10,7 +10,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-const LOGO = require('../../assets/images/Agrilink_SD.png');
+const LOGO = require('../../assets/images/Agrilink_AppIcon.png');
 
 // Mesma paleta do ProductCard
 const COLORS = {
@@ -18,7 +18,7 @@ const COLORS = {
   text: '#16231C',
   muted: '#78877D',
   line: '#E8ECE6',
-  background: '#F9FAF8',
+  background: '#FFFFFF',
   white: '#FFFFFF',
 };
 
@@ -48,19 +48,15 @@ export default function ProcessingScreen() {
       <View style={styles.loaderRing}>
         <View style={styles.ringTrack} />
         <Animated.View style={[styles.ringArc, ringStyle]} />
-        <View style={styles.logoBadge}>
-          <Image source={LOGO} resizeMode="contain" style={styles.logo} />
-        </View>
+        <Image source={LOGO} resizeMode="contain" style={styles.logo} />
       </View>
-
-      <Text style={styles.title}>A carregar…</Text>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1000,
     elevation: 24,
     alignItems: 'center',
@@ -68,37 +64,23 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   loaderRing: {
-    width: 112,
-    height: 112,
+    width: 150,
+    height: 150,
     alignItems: 'center',
     justifyContent: 'center',
   },
   ringTrack: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderWidth: 2,
     borderColor: COLORS.line,
-    borderRadius: 56,
+    borderRadius: 75,
   },
   ringArc: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderWidth: 2,
     borderColor: 'transparent',
     borderTopColor: COLORS.primary,
-    borderRadius: 56,
+    borderRadius: 75,
   },
-  logoBadge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: COLORS.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logo: { width: 60, height: 60, borderRadius: 30 },
-  title: {
-    marginTop: 22,
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: COLORS.muted,
-  },
+  logo: { width: 118, height: 118 },
 });

@@ -1,9 +1,9 @@
 // src/app/register.tsx
 import { Picker } from '@react-native-picker/picker';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -69,12 +69,6 @@ const generateRandomNif = () => {
   for (let i = 1; i < 13; i++) nif += Math.floor(Math.random() * 10);
   return nif;
 };
-
-const steps: { title: string; hint: string; icon: IconName }[] = [
-  { title: 'Perfil', hint: 'Quem és tu na plataforma', icon: 'user' },
-  { title: 'Contacto', hint: 'Como te encontramos', icon: 'phone' },
-  { title: 'Segurança', hint: 'Protege a tua conta', icon: 'lock' },
-];
 
 const userTypeOptions: { id: string; label: string; icon: IconName }[] = [
   { id: 'agricultor', label: 'Fornecedor', icon: 'leaf' },
@@ -150,6 +144,7 @@ function Field({
 }
 
 export default function Register() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -157,7 +152,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [verificationModalVisible, setVerificationModalVisible] = useState(false);
-  const [verificationChannel, setVerificationChannel] = useState<VerificationChannel>('both');
+  const [verificationChannel, setVerificationChannel] = useState<VerificationChannel>('email');
   const [errorMessage, setErrorMessage] = useState('');
   const [focused, setFocused] = useState<string | null>(null);
 
@@ -178,6 +173,11 @@ export default function Register() {
   const [agentCodeValid, setAgentCodeValid] = useState<boolean | null>(null);
   const [validatingCode, setValidatingCode] = useState(false);
 
+  const steps = useMemo(() => [
+    { title: t('register.profileStep'), hint: t('register.profileHint'), icon: 'user' as IconName },
+    { title: t('register.contactStep'), hint: t('register.contactHint'), icon: 'phone' as IconName },
+    { title: t('register.securityStep'), hint: t('register.securityHint'), icon: 'lock' as IconName },
+  ], [t]);
   const countryCode = 'AO';
   const availableProvinces = getProvincesForCountry(countryCode);
   const provinceLabel = getProvinceLabel(countryCode);
@@ -215,28 +215,28 @@ export default function Register() {
 
   const validateCurrentStep = () => {
     if (currentStep === 0 && (!userType || !fullName.trim())) {
-      setErrorMessage('Preencha o tipo de conta e o nome completo.');
+      setErrorMessage(t('register.validationProfile'));
       return false;
     }
     if (currentStep === 0 && userType === 'motorista' && (!loadCapacity || Number(loadCapacity) <= 0)) {
-      setErrorMessage('Indique a capacidade de carga do seu veículo (kg).');
+      setErrorMessage(t('register.validationCapacity'));
       return false;
     }
     if (currentStep === 1 && (!email.trim() || !phone.trim() || !selectedProvince || !selectedMunicipality)) {
-      setErrorMessage('Preencha email, telefone, província e município.');
+      setErrorMessage(t('register.validationContact'));
       return false;
     }
     if (currentStep === 2) {
       if (password.length < MIN_PASSWORD) {
-        setErrorMessage(`A senha deve ter pelo menos ${MIN_PASSWORD} caracteres.`);
+        setErrorMessage(t('register.validationPassword', { length: MIN_PASSWORD }));
         return false;
       }
       if (password !== confirmPassword) {
-        setErrorMessage('As senhas não coincidem.');
+        setErrorMessage(t('register.validationPasswordMatch'));
         return false;
       }
       if (wasReferred === 'sim' && !agentCodeValid) {
-        setErrorMessage('Código de agente inválido.');
+        setErrorMessage(t('register.validationAgent'));
         return false;
       }
     }
@@ -265,7 +265,7 @@ export default function Register() {
 
     if (verificationChannel !== 'email' && !authPhone) {
       setVerificationModalVisible(false);
-      setErrorMessage('Introduza um número angolano válido para verificar por SMS.');
+      setErrorMessage(t('register.validationPhone'));
       setCurrentStep(1);
       return;
     }
@@ -302,8 +302,8 @@ export default function Register() {
       if (error) {
         setErrorMessage(
           error.message?.includes('already registered')
-            ? 'Este email já está registrado. Tente fazer login.'
-            : error.message || 'Não foi possível criar a conta.'
+            ? t('register.accountExists')
+            : error.message || t('register.signupError')
         );
         return;
       }
@@ -317,7 +317,7 @@ export default function Register() {
         },
       } as any);
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Erro inesperado ao criar conta.');
+      setErrorMessage(err?.message || t('register.unexpectedError'));
     } finally {
       setLoading(false);
     }
@@ -330,7 +330,7 @@ export default function Register() {
 
   const handleGoogleRegister = async () => {
     if (!userType) {
-      setErrorMessage('Escolha o tipo de conta antes de continuar com o Google.');
+      setErrorMessage(t('register.validationGoogle'));
       return;
     }
 
@@ -383,7 +383,7 @@ export default function Register() {
               disabled={loading}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Voltar"
+              accessibilityLabel={t('login.back')}
             >
               <Icon name="chevron-left" size={19} color={COLORS.text} />
             </TouchableOpacity>
@@ -393,10 +393,10 @@ export default function Register() {
           <View style={styles.header}>
             <Image source={LOGO} resizeMode="contain" style={styles.logo} accessibilityLabel="AgriLink" />
             <Animated.Text entering={enter(250)} style={styles.title}>
-              Cria a tua conta
+              {t('register.title')}
             </Animated.Text>
             <Animated.Text entering={enter(330)} style={styles.subtitle}>
-              Leva menos de dois minutos.
+              {t('register.subtitle')}
             </Animated.Text>
           </View>
 
@@ -441,8 +441,8 @@ export default function Register() {
             <View style={styles.stepRow}>
               <Text style={styles.stepHint}>{steps[currentStep].hint}</Text>
               <View style={styles.stepBadge}>
-                <Text style={styles.stepBadgeText}>
-                  Passo {currentStep + 1} de {steps.length}
+                      <Text style={styles.stepBadgeText}>
+                        {t('register.stepCount', { current: currentStep + 1, total: steps.length })}
                 </Text>
               </View>
             </View>
@@ -452,7 +452,7 @@ export default function Register() {
           {currentStep === 0 && (
             <Animated.View key="step-0" entering={FadeInRight.duration(350)} style={styles.stepBody}>
               <View>
-                <Text style={styles.label}>Tipo de conta</Text>
+                <Text style={styles.label}>{t('register.accountType')}</Text>
                 <View style={styles.userTypeRow}>
                   {userTypeOptions.map((opt) => {
                     const active = userType === opt.id;
@@ -467,7 +467,7 @@ export default function Register() {
                           <Icon name={opt.icon} size={19} color={active ? '#FFFFFF' : COLORS.primary} />
                         </View>
                         <Text style={[styles.userTypeLabel, active && styles.userTypeLabelActive]}>
-                          {opt.label}
+                          {t(`register.${opt.id === 'agricultor' ? 'supplier' : opt.id === 'agente' ? 'agent' : opt.id === 'comprador' ? 'buyer' : 'driver'}`)}
                         </Text>
                       </PressScale>
                     );
@@ -481,23 +481,17 @@ export default function Register() {
                 disabled={busy}
                 style={[styles.googleButton, busy && styles.disabled]}
               >
-                {googleLoading ? (
-                  <ActivityIndicator size="small" color={COLORS.text} />
-                ) : (
-                  <>
-                    <Text style={styles.googleMark}>G</Text>
-                    <Text style={styles.googleButtonText}>Continuar com o Google</Text>
-                  </>
-                )}
+                <Text style={styles.googleMark}>G</Text>
+                <Text style={styles.googleButtonText}>{googleLoading ? 'A ligar ao Google…' : t('register.continueGoogle')}</Text>
               </TouchableOpacity>
 
               <View>
-                <Text style={styles.label}>Nome completo</Text>
+                <Text style={styles.label}>{t('register.fullName')}</Text>
                 <Field icon="user" focused={focused === 'name'}>
                   <TextInput
                     value={fullName}
                     onChangeText={setFullName}
-                    placeholder="Nome completo"
+                    placeholder={t('register.fullName')}
                     placeholderTextColor={COLORS.faint}
                     style={styles.input}
                     {...focusProps('name')}
@@ -507,9 +501,9 @@ export default function Register() {
 
               <View>
                 <View style={styles.labelRow}>
-                  <Text style={[styles.label, { marginBottom: 0 }]}>Documento de identidade (NIF)</Text>
+                  <Text style={[styles.label, { marginBottom: 0 }]}>{t('register.identityDocument')}</Text>
                   <View style={styles.optionalBadge}>
-                    <Text style={styles.optionalText}>Opcional</Text>
+                    <Text style={styles.optionalText}>{t('register.optional')}</Text>
                   </View>
                 </View>
                 <Field icon="card" focused={focused === 'nif'}>
@@ -526,14 +520,14 @@ export default function Register() {
                 <View style={styles.hintBox}>
                   <Icon name="info" size={15} color={COLORS.gold} />
                   <Text style={styles.hintText}>
-                    Não tens o número à mão? Deixa em branco, preenchemos automaticamente. Podes atualizar depois no perfil.
+                    {t('register.nifHint')}
                   </Text>
                 </View>
               </View>
 
               {userType === 'motorista' && (
                 <Animated.View entering={FadeInDown.duration(350)}>
-                  <Text style={styles.label}>Capacidade de carga (kg)</Text>
+                  <Text style={styles.label}>{t('register.loadCapacity')}</Text>
                   <Field icon="truck" focused={focused === 'load'}>
                     <TextInput
                       value={loadCapacity}
@@ -548,7 +542,7 @@ export default function Register() {
                   <View style={styles.hintBox}>
                     <Icon name="info" size={15} color={COLORS.gold} />
                     <Text style={styles.hintText}>
-                      Usamos esta capacidade para mostrar apenas cargas compatíveis com o seu veículo.
+                      {t('register.capacityHint')}
                     </Text>
                   </View>
                 </Animated.View>
@@ -560,7 +554,7 @@ export default function Register() {
           {currentStep === 1 && (
             <Animated.View key="step-1" entering={FadeInRight.duration(350)} style={styles.stepBody}>
               <View>
-                <Text style={styles.label}>Email</Text>
+                <Text style={styles.label}>{t('register.email')}</Text>
                 <Field icon="mail" focused={focused === 'email'}>
                   <TextInput
                     value={email}
@@ -577,7 +571,7 @@ export default function Register() {
               </View>
 
               <View>
-                <Text style={styles.label}>Telefone</Text>
+                <Text style={styles.label}>{t('register.phone')}</Text>
                 <Field icon="phone" focused={focused === 'phone'}>
                   <TextInput
                     value={phone}
@@ -601,7 +595,7 @@ export default function Register() {
                       setSelectedMunicipality('');
                     }}
                   >
-                    <Picker.Item label="Selecionar província" value="" />
+                    <Picker.Item label={t('register.selectProvince')} value="" />
                     {availableProvinces.map((p) => (
                       <Picker.Item key={p.id} label={p.name} value={p.id} />
                     ))}
@@ -617,7 +611,7 @@ export default function Register() {
                     selectedValue={selectedMunicipality}
                     onValueChange={setSelectedMunicipality}
                   >
-                    <Picker.Item label="Selecionar município" value="" />
+                    <Picker.Item label={t('register.selectMunicipality')} value="" />
                     {availableMunicipalities.map((m) => (
                       <Picker.Item key={m.id} label={m.name} value={m.id} />
                     ))}
@@ -631,12 +625,12 @@ export default function Register() {
           {currentStep === 2 && (
             <Animated.View key="step-2" entering={FadeInRight.duration(350)} style={styles.stepBody}>
               <View>
-                <Text style={styles.label}>Senha</Text>
+                <Text style={styles.label}>{t('register.password')}</Text>
                 <Field icon="lock" focused={focused === 'pass'}>
                   <TextInput
                     value={password}
                     onChangeText={setPassword}
-                    placeholder={`Mínimo ${MIN_PASSWORD} caracteres`}
+                    placeholder={t('register.passwordMinimum', { length: MIN_PASSWORD })}
                     placeholderTextColor={COLORS.faint}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
@@ -650,12 +644,12 @@ export default function Register() {
               </View>
 
               <View>
-                <Text style={styles.label}>Confirmar senha</Text>
+                <Text style={styles.label}>{t('register.confirmPassword')}</Text>
                 <Field icon="lock" focused={focused === 'confirm'}>
                   <TextInput
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
-                    placeholder="Repita a senha"
+                    placeholder={t('register.repeatPassword')}
                     placeholderTextColor={COLORS.faint}
                     secureTextEntry={!showConfirmPassword}
                     autoCapitalize="none"
@@ -672,7 +666,7 @@ export default function Register() {
               </View>
 
               <View>
-                <Text style={styles.label}>Foi indicado por um agente AgriLink?</Text>
+                <Text style={styles.label}>{t('register.referred')}</Text>
                 <View style={styles.radioGroup}>
                   {(['nao', 'sim'] as const).map((v) => {
                     const active = wasReferred === v;
@@ -687,7 +681,7 @@ export default function Register() {
                           {active && <View style={styles.radioInner} />}
                         </View>
                         <Text style={[styles.radioLabel, active && { color: COLORS.primaryDark }]}>
-                          {v === 'nao' ? 'Não' : 'Sim'}
+                          {v === 'nao' ? t('register.no') : t('register.yes')}
                         </Text>
                       </PressScale>
                     );
@@ -698,7 +692,7 @@ export default function Register() {
                   <Animated.View entering={FadeInDown.duration(350)} style={{ marginTop: 12 }}>
                     <Field icon="key" focused={focused === 'agent'}>
                       <TextInput
-                        placeholder="Código de 6 dígitos"
+                        placeholder={t('register.agentCodePlaceholder')}
                         placeholderTextColor={COLORS.faint}
                         value={agentCode}
                         onChangeText={(v) => {
@@ -712,17 +706,17 @@ export default function Register() {
                         {...focusProps('agent')}
                       />
                     </Field>
-                    {validatingCode && <ActivityIndicator style={{ marginTop: 8 }} color={COLORS.primary} />}
+                    {validatingCode && <Text style={styles.validatingCode}>A validar o código…</Text>}
                     {agentCodeValid === false && (
                       <View style={styles.codeRow}>
                         <Icon name="close-circle" size={15} color={COLORS.danger} />
-                        <Text style={styles.invalidCode}>Código inválido</Text>
+                        <Text style={styles.invalidCode}>{t('register.invalidAgent')}</Text>
                       </View>
                     )}
                     {agentCodeValid === true && (
                       <View style={styles.codeRow}>
                         <Icon name="check-circle" size={15} color={COLORS.primary} />
-                        <Text style={styles.validCode}>Código válido</Text>
+                        <Text style={styles.validCode}>{t('register.validAgent')}</Text>
                       </View>
                     )}
                   </Animated.View>
@@ -744,24 +738,20 @@ export default function Register() {
               containerStyle={{ flex: 1 }}
               style={[styles.submitBtn, loading && styles.disabled]}
             >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <Text style={styles.submitText}>
-                    {currentStep === steps.length - 1 ? 'Criar conta' : 'Continuar'}
-                  </Text>
-                  <Icon name="arrow-right" size={17} color="#FFFFFF" />
-                </>
-              )}
+              <>
+                <Text style={styles.submitText}>
+                  {loading ? 'A processar…' : currentStep === steps.length - 1 ? t('register.finish') : t('register.next')}
+                </Text>
+                <Icon name="arrow-right" size={17} color="#FFFFFF" />
+              </>
             </PressScale>
           </View>
 
           {/* LOGIN */}
           <View style={styles.loginRow}>
-            <Text style={styles.loginText}>Já tem uma conta?</Text>
+            <Text style={styles.loginText}>{t('register.alreadyAccount')}</Text>
             <TouchableOpacity onPress={() => router.replace('/login')} disabled={loading} hitSlop={8}>
-              <Text style={styles.loginLink}>Faça login</Text>
+              <Text style={styles.loginLink}>{t('register.login')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -769,13 +759,13 @@ export default function Register() {
 
           {/* TERMOS E FOOTER */}
           <Text style={styles.legalText}>
-            Ao criar conta, aceita os nossos{' '}
+            {t('register.legalIntro')}{' '}
             <Text style={styles.legalLink} onPress={() => router.push('/termos')}>
-              Termos de Utilização
+              {t('login.terms')}
             </Text>{' '}
             e a{' '}
             <Text style={styles.legalLink} onPress={() => router.push('/privacidade')}>
-              Política de Privacidade
+              {t('login.privacy')}
             </Text>
             .
           </Text>
@@ -797,15 +787,15 @@ export default function Register() {
             <View style={styles.modalIcon}>
               <Icon name="shield" size={19} color={COLORS.primary} />
             </View>
-            <Text style={styles.modalTitle}>Como quer verificar a conta?</Text>
+            <Text style={styles.modalTitle}>{t('register.verifyTitle')}</Text>
             <Text style={styles.modalDescription}>
-              Basta confirmar um contacto para ativar a conta. Pode confirmar o segundo depois.
+              {t('register.verifyDescription')}
             </Text>
 
             {([
-              { id: 'email', label: 'E-mail', detail: email.trim().toLowerCase(), icon: 'mail' as IconName },
-              { id: 'phone', label: 'Telemóvel', detail: phone.trim(), icon: 'phone' as IconName },
-              { id: 'both', label: 'Ambos', detail: 'Telemóvel primeiro; e-mail opcional', icon: 'check-circle' as IconName },
+              { id: 'email', label: t('register.emailRecommended'), detail: email.trim().toLowerCase(), icon: 'mail' as IconName },
+              { id: 'phone', label: t('register.phoneChannel'), detail: phone.trim(), icon: 'phone' as IconName },
+              { id: 'both', label: t('register.bothChannels'), detail: t('register.phoneFirst'), icon: 'check-circle' as IconName },
             ] as const).map((option) => {
               const selected = verificationChannel === option.id;
               return (
@@ -831,10 +821,10 @@ export default function Register() {
               disabled={loading}
               style={[styles.modalContinue, loading && styles.disabled]}
             >
-              {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.modalContinueText}>Enviar código</Text>}
+              <Text style={styles.modalContinueText}>{loading ? 'A enviar…' : t('register.sendCode')}</Text>
             </PressScale>
             <TouchableOpacity onPress={() => setVerificationModalVisible(false)} disabled={loading} style={styles.modalCancel}>
-              <Text style={styles.modalCancelText}>Agora não</Text>
+              <Text style={styles.modalCancelText}>{t('register.notNow')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1016,6 +1006,7 @@ const styles = StyleSheet.create({
   radioLabel: { fontSize: 13.5, fontWeight: '800', color: COLORS.mid },
 
   codeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  validatingCode: { marginTop: 8, fontSize: 12, fontWeight: '600', color: COLORS.muted },
   invalidCode: { fontSize: 12, fontWeight: '700', color: COLORS.danger },
   validCode: { fontSize: 12, fontWeight: '700', color: COLORS.primaryDark },
 

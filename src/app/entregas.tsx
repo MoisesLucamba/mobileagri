@@ -3,7 +3,6 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     Linking,
     RefreshControl,
@@ -17,8 +16,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Icon from '../components/Icon';
+import BottomToolbar from '../components/BottomToolbar';
 import MapViewer, { MapViewerCoords } from '../components/MapViewer';
 import RoleGuard from '../components/RoleGuard';
+import ProcessingScreen from '../components/ProcessingScreen';
 import { supabase } from '../lib/supabase';
 
 // Mesma paleta do ProductCard
@@ -320,13 +321,15 @@ function CargasScreen() {
   ).length;
   const mineCount = loads.filter((l) => l.driver_id && l.driver_id === userId).length;
 
+  if (loading) return <ProcessingScreen />;
+
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 40 }}
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 96 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
@@ -405,13 +408,6 @@ function CargasScreen() {
               );
             })}
           </View>
-
-          {loading && (
-            <View style={{ alignItems: 'center', padding: 48 }}>
-              <ActivityIndicator color={COLORS.primary} />
-              <Text style={{ color: COLORS.muted, marginTop: 8, fontSize: 12 }}>A carregar cargas…</Text>
-            </View>
-          )}
 
           {!loading && visible.length === 0 && (
             <View style={styles.emptyCard}>
@@ -536,16 +532,10 @@ function CargasScreen() {
                       activeOpacity={0.85}
                       style={[styles.actionBtn, (tooHeavy || capacityMissing) && styles.actionBtnDisabled]}
                     >
-                      {busyId === load.id ? (
-                        <ActivityIndicator color="#fff" />
-                      ) : (
-                        <>
-                          <Text style={[styles.actionText, (tooHeavy || capacityMissing) && { color: COLORS.muted }]}>
-                            {capacityMissing ? 'Capacidade em falta' : tooHeavy ? 'Capacidade insuficiente' : 'Aceitar carga'}
-                          </Text>
-                          {!tooHeavy && !capacityMissing && <Icon name="arrow-right" size={17} color="#FFFFFF" />}
-                        </>
-                      )}
+                      <Text style={[styles.actionText, (tooHeavy || capacityMissing) && { color: COLORS.muted }]}>
+                        {capacityMissing ? 'Capacidade em falta' : tooHeavy ? 'Capacidade insuficiente' : busyId === load.id ? 'A aceitar…' : 'Aceitar carga'}
+                      </Text>
+                      {!tooHeavy && !capacityMissing && <Icon name="arrow-right" size={17} color="#FFFFFF" />}
                     </TouchableOpacity>
                   ) : load.status === 'accepted' || load.status === 'in_transit' ? (
                     <TouchableOpacity
@@ -554,20 +544,14 @@ function CargasScreen() {
                       activeOpacity={0.85}
                       style={[styles.actionBtn, styles.actionBtnOutline]}
                     >
-                      {busyId === load.id ? (
-                        <ActivityIndicator color={COLORS.primary} />
-                      ) : (
-                        <>
-                          <Icon
-                            name={load.status === 'accepted' ? 'navigation' : 'check-circle'}
-                            size={17}
-                            color={COLORS.primary}
-                          />
-                          <Text style={[styles.actionText, { color: COLORS.primary }]}>
-                            {load.status === 'accepted' ? 'Iniciar transporte' : 'Marcar como entregue'}
-                          </Text>
-                        </>
-                      )}
+                      <Icon
+                        name={load.status === 'accepted' ? 'navigation' : 'check-circle'}
+                        size={17}
+                        color={COLORS.primary}
+                      />
+                      <Text style={[styles.actionText, { color: COLORS.primary }]}>
+                        {busyId === load.id ? 'A atualizar…' : load.status === 'accepted' ? 'Iniciar transporte' : 'Marcar como entregue'}
+                      </Text>
                     </TouchableOpacity>
                   ) : null}
                 </View>
@@ -586,6 +570,7 @@ function CargasScreen() {
         subtitle={routeLoad ? `${routeLoad.origin_label} → ${routeLoad.destination_label}` : undefined}
         onClose={() => setRouteLoad(null)}
       />
+      <BottomToolbar />
     </View>
   );
 }

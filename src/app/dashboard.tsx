@@ -1,7 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
     RefreshControl,
     ScrollView,
     StatusBar,
@@ -13,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AdminOnly from '../components/AdminOnly';
 import Icon from '../components/Icon';
+import ProcessingScreen from '../components/ProcessingScreen';
 import { AgrilinkAd, loadAgrilinkAds } from '../lib/agrilinkAds';
 
 const COLORS = {
@@ -52,6 +52,8 @@ function DashboardContent() {
 
   const activeCount = ads.filter((ad) => ad.status === 'active').length;
   const totalRatings = ads.reduce((total, ad) => total + Number(ad.rating_count || 0), 0);
+
+  if (loading) return <ProcessingScreen />;
 
   return (
     <View style={styles.screen}>
@@ -116,9 +118,7 @@ function DashboardContent() {
           </TouchableOpacity>
         </View>
 
-        {loading ? (
-          <ActivityIndicator style={{ marginTop: 28 }} color={COLORS.primary} />
-        ) : error ? (
+        {error ? (
           <Text style={styles.emptyText}>{error}</Text>
         ) : ads.length === 0 ? (
           <View style={styles.emptyState}>

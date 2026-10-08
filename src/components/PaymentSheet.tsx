@@ -1188,7 +1188,7 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
 /* Estilos — planos, cantos pequenos, bordas finas, sombras mínimas */
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: "flex-end", alignItems: "center" },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(22,35,28,0.55)" },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(22,35,28,0.55)" },
   sheet: {
     backgroundColor: COLORS.surface,
     borderTopLeftRadius: 16,

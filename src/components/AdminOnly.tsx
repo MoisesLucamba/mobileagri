@@ -1,8 +1,9 @@
 import { useRouter } from 'expo-router';
 import { ReactNode, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { isAgrilinkAdmin } from '../lib/agrilinkAds';
 import Icon from './Icon';
+import ProcessingScreen from './ProcessingScreen';
 
 export default function AdminOnly({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -19,12 +20,7 @@ export default function AdminOnly({ children }: { children: ReactNode }) {
   }, []);
 
   if (status === 'checking') {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.body}>A confirmar permissões de administrador…</Text>
-      </View>
-    );
+    return <ProcessingScreen />;
   }
 
   if (status === 'denied') {

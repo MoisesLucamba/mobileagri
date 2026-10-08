@@ -1,25 +1,13 @@
-import { Stack, usePathname } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { Stack } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import '../../global.css';
 import ProcessingScreen from '../components/ProcessingScreen';
+import i18n, { isAppLanguage, LANGUAGE_STORAGE_KEY } from '../constants/i18n';
 import { RoleProvider } from '../context/RoleContext';
 
 function RootNavigator() {
-  const pathname = usePathname();
-  const [isProcessing, setIsProcessing] = useState(true);
-  const hasLoadedFirstRoute = useRef(false);
-
-  useEffect(() => {
-    const isFirstRoute = !hasLoadedFirstRoute.current;
-    hasLoadedFirstRoute.current = true;
-    setIsProcessing(true);
-
-    const timer = setTimeout(() => setIsProcessing(false), isFirstRoute ? 850 : 360);
-
-    return () => clearTimeout(timer);
-  }, [pathname]);
-
   return (
     <View style={styles.root}>
       <Stack screenOptions={{ headerShown: false }}>
@@ -31,6 +19,7 @@ function RootNavigator() {
         <Stack.Screen name="reset-password" />
         <Stack.Screen name="profile" />
         <Stack.Screen name="profile/[id]" />
+        <Stack.Screen name="product/[id]" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="dashboard" />
         <Stack.Screen name="agrilink-ads" />
@@ -45,15 +34,34 @@ function RootNavigator() {
         <Stack.Screen name="seguranca" />
         <Stack.Screen name="historicopagamentos" />
       </Stack>
-      {isProcessing && <ProcessingScreen />}
     </View>
   );
 }
 
 export default function RootLayout() {
+  const [languageReady, setLanguageReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(LANGUAGE_STORAGE_KEY)
+      .then(async (savedLanguage) => {
+        if (isAppLanguage(savedLanguage)) await i18n.changeLanguage(savedLanguage);
+      })
+      .catch((error) => {
+        console.warn('[i18n] Não foi possível carregar o idioma guardado:', error);
+      })
+      .finally(() => {
+        if (mounted) setLanguageReady(true);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <RoleProvider>
-      <RootNavigator />
+      {languageReady ? <RootNavigator /> : <ProcessingScreen />}
     </RoleProvider>
   );
 }

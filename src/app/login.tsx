@@ -1,8 +1,8 @@
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
@@ -139,6 +139,7 @@ function Field({
 }
 
 export default function LoginScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const passwordRef = useRef<TextInput>(null);
@@ -163,8 +164,8 @@ export default function LoginScreen() {
     } catch (error: any) {
       console.log('Erro Google:', error);
       Alert.alert(
-        'Erro ao entrar com o Google',
-        error?.message || 'Tente novamente dentro de instantes.'
+        t('login.googleErrorTitle'),
+        error?.message || t('login.googleError')
       );
     } finally {
       setGoogleLoading(false);
@@ -176,12 +177,12 @@ export default function LoginScreen() {
   // ================================
   const handleSubmit = async () => {
     if (!email.trim()) {
-      Alert.alert('Atenção', 'Introduza o seu e-mail ou telefone.');
+      Alert.alert(t('login.attention'), t('login.enterEmailOrPhone'));
       return;
     }
 
     if (!password) {
-      Alert.alert('Atenção', 'Por favor, introduza a sua palavra-passe.');
+      Alert.alert(t('login.attention'), t('login.enterPasswordError'));
       return;
     }
 
@@ -191,7 +192,7 @@ export default function LoginScreen() {
       const identifier = email.trim();
       const phoneCredential = identifier.includes('@') ? null : normalizeAngolaAuthPhone(identifier);
       if (!identifier.includes('@') && !phoneCredential) {
-        Alert.alert('Telefone inválido', 'Use um número angolano válido, por exemplo 923 456 789.');
+        Alert.alert(t('login.invalidPhone'), t('login.invalidPhoneHint'));
         return;
       }
 
@@ -204,9 +205,9 @@ export default function LoginScreen() {
         console.log('Erro de login:', error);
 
         if (error.message === 'Invalid login credentials') {
-          Alert.alert('Erro ao entrar', 'E-mail ou palavra-passe incorretos.');
+          Alert.alert(t('login.errorTitle'), t('login.invalidCredentials'));
         } else {
-          Alert.alert('Erro ao entrar', error.message);
+          Alert.alert(t('login.errorTitle'), error.message);
         }
         return;
       }
@@ -214,11 +215,11 @@ export default function LoginScreen() {
       if (data.session) {
         router.replace('/home');
       } else {
-        Alert.alert('Erro', 'Não foi possível iniciar a sessão.');
+        Alert.alert(t('login.errorTitle'), t('login.sessionError'));
       }
     } catch (error) {
       console.log('Erro inesperado:', error);
-      Alert.alert('Erro', 'Ocorreu um erro inesperado. Tente novamente.');
+      Alert.alert(t('login.errorTitle'), t('login.unexpectedError'));
     } finally {
       setLoading(false);
     }
@@ -230,7 +231,7 @@ export default function LoginScreen() {
   const handleForgotPassword = async () => {
     const recoveryEmail = email.trim().toLowerCase();
     if (!recoveryEmail.includes('@')) {
-      Alert.alert('Recuperar palavra-passe', 'Introduza primeiro o seu e-mail.');
+      Alert.alert(t('login.recoverPassword'), t('login.enterEmailFirst'));
       return;
     }
 
@@ -241,17 +242,17 @@ export default function LoginScreen() {
       const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, { redirectTo });
 
       if (error) {
-        Alert.alert('Erro', error.message);
+        Alert.alert(t('login.errorTitle'), error.message);
         return;
       }
 
       Alert.alert(
-        'E-mail enviado',
-        'Enviámos um link de recuperação. Abra-o no AgriLink para definir a nova palavra-passe.'
+        t('login.emailSent'),
+        t('login.recoveryLinkSent')
       );
     } catch (error) {
       console.log('Erro ao recuperar password:', error);
-      Alert.alert('Erro', 'Não foi possível enviar o e-mail de recuperação.');
+      Alert.alert(t('login.errorTitle'), t('login.recoveryError'));
     } finally {
       setLoading(false);
     }
@@ -287,7 +288,7 @@ export default function LoginScreen() {
               disabled={busy}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Voltar"
+              accessibilityLabel={t('login.back')}
             >
               <Icon name="chevron-left" size={19} color={COLORS.text} />
             </TouchableOpacity>
@@ -297,10 +298,10 @@ export default function LoginScreen() {
           <View style={styles.header}>
             <Image source={LOGO} resizeMode="contain" style={styles.logo} accessibilityLabel="AgriLink" />
             <Animated.Text entering={enter(250)} style={styles.title}>
-              Bem-vindo de volta
+              {t('login.welcome')}
             </Animated.Text>
             <Animated.Text entering={enter(330)} style={styles.subtitle}>
-              Entre na sua conta para continuar
+              {t('login.subtitle')}
             </Animated.Text>
           </View>
 
@@ -310,7 +311,7 @@ export default function LoginScreen() {
             <Field icon="mail" focused={focused === 'email'}>
               <TextInput
                 style={styles.input}
-                placeholder="E-mail ou telefone"
+                placeholder={t('login.emailOrPhone')}
                 placeholderTextColor={COLORS.faint}
                 value={email}
                 onChangeText={setEmail}
@@ -328,12 +329,12 @@ export default function LoginScreen() {
 
           {/* PASSWORD */}
           <Animated.View entering={enter(500)} style={styles.inputContainer}>
-            <Text style={styles.label}>Palavra-passe</Text>
+            <Text style={styles.label}>{t('login.password')}</Text>
             <Field icon="lock" focused={focused === 'password'}>
               <TextInput
                 ref={passwordRef}
                 style={styles.input}
-                placeholder="Digite a sua palavra-passe"
+                placeholder={t('login.enterPassword')}
                 placeholderTextColor={COLORS.faint}
                 value={password}
                 onChangeText={setPassword}
@@ -350,7 +351,7 @@ export default function LoginScreen() {
                 style={styles.eyeButton}
                 onPress={() => setShowPassword(!showPassword)}
                 disabled={busy}
-                accessibilityLabel={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
+                accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
               >
                 <Icon name={showPassword ? 'eye-off' : 'eye'} size={18} color={COLORS.muted} />
               </TouchableOpacity>
@@ -359,7 +360,7 @@ export default function LoginScreen() {
 
           <Animated.View entering={enter(560)} style={styles.forgotWrap}>
             <TouchableOpacity onPress={handleForgotPassword} disabled={busy} hitSlop={8}>
-              <Text style={styles.forgotText}>Esqueci a minha palavra-passe</Text>
+              <Text style={styles.forgotText}>{t('login.forgotPassword')}</Text>
             </TouchableOpacity>
           </Animated.View>
 
@@ -370,21 +371,17 @@ export default function LoginScreen() {
               disabled={busy}
               style={[styles.loginButton, busy && styles.disabled]}
             >
-              {loading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Text style={styles.loginButtonText}>Entrar</Text>
-                  <Icon name="arrow-right" size={17} color="#FFFFFF" />
-                </>
-              )}
+              <>
+                <Text style={styles.loginButtonText}>{loading ? 'A entrar…' : t('login.enter')}</Text>
+                <Icon name="arrow-right" size={17} color="#FFFFFF" />
+              </>
             </PressScale>
           </Animated.View>
 
           {/* DIVISOR */}
           <Animated.View entering={enter(680)} style={styles.dividerContainer}>
             <View style={styles.divider} />
-            <Text style={styles.dividerText}>ou</Text>
+            <Text style={styles.dividerText}>{t('login.or')}</Text>
             <View style={styles.divider} />
           </Animated.View>
 
@@ -395,22 +392,16 @@ export default function LoginScreen() {
               disabled={busy}
               style={[styles.googleButton, busy && styles.disabled]}
             >
-              {googleLoading ? (
-                <ActivityIndicator size="small" color={COLORS.text} />
-              ) : (
-                <>
-                  <GoogleLogo size={18} />
-                  <Text style={styles.googleButtonText}>Continuar com o Google</Text>
-                </>
-              )}
+              <GoogleLogo size={18} />
+              <Text style={styles.googleButtonText}>{googleLoading ? 'A ligar ao Google…' : t('login.continueGoogle')}</Text>
             </PressScale>
           </Animated.View>
 
           {/* REGISTO */}
           <Animated.View entering={enter(800)} style={styles.registerContainer}>
-            <Text style={styles.registerText}>Ainda não tem uma conta?</Text>
+            <Text style={styles.registerText}>{t('login.noAccount')}</Text>
             <TouchableOpacity onPress={handleRegister} disabled={busy} hitSlop={8}>
-              <Text style={styles.registerLink}>Criar conta</Text>
+              <Text style={styles.registerLink}>{t('login.createAccount')}</Text>
             </TouchableOpacity>
           </Animated.View>
 
@@ -421,11 +412,11 @@ export default function LoginScreen() {
             <Text style={styles.legalText}>
               Ao continuar, aceita os nossos{' '}
               <Text style={styles.legalLink} onPress={() => router.push('/termos')}>
-                Termos de Utilização
+                {t('login.terms')}
               </Text>{' '}
               e a{' '}
               <Text style={styles.legalLink} onPress={() => router.push('/privacidade')}>
-                Política de Privacidade
+                {t('login.privacy')}
               </Text>
               .
             </Text>

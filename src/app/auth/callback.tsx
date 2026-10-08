@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import ProcessingScreen from '../../components/ProcessingScreen';
 
 import { supabase } from '../../lib/supabase';
 
@@ -40,9 +40,5 @@ export default function AuthCallback() {
     };
   }, []);
 
-  return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <ActivityIndicator size="large" color="#2E7D32" />
-    </View>
-  );
+  return <ProcessingScreen />;
 }

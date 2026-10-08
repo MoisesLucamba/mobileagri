@@ -29,13 +29,16 @@ const RoleContext = createContext<RoleContextValue>({
 });
 
 // Colunas onde o papel pode estar guardado
-const pickRole = (source?: Record<string, any> | null) =>
-  source?.user_type ??
-  source?.role ??
-  source?.user_role ??
-  source?.type ??
-  source?.account_type ??
-  null;
+const pickRole = (source?: Record<string, any> | null) => {
+  if (!source) return null;
+
+  for (const key of ["user_type", "role", "user_role", "type", "account_type"]) {
+    const value = source[key];
+    if (normalizeRole(value)) return value;
+  }
+
+  return null;
+};
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<UserRole | null>(null);
@@ -71,20 +74,25 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     try {
       let profile: Record<string, any> | null = null;
 
-      const byId = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-      profile = byId.data;
-
-      if (!profile) {
-        const byUserId = await supabase
-          .from("profiles")
+      for (const table of ["users", "profiles"] as const) {
+        const byId = await supabase
+          .from(table)
           .select("*")
-          .eq("user_id", user.id)
+          .eq("id", user.id)
           .maybeSingle();
-        profile = byUserId.data;
+        profile = byId.data;
+
+        if (!profile) {
+          const byUserId = await supabase
+            .from(table)
+            .select("*")
+            .eq("user_id", user.id)
+            .maybeSingle();
+          profile = byUserId.data;
+        }
+
+        if (pickRole(profile)) break;
+        profile = null;
       }
 
       if (req !== requestId.current) return; // resposta antiga

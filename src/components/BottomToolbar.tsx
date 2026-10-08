@@ -1,9 +1,10 @@
 import React from "react";
-import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from "react-native";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { usePathname, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserRole } from "../context/RoleContext";
 import { FALLBACK_ACTION, ROLE_ACTIONS } from "../constants/roleActions";
+import type { Href } from "expo-router";
 import Icon, { IconName } from "./Icon";
 
 // Mesma paleta do ProductCard
@@ -47,6 +48,8 @@ export default function BottomToolbar() {
   const { role, loading } = useUserRole();
 
   const action = role ? ROLE_ACTIONS[role] : FALLBACK_ACTION;
+  const homeRoute = role === "motorista" ? "/notifications" : "/home";
+  const homeIcon = role === "motorista" ? "bell" : "home";
   const bottom = Math.max(insets.bottom, 8) + 12;
   const isActive = (path: string) => pathname === path;
 
@@ -55,25 +58,23 @@ export default function BottomToolbar() {
       className="absolute left-[18px] right-[18px] z-[100] h-[58px] flex-row items-center justify-around rounded-[12px] bg-white"
       style={[s.bar, { bottom }]}
     >
-      <TabIcon active={isActive("/home")} icon="home" onPress={() => router.push("/home")} />
+      <TabIcon active={isActive(homeRoute)} icon={homeIcon} onPress={() => router.push(homeRoute as Href)} />
 
       <TabIcon active={isActive("/messages")} icon="message" onPress={() => router.push("/messages")} />
 
       <TouchableOpacity
         activeOpacity={0.85}
         disabled={loading}
-        onPress={() => router.push(action.route as any)}
+        onPress={() => {
+          if (!loading && pathname !== action.route) router.push(action.route as Href);
+        }}
         className="flex-1 items-center justify-center"
       >
         <View
           className="h-[38px] w-[38px] items-center justify-center rounded-[10px]"
           style={{ backgroundColor: loading ? COLORS.muted : action.color }}
         >
-          {loading ? (
-            <ActivityIndicator color={COLORS.white} size="small" />
-          ) : (
-            <Icon name={action.icon} size={19} color={COLORS.white} />
-          )}
+          <Icon name={action.icon} size={19} color={COLORS.white} />
         </View>
       </TouchableOpacity>
 

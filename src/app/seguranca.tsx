@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Animated,
   Easing,
@@ -24,6 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../lib/supabase";
 import Icon, { IconName } from "../components/Icon";
+import ProcessingScreen from "../components/ProcessingScreen";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -120,7 +120,7 @@ function ActionRow({
       disabled={!onPress || loading}
     >
       <View style={[styles.rowIcon, { backgroundColor: danger ? COLORS.dangerSoft : COLORS.soft }]}>
-        {loading ? <ActivityIndicator size="small" color={accent} /> : <Icon name={icon} size={18} color={accent} />}
+        <Icon name={icon} size={18} color={accent} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.rowTitle, danger && { color: COLORS.danger }]}>{title}</Text>
@@ -434,12 +434,7 @@ export default function SegurancaScreen() {
     : "—";
 
   if (loading) {
-    return (
-      <View style={[styles.screen, styles.center]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>A carregar...</Text>
-      </View>
-    );
+    return <ProcessingScreen />;
   }
 
   return (
@@ -566,11 +561,7 @@ export default function SegurancaScreen() {
                             disabled={savingPw}
                             activeOpacity={0.85}
                           >
-                            {savingPw ? (
-                              <ActivityIndicator color="#FFFFFF" />
-                            ) : (
-                              <Text style={styles.pillButtonText}>Guardar</Text>
-                            )}
+                            <Text style={styles.pillButtonText}>{savingPw ? "A guardar…" : "Guardar"}</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={[styles.pillOutline, { flex: 1 }]}

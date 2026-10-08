@@ -1,7 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import type { User } from '@supabase/supabase-js';
 import { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -16,6 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
 import { supabase } from '../lib/supabase';
+import { saveVerifiedUserProfile } from '../lib/verifiedProfile';
 
 const COLORS = {
   primary: '#16834A',
@@ -37,6 +39,7 @@ const isChannel = (value: string | undefined): value is Channel =>
   value === 'email' || value === 'phone' || value === 'both';
 
 export default function VerifyOtpScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ channel?: string; email?: string; phone?: string }>();
@@ -52,13 +55,14 @@ export default function VerifyOtpScreen() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [phoneVerified, setPhoneVerified] = useState(false);
+  const [verifiedUser, setVerifiedUser] = useState<User | null>(null);
 
   const primaryIsEmail = channel === 'email';
   const currentAddress = stage === 'email' ? email : primaryIsEmail ? email : phone;
   const destinationLabel = useMemo(() => {
-    if (stage === 'email') return email || 'o seu e-mail';
-    return primaryIsEmail ? email || 'o seu e-mail' : phone || 'o seu telefone';
-  }, [email, phone, primaryIsEmail, stage]);
+    if (stage === 'email') return email || t('auth.yourEmail');
+    return primaryIsEmail ? email || t('auth.yourEmail') : phone || t('auth.yourPhone');
+  }, [email, phone, primaryIsEmail, stage, t]);
 
   useEffect(() => {
     if (!channel || (channel !== 'email' && !phone) || (channel !== 'phone' && !email)) {
@@ -72,12 +76,21 @@ export default function VerifyOtpScreen() {
     return () => clearTimeout(timer);
   }, [cooldown]);
 
-  const goToApp = () => router.replace('/home');
+  const completeVerifiedAccount = async (user: User) => {
+    setVerifiedUser(user);
+    try {
+      await saveVerifiedUserProfile(user);
+      router.replace('/home');
+    } catch (profileError: unknown) {
+      const detail = profileError instanceof Error ? profileError.message : t('auth.profileSaveError');
+      setError(`${t('auth.profileSaveError')} ${detail}`);
+    }
+  };
 
   const verify = async () => {
     const token = code.replace(/\D/g, '');
     if (token.length !== 6) {
-      setError('Introduza o código de 6 dígitos.');
+      setError(t('auth.enterSixDigits'));
       return;
     }
 
@@ -92,8 +105,8 @@ export default function VerifyOtpScreen() {
           type: 'email_change',
         });
         if (verifyError) throw verifyError;
-        if (!data.session) throw new Error('Não foi possível iniciar a sessão após a confirmação.');
-        goToApp();
+        if (!data.session) throw new Error(t('auth.sessionError'));
+        await completeVerifiedAccount(data.session.user);
         return;
       }
 
@@ -104,8 +117,8 @@ export default function VerifyOtpScreen() {
           type: 'signup',
         });
         if (verifyError) throw verifyError;
-        if (!data.session) throw new Error('Não foi possível iniciar a sessão após a confirmação.');
-        goToApp();
+        if (!data.session) throw new Error(t('auth.sessionError'));
+        await completeVerifiedAccount(data.session.user);
         return;
       }
 
@@ -115,25 +128,56 @@ export default function VerifyOtpScreen() {
         type: 'sms',
       });
       if (verifyError) throw verifyError;
-      if (!data.session) throw new Error('Não foi possível iniciar a sessão após a confirmação.');
+      if (!data.session) throw new Error(t('auth.sessionError'));
 
       setPhoneVerified(true);
       if (channel === 'both') {
         const { error: emailError } = await supabase.auth.updateUser({ email: email! });
         if (emailError) {
-          setNotice('Telefone confirmado. A sua conta já está ativa; pode tentar confirmar o e-mail mais tarde.');
+          setNotice(t('auth.phoneConfirmed'));
           return;
         }
         setStage('email');
         setCode('');
         setCooldown(60);
-        setNotice('Telefone confirmado. Enviámos também um código para o e-mail; pode verificá-lo agora ou continuar com o telefone.');
+        setNotice(t('auth.emailAlsoSent'));
         return;
       }
 
-      goToApp();
+      await completeVerifiedAccount(data.session.user);
     } catch (verificationError: any) {
-      setError(verificationError?.message || 'Código inválido ou expirado. Peça um novo código.');
+      setError(verificationError?.message || t('auth.invalidCode'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retryProfileSave = async () => {
+    if (!verifiedUser) return;
+    setBusy(true);
+    setError('');
+    try {
+      await saveVerifiedUserProfile(verifiedUser);
+      router.replace('/home');
+    } catch (profileError: unknown) {
+      const detail = profileError instanceof Error ? profileError.message : t('auth.profileSaveError');
+      setError(`${t('auth.profileSaveError')} ${detail}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const continueWithVerifiedPhone = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const { data, error: sessionError } = await supabase.auth.getUser();
+      if (sessionError) throw sessionError;
+      if (!data.user) throw new Error(t('auth.profileSaveError'));
+      await completeVerifiedAccount(data.user);
+    } catch (profileError: unknown) {
+      const detail = profileError instanceof Error ? profileError.message : t('auth.profileSaveError');
+      setError(`${t('auth.profileSaveError')} ${detail}`);
     } finally {
       setBusy(false);
     }
@@ -158,7 +202,7 @@ export default function VerifyOtpScreen() {
       setCooldown(60);
       setNotice('Enviámos um novo código.');
     } catch (resendError: any) {
-      setError(resendError?.message || 'Não foi possível reenviar o código. Tente novamente mais tarde.');
+      setError(resendError?.message || t('auth.resendError'));
     } finally {
       setResending(false);
     }
@@ -184,16 +228,16 @@ export default function VerifyOtpScreen() {
       >
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/register')}>
           <Icon name="chevron-left" size={20} color={COLORS.text} />
-          <Text style={styles.backText}>Voltar ao cadastro</Text>
+          <Text style={styles.backText}>{t('auth.backToRegister')}</Text>
         </TouchableOpacity>
 
         <View style={styles.iconBadge}>
           <Icon name={stage === 'email' || primaryIsEmail ? 'mail' : 'phone'} size={26} color={COLORS.primary} />
         </View>
-        <Text style={styles.eyebrow}>SEGURANÇA DA CONTA</Text>
-        <Text style={styles.title}>{stage === 'email' ? 'Confirme o seu e-mail' : 'Confirme o seu contacto'}</Text>
+        <Text style={styles.eyebrow}>{t('auth.securityEyebrow')}</Text>
+        <Text style={styles.title}>{stage === 'email' || primaryIsEmail ? t('auth.confirmEmail') : t('auth.confirmContact')}</Text>
         <Text style={styles.description}>
-          Enviámos um código de 6 dígitos para{' '}
+          {t('auth.sentCode')}{' '}
           <Text style={styles.address}>{destinationLabel}</Text>.
         </Text>
 
@@ -206,7 +250,7 @@ export default function VerifyOtpScreen() {
 
         {!(phoneVerified && channel === 'both' && !email) && (
           <>
-            <Text style={styles.fieldLabel}>Código de verificação</Text>
+            <Text style={styles.fieldLabel}>{t('auth.codeLabel')}</Text>
             <TextInput
               value={code}
               onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))}
@@ -222,25 +266,28 @@ export default function VerifyOtpScreen() {
             />
 
             <Pressable style={[styles.verifyButton, busy && styles.disabled]} onPress={verify} disabled={busy}>
-              {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.verifyText}>Verificar código</Text>}
+              <Text style={styles.verifyText}>{busy ? 'A verificar…' : t('auth.verifyCode')}</Text>
             </Pressable>
 
             <TouchableOpacity onPress={resend} disabled={busy || resending || cooldown > 0} style={styles.resendButton}>
-              {resending ? (
-                <ActivityIndicator color={COLORS.primary} size="small" />
-              ) : (
-                <Text style={[styles.resendText, (cooldown > 0 || busy) && styles.resendDisabled]}>
-                  {cooldown > 0 ? `Reenviar código em ${cooldown}s` : 'Reenviar código'}
-                </Text>
-              )}
+              <Text style={[styles.resendText, (cooldown > 0 || busy) && styles.resendDisabled]}>
+                {resending ? 'A reenviar…' : cooldown > 0 ? t('auth.resendIn', { seconds: cooldown }) : t('auth.resendCode')}
+              </Text>
             </TouchableOpacity>
           </>
         )}
 
         {canFinishWithPhone && (
-          <Pressable style={styles.finishButton} onPress={goToApp}>
-            <Text style={styles.finishText}>Continuar com telefone confirmado</Text>
+          <Pressable style={styles.finishButton} onPress={continueWithVerifiedPhone} disabled={busy}>
+            <Text style={styles.finishText}>{t('auth.continuePhone')}</Text>
             <Icon name="arrow-right" size={18} color={COLORS.primary} />
+          </Pressable>
+        )}
+
+        {verifiedUser && (
+          <Pressable style={styles.finishButton} onPress={retryProfileSave} disabled={busy}>
+            <Text style={styles.finishText}>{t('auth.retryProfile')}</Text>
+            <Icon name="refresh" size={18} color={COLORS.primary} />
           </Pressable>
         )}
 
@@ -248,7 +295,7 @@ export default function VerifyOtpScreen() {
           <View style={styles.securityNote}>
             <Icon name="shield" size={16} color={COLORS.primary} />
             <Text style={styles.securityText}>
-              O telefone confirmado já ativa a sua conta. A confirmação do e-mail é opcional.
+              {t('auth.phoneConfirmedEmailOptional')}
             </Text>
           </View>
         )}

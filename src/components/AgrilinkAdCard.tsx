@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     Dimensions,
     Image,
@@ -110,13 +109,9 @@ export default function AgrilinkAdCard({ ad, currentUserId, onRequireLogin, onRa
               </TouchableOpacity>
             ))}
           </View>
-          {ratingBusy ? (
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          ) : (
-            <Text style={styles.ratingText}>
-              {Number(ad.rating_average || 0).toFixed(1)} · {ad.rating_count} {ad.rating_count === 1 ? 'avaliação' : 'avaliações'}
-            </Text>
-          )}
+          <Text style={styles.ratingText}>
+            {ratingBusy ? 'A guardar avaliação…' : `${Number(ad.rating_average || 0).toFixed(1)} · ${ad.rating_count} ${ad.rating_count === 1 ? 'avaliação' : 'avaliações'}`}
+          </Text>
         </View>
 
         <TouchableOpacity style={styles.openButton} activeOpacity={0.84} onPress={openAd}>

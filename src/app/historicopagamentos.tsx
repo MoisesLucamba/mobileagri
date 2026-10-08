@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,7 +9,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import ProcessingScreen from "../components/ProcessingScreen";
 import { useRouter } from "expo-router";
 import { useUserRole } from "../context/RoleContext";
 import { supabase } from "../lib/supabase";
@@ -478,15 +478,7 @@ export default function HistoryPurchasesPaymentsScreen() {
   ];
 
   if (roleLoading || (role !== null && loading)) {
-    return (
-      <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-        <View style={styles.loadingState}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.mutedText}>A preparar o teu histórico...</Text>
-        </View>
-      </SafeAreaView>
-    );
+    return <ProcessingScreen />;
   }
 
   if (!role || !roleInfo) {
@@ -526,7 +518,7 @@ export default function HistoryPurchasesPaymentsScreen() {
           accessibilityRole="button"
           accessibilityLabel="Atualizar histórico"
         >
-          {refreshing ? <ActivityIndicator size="small" color={COLORS.primary} /> : <Ionicons name="refresh-outline" size={19} color={COLORS.primary} />}
+          <Ionicons name="refresh-outline" size={19} color={COLORS.primary} />
         </Pressable>
       </View>
 

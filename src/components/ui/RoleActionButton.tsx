@@ -1,13 +1,12 @@
 
 import {
-    ActivityIndicator,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from "react-native";
 
-import { useRouter } from "expo-router";
+import { type Href, useRouter } from "expo-router";
 
 import { useUserRole } from "../../context/RoleContext";
 import Icon from "../Icon";
@@ -36,7 +35,7 @@ export default function RoleActionButton({
   function handlePress() {
     if (loading) return;
 
-    router.push(action.route as any);
+    router.push(action.route as Href);
   }
 
   return (
@@ -60,18 +59,11 @@ export default function RoleActionButton({
           },
         ]}
       >
-        {loading ? (
-          <ActivityIndicator
-            color="#FFFFFF"
-            size="small"
-          />
-        ) : (
-          <Icon
-            name={action.icon}
-            size={compact ? 20 : 26}
-            color="#FFFFFF"
-          />
-        )}
+        <Icon
+          name={action.icon}
+          size={compact ? 20 : 26}
+          color="#FFFFFF"
+        />
       </TouchableOpacity>
 
       {!compact && (

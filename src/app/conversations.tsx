@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   Modal,
@@ -13,7 +12,8 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import ProcessingScreen from "../components/ProcessingScreen";
 import { supabase } from "../lib/supabase";
 
 type Conversation = {
@@ -237,12 +237,7 @@ export default function ConversationsScreen() {
   };
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.mutedText}>A carregar conversas...</Text>
-      </SafeAreaView>
-    );
+    return <ProcessingScreen />;
   }
 
   return (
@@ -291,7 +286,6 @@ export default function ConversationsScreen() {
             <Ionicons name="close-circle" size={19} color={COLORS.muted} />
           </Pressable>
         )}
-        {searching && <ActivityIndicator size="small" color={COLORS.primary} />}
       </View>
 
       {userResults.length > 0 && searchTerm.trim() !== "" && (

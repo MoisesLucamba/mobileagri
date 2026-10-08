@@ -8,14 +8,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabase } from '../lib/supabase';
@@ -551,14 +550,8 @@ function FichaRecebimentoScreen() {
               disabled={loading}
               activeOpacity={0.85}
             >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-                  <Text style={styles.navBtnText}>Submeter Ficha</Text>
-                </>
-              )}
+              <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+              <Text style={styles.navBtnText}>{loading ? 'A submeter…' : 'Submeter Ficha'}</Text>
             </TouchableOpacity>
           )}
         </View>

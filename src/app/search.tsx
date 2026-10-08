@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Image,
@@ -19,6 +18,7 @@ import { supabase } from '../lib/supabase';
 import Icon, { IconName } from '../components/Icon';
 import ProductCard, { Product as CardProduct } from '@/components/ProductCard';
 import PaymentSheet from '@/components/PaymentSheet';
+import ProcessingScreen from '../components/ProcessingScreen';
 
 /* =========================================================
    TEMA — mesma paleta do Home e do ProductCard
@@ -872,15 +872,6 @@ export default function SearchPage() {
                 </View>
               ) : null}
 
-              {loading ? (
-                <View style={styles.loadingBox}>
-                  <View style={styles.loadingCircle}>
-                    <ActivityIndicator size="large" color={T.g600} />
-                  </View>
-                  <Text style={styles.loadingText}>A procurar...</Text>
-                </View>
-              ) : null}
-
               {nothingFound ? (
                 <View style={styles.emptyBox}>
                   <View style={styles.emptyIcon}>
@@ -915,6 +906,7 @@ export default function SearchPage() {
         onPaid={handlePaid}
         onViewHistory={handleViewHistory}
       />
+      {loading ? <ProcessingScreen /> : null}
     </SafeAreaView>
   );
 }
