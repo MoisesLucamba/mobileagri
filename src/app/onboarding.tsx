@@ -10,9 +10,10 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import Icon from '../components/Icon';
+import { useUserRole } from '../context/RoleContext';
 
 const COLORS = {
-  primary: '#1F6B3A',
+  primary: '#218B4A',
   accent: '#9BE07F',
   ink: '#08200F',
 };
@@ -21,6 +22,7 @@ const SPLASH_DURATION = 2000; // 2 segundos
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { isAuthenticated, isGuest, guestReady } = useUserRole();
 
   const logoOpacity = useSharedValue(0);
   const logoScale = useSharedValue(0.86);
@@ -43,9 +45,15 @@ export default function OnboardingScreen() {
     // fade-out suave antes de navegar
     screenOpacity.value = withDelay(SPLASH_DURATION - 300, withTiming(0, { duration: 300 }));
 
-    const timer = setTimeout(() => router.replace('/login'), SPLASH_DURATION);
-    return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!guestReady) return;
+
+    const destination = isAuthenticated || isGuest ? '/home' : '/login';
+    const timer = setTimeout(() => router.replace(destination), SPLASH_DURATION);
+    return () => clearTimeout(timer);
+  }, [guestReady, isAuthenticated, isGuest, router]);
 
   const screenStyle = useAnimatedStyle(() => ({ opacity: screenOpacity.value }));
   const logoStyle = useAnimatedStyle(() => ({

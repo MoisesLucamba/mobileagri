@@ -24,6 +24,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Icon, { IconName } from "../components/Icon";
+import UserConnectionsSummary from "../components/UserConnectionsSummary";
 import { normalizeRole } from "../constants/roleActions";
 import { useUserRole } from "../context/RoleContext";
 import i18n, { AppLanguage, changeAppLanguage, LANGUAGE_STORAGE_KEY } from "../constants/i18n";
@@ -33,15 +34,16 @@ import { isAgrilinkAdmin } from "../lib/agrilinkAds";
 
 const AVATAR = 88;
 const COVER_HEIGHT = 112;
+const COVER_PICKER_PENDING_KEY = "@agrilink/profile-cover-picker-pending";
 
 // =====================================================
 // BRANDING — cores inalteradas
 // =====================================================
 
 const COLORS = {
-  primary: "#2E8B4F",
-  white: "#FFFFFF",
-  secondary: "#25703F",
+  primary: "#218B4A",
+  white: "#FFFEFC",
+  secondary: "#218B4A",
   dark: "#16231C",
   deep: "#16231C",
   text: "#16231C",
@@ -49,7 +51,7 @@ const COLORS = {
   faint: "#AEB8AC",
   border: "#E8ECE6",
   field: "#F9FAF8",
-  background: "#F4F6F2",
+  background: "#F3F6F2",
   soft: "#E9F5EC",
   gold: "#B7833D",
   goldSoft: "#F5EEDF",
@@ -74,7 +76,9 @@ type UserProduct = {
   id: string;
   product_type: string;
   quantity: number;
-  harvest_date: string;
+  unit?: string | null;
+  is_processed?: boolean;
+  harvest_date: string | null;
   price: number;
   status: "active" | "inactive" | "removed";
   created_at: string;
@@ -97,7 +101,7 @@ type ReceivedOrder = {
   location: string;
   status: string;
   created_at: string;
-  product?: { product_type: string; price: number };
+  product?: { product_type: string; price: number; unit?: string | null };
   buyer?: { full_name: string; phone: string };
 };
 
@@ -316,6 +320,7 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
+  const [coverLoading, setCoverLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -437,7 +442,7 @@ export default function ProfileScreen() {
     const buyerIds = [...new Set(orders.map((o) => o.buyer_id))];
 
     const [{ data: productsData }, { data: buyersData }] = await Promise.all([
-      supabase.from("products").select("id, product_type, price").in("id", uniqueProductIds),
+      supabase.from("products").select("id, product_type, price, unit").in("id", uniqueProductIds),
       supabase.from("users").select("id, full_name, phone").in("id", buyerIds),
     ]);
 
@@ -602,12 +607,134 @@ export default function ProfileScreen() {
       const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(filePath);
       const avatarUrl = `${publicUrl}?t=${Date.now()}`;
 
-      await supabase.from("users").update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() }).eq("id", authUser.id);
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+        .eq("id", authUser.id);
+      if (updateError) throw updateError;
       setUserProfile((c: any) => ({ ...c, avatar_url: avatarUrl }));
     } catch (e: any) {
       Alert.alert("Erro no upload", e?.message || "Tenta novamente.");
     } finally {
       setAvatarLoading(false);
+    }
+  };
+
+  const uploadCoverAsset = useCallback(async (asset: ImagePicker.ImagePickerAsset) => {
+    try {
+      if (!authUser) return;
+      setCoverLoading(true);
+      const mimeType = asset.mimeType || "image/jpeg";
+      const extensionByMimeType: Record<string, string> = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+      };
+      const extension = extensionByMimeType[mimeType];
+      if (!extension) throw new Error(t("profile.coverUnsupportedImage"));
+
+      const filePath = `${authUser.id}/cover.${extension}`;
+      const response = await fetch(asset.uri);
+      if (!response.ok) throw new Error(t("profile.coverUploadError"));
+      const arrayBuffer = await response.arrayBuffer();
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, arrayBuffer, { contentType: mimeType, upsert: true });
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      const coverUrl = `${publicUrl}?t=${Date.now()}`;
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({ cover_url: coverUrl })
+        .eq("id", authUser.id);
+      if (updateError) throw updateError;
+
+      setUserProfile((current: any) => ({ ...current, cover_url: coverUrl }));
+    } catch (error) {
+      console.error("[Profile] Não foi possível atualizar a capa:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const needsCoverMigration =
+        /cover_url.*(does not exist|schema cache)|column .*cover_url/i.test(errorMessage) ||
+        /bucket.*not found|row-level security policy|permission denied/i.test(errorMessage);
+      Alert.alert(
+        t("profile.coverUploadError"),
+        needsCoverMigration
+          ? t("profile.coverMigrationRequired")
+          : errorMessage || t("profile.coverTryAgain"),
+      );
+    } finally {
+      setCoverLoading(false);
+    }
+  }, [authUser, t]);
+
+  useEffect(() => {
+    if (!authUser || Platform.OS !== "android") return;
+    let mounted = true;
+
+    void (async () => {
+      const shouldRecover = await AsyncStorage.getItem(COVER_PICKER_PENDING_KEY);
+      if (!mounted || shouldRecover !== "true") return;
+      await AsyncStorage.removeItem(COVER_PICKER_PENDING_KEY);
+
+      const pendingResult = await ImagePicker.getPendingResultAsync();
+      if (!mounted || !pendingResult) return;
+      if ("code" in pendingResult) {
+        throw new Error(pendingResult.message);
+      }
+      if (!pendingResult.canceled && pendingResult.assets[0]) {
+        return uploadCoverAsset(pendingResult.assets[0]);
+      }
+    })().catch((error) => {
+      if (!mounted) return;
+      console.error("[Profile] Não foi possível recuperar a imagem selecionada:", error);
+      Alert.alert(
+        t("profile.coverUploadError"),
+        error instanceof Error ? error.message : t("profile.coverTryAgain"),
+      );
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [authUser, t, uploadCoverAsset]);
+
+  const changeCover = async () => {
+    if (!authUser) return;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(t("profile.coverPermissionTitle"), t("profile.coverPermissionMessage"));
+        return;
+      }
+
+      if (Platform.OS === "android") {
+        await AsyncStorage.setItem(COVER_PICKER_PENDING_KEY, "true");
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [16, 5],
+        quality: 0.8,
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+      });
+      if (Platform.OS === "android") {
+        await AsyncStorage.removeItem(COVER_PICKER_PENDING_KEY);
+      }
+      if (result.canceled) return;
+
+      if (result.assets[0]) await uploadCoverAsset(result.assets[0]);
+    } catch (error) {
+      if (Platform.OS === "android") {
+        await AsyncStorage.removeItem(COVER_PICKER_PENDING_KEY).catch((storageError) => {
+          console.error("[Profile] Não foi possível limpar o estado do seletor:", storageError);
+        });
+      }
+      console.error("[Profile] Não foi possível selecionar a capa:", error);
+      Alert.alert(
+        t("profile.coverSelectionError"),
+        error instanceof Error ? error.message : t("profile.coverTryAgain"),
+      );
     }
   };
 
@@ -725,7 +852,7 @@ export default function ProfileScreen() {
     router.replace("/login");
   };
 
-  const formatDate = (d: string) => new Date(d).toLocaleDateString("pt-AO");
+  const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString("pt-AO") : "—";
 
   const activeProducts = userProducts.filter((p) => p.status === "active").length;
   const totalComments = userProducts.reduce((s, p) => s + (productStats[p.id]?.comments || 0), 0);
@@ -782,7 +909,7 @@ export default function ProfileScreen() {
   const profileName = userProfile?.full_name || authUser?.user_metadata?.full_name || "Utilizador AgriLink";
   const avatarUri: string | undefined = userProfile?.avatar_url || undefined;
   const pendingOrders = receivedOrders.filter((o) => o.status === "pending").length;
-  const hasHighlights = !isMotorista || isAdmin;
+  const hasHighlights = !isMotorista || isAdmin || driverLoads.length > 0;
 
   const statisticsRows = isAgente
     ? [
@@ -843,10 +970,29 @@ export default function ProfileScreen() {
       >
         {/* [0] CAPA + PERFIL */}
         <View>
-          <View style={styles.cover}>
-            <View style={[styles.coverBlob, styles.coverBlobA]} />
-            <View style={[styles.coverBlob, styles.coverBlobB]} />
-          </View>
+          <TouchableOpacity
+            style={styles.cover}
+            onPress={() => void changeCover()}
+            disabled={coverLoading}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel={t("profile.changeCover")}
+          >
+            {userProfile?.cover_url ? (
+              <Image source={{ uri: userProfile.cover_url }} style={styles.coverImage} resizeMode="cover" />
+            ) : (
+              <>
+                <View style={[styles.coverBlob, styles.coverBlobA]} />
+                <View style={[styles.coverBlob, styles.coverBlobB]} />
+              </>
+            )}
+            <View style={styles.coverEdit}>
+              <Icon name="camera" size={14} color="#FFFFFF" />
+              <Text style={styles.coverEditText}>
+                {coverLoading ? t("profile.coverUploading") : t("profile.changeCover")}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
           <View style={styles.profileBody}>
             <View style={styles.avatarRow}>
@@ -905,6 +1051,7 @@ export default function ProfileScreen() {
               <MetaItem icon="mail" value={profileData.email} />
             </View>
 
+            <UserConnectionsSummary userId={authUser?.id ?? null} enabled={!!authUser?.id} />
             <StatsRow items={statItems} />
           </View>
 
@@ -916,6 +1063,23 @@ export default function ProfileScreen() {
               contentContainerStyle={styles.highlightsContent}
               style={styles.highlightsScroll}
             >
+              {isMotorista ? (
+                <Highlight
+                  icon="truck"
+                  label="Entregas"
+                  bg={COLORS.soft}
+                  color={COLORS.primary}
+                  onPress={() => router.push("/rastreamentos" as Href)}
+                />
+              ) : (
+                <Highlight
+                  icon="map"
+                  label="Rastreio"
+                  bg={COLORS.soft}
+                  color={COLORS.primary}
+                  onPress={() => router.push("/rastreamentos" as Href)}
+                />
+              )}
               {!isMotorista && (
                 <Highlight
                   icon="receipt"
@@ -985,6 +1149,14 @@ export default function ProfileScreen() {
                     <Text style={styles.postSub} numberOfLines={1}>{load.origin_label} → {load.destination_label}</Text>
                   </View>
                   <Text style={styles.postPrice}>{Number(load.weight_kg || 0).toLocaleString("pt-AO")} kg</Text>
+                  <TouchableOpacity
+                    style={styles.outlineBtn}
+                    onPress={() => router.push({ pathname: "/rastreamento/[id]", params: { id: load.id } })}
+                    activeOpacity={0.85}
+                  >
+                    <Icon name="map" size={14} color={COLORS.primary} />
+                    <Text style={styles.outlineBtnText}>Acompanhar carga</Text>
+                  </TouchableOpacity>
                 </View>
               ))
             )
@@ -1018,8 +1190,15 @@ export default function ProfileScreen() {
                   <View key={p.id} style={styles.post}>
                     <PostHeader uri={avatarUri} name={profileName} accent={roleAccent} subtitle={formatDate(p.created_at)} status={p.status} />
                     <Text style={styles.postTitle}>{p.product_type}</Text>
-                    <Text style={styles.postSub}>{p.quantity.toLocaleString()} kg · colheita {formatDate(p.harvest_date)}</Text>
-                    <Text style={styles.postPrice}>{p.price.toLocaleString()} Kz/kg</Text>
+                    <Text style={styles.postSub}>
+                      {p.quantity.toLocaleString()} {p.unit || "kg"}
+                      {p.is_processed
+                        ? " · produto processado"
+                        : p.harvest_date
+                          ? ` · colheita ${formatDate(p.harvest_date)}`
+                          : ""}
+                    </Text>
+                    <Text style={styles.postPrice}>{p.price.toLocaleString()} Kz/{p.unit || "kg"}</Text>
 
                     <View style={styles.postFooter}>
                       <View style={styles.reaction}>
@@ -1107,7 +1286,7 @@ export default function ProfileScreen() {
                     <Text style={styles.postSub} numberOfLines={1}>{o.location}</Text>
                   </View>
                   <View style={styles.orderTotals}>
-                    <Text style={styles.postPrice}>{o.quantity.toLocaleString()} kg</Text>
+                    <Text style={styles.postPrice}>{o.quantity.toLocaleString()} {o.product?.unit || "kg"}</Text>
                     <Text style={styles.postPrice}>{((o.product?.price || 0) * o.quantity).toLocaleString()} Kz</Text>
                   </View>
 
@@ -1301,6 +1480,9 @@ const styles = StyleSheet.create({
 
   // Capa
   cover: { height: COVER_HEIGHT, backgroundColor: COLORS.soft, overflow: "hidden" },
+  coverImage: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
+  coverEdit: { position: "absolute", right: 12, bottom: 10, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, backgroundColor: "rgba(22,35,28,0.72)" },
+  coverEditText: { color: COLORS.white, fontSize: 11, fontWeight: "700" },
   coverBlob: { position: "absolute", borderRadius: 999, backgroundColor: COLORS.primary },
   coverBlobA: { width: 190, height: 190, right: -50, top: -80, opacity: 0.12 },
   coverBlobB: { width: 120, height: 120, left: -30, bottom: -60, opacity: 0.08 },

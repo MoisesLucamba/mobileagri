@@ -56,11 +56,11 @@ const MAX_FILE_SIZE = 35 * 1024 * 1024;
 const MAX_MESSAGE_LENGTH = 5000;
 
 const COLORS = {
-  primary: "#2E7D32",
-  primaryDark: "#1B5E20",
+  primary: "#218B4A",
+  primaryDark: "#218B4A",
   pale: "#EEF0E9",
-  background: "#FBFAF6",
-  surface: "#FFFFFF",
+  background: "#F3F6F2",
+  surface: "#FFFEFC",
   text: "#3D403A",
   muted: "#77796F",
   border: "#E8E5DC",

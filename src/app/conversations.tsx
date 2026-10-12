@@ -33,12 +33,12 @@ type UserProfile = {
 };
 
 const COLORS = {
-  primary: "#1F6B3A",
+  primary: "#218B4A",
   primaryDark: "#173D24",
   pale: "#EEF0E9",
   field: "#F5F3EC",
-  background: "#FBFAF6",
-  surface: "#FFFFFF",
+  background: "#F3F6F2",
+  surface: "#FFFEFC",
   text: "#3D403A",
   muted: "#77796F",
   border: "#E8E5DC",

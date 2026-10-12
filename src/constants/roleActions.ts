@@ -11,7 +11,7 @@ export type RoleAction = {
   label: string;
 };
 
-const ACTION_COLOR = "#1F6B3A";
+const ACTION_COLOR = "#218B4A";
 
 // Sinónimos possíveis na base de dados / metadados
 const ROLE_ALIASES: Record<string, UserRole> = {

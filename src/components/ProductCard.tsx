@@ -4,7 +4,6 @@ import {
   Alert,
   Animated,
   Dimensions,
-  Easing,
   Image,
   LayoutAnimation,
   NativeScrollEvent,
@@ -42,6 +41,8 @@ export type Product = {
   product_type: string;
   description?: string | null;
   quantity: number;
+  unit?: string | null;
+  is_processed?: boolean;
   harvest_date?: string | null;
   price: number;
   province_id: string;
@@ -142,16 +143,13 @@ function Avatar({ uri, name, size = 40, ring }: { uri?: string | null; name?: st
   );
 
   if (!ring) return inner;
-  // anel verde em degradé à volta da foto do produtor
+  // Anel sólido para manter a paleta da aplicação uniforme.
   return (
-    <LinearGradient
-      colors={[COLORS.primaryLight, "#A6E3B8"]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ width: size, height: size, borderRadius: size / 2, alignItems: "center", justifyContent: "center" }}
+    <View
+      style={{ width: size, height: size, borderRadius: size / 2, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primary }}
     >
       {inner}
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -210,17 +208,6 @@ export default function ProductCard({
   const [commentText, setCommentText] = useState("");
   const [sendingComment, setSendingComment] = useState(false);
   const [mapVisible, setMapVisible] = useState(false);
-
-  // entrada suave do cartão
-  const enter = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(enter, {
-      toValue: 1,
-      duration: 420,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, []);
 
   // "pop" do coração ao gostar
   const heartPop = useRef(new Animated.Value(1)).current;
@@ -356,7 +343,7 @@ export default function ProductCard({
 
   return (
     <>
-      <Animated.View
+      <View
         style={[
           {
             width: CARD_WIDTH,
@@ -364,13 +351,11 @@ export default function ProductCard({
             marginBottom: 18,
             borderRadius: 12,
             backgroundColor: COLORS.white,
-            opacity: enter,
-            transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }],
           },
           SHADOW.soft,
         ]}
       >
-        <View className="overflow-hidden rounded-[12px] bg-white">
+        <View className="overflow-hidden rounded-[12px] bg-[#FFFEFC]">
           {/* Cabeçalho */}
           <View className="flex-row items-center gap-[10px] px-[14px] pb-3 pt-[14px]">
             <TouchableOpacity
@@ -411,7 +396,7 @@ export default function ProductCard({
             </View>
 
             <PressableScale
-              className="h-9 w-9 items-center justify-center rounded-[10px] bg-[#E9F5EC]"
+              className="h-9 w-9 items-center justify-center rounded-[10px] bg-[#EAF5ED]"
               onPress={openMap}
               scale={0.9}
             >
@@ -427,7 +412,7 @@ export default function ProductCard({
               marginHorizontal: 10,
               borderRadius: 8,
               overflow: "hidden",
-              backgroundColor: "#F0F4EE",
+              backgroundColor: "#F3F6F2",
             }}
           >
             {photos.length > 0 ? (
@@ -459,9 +444,9 @@ export default function ProductCard({
 
             {/* Quantidade */}
             <View className="absolute left-[10px] top-[10px] flex-row items-center gap-[5px] rounded-[6px] bg-[rgba(255,255,255,0.88)] px-[10px] py-[5px]">
-              <View className="h-[6px] w-[6px] rounded-full bg-[#2E8B4F]" />
+              <View className="h-[6px] w-[6px] rounded-full bg-[#218B4A]" />
               <Text className="text-[11px] font-extrabold text-[#16231C]">
-                {Number(product.quantity).toLocaleString("pt-AO")} kg disponíveis
+                {Number(product.quantity).toLocaleString("pt-AO")} {product.unit || "kg"} disponíveis
               </Text>
             </View>
 
@@ -495,10 +480,16 @@ export default function ProductCard({
                 {product.product_type}
               </Text>
               <View className="flex-row items-baseline">
-                <Text className="text-[18px] font-black text-[#237040]">{formatKz(product.price)}</Text>
-                <Text className="text-[11.5px] font-semibold text-[#78877D]"> /kg</Text>
+                <Text className="text-[18px] font-black text-[#218B4A]">{formatKz(product.price)}</Text>
+                <Text className="text-[11.5px] font-semibold text-[#78877D]"> /{product.unit || "kg"}</Text>
               </View>
             </View>
+
+            {product.is_processed ? (
+              <View className="mt-2 self-start rounded-full bg-[#EAF5ED] px-2.5 py-1">
+                <Text className="text-[10.5px] font-extrabold text-[#218B4A]">Produto processado</Text>
+              </View>
+            ) : null}
 
             {product.description ? (
               <Text className="mt-1.5 text-[13px] leading-[19px] text-[#78877D]" numberOfLines={3}>
@@ -580,21 +571,18 @@ export default function ProductCard({
                     editable={!sendingComment}
                   />
                   <Pressable onPress={sendComment} disabled={!canSend} style={{ opacity: canSend ? 1 : 0.45 }}>
-                    <LinearGradient
-                      colors={[COLORS.primaryLight, COLORS.primaryDark]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={{ width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" }}
+                    <View
+                      style={{ width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primary }}
                     >
                       <Icon name="send" size={16} color={COLORS.white} />
-                    </LinearGradient>
+                    </View>
                   </Pressable>
                 </View>
               </View>
             ) : null}
           </View>
         </View>
-      </Animated.View>
+      </View>
 
       {/* Mapa: componente separado, aberto pelo ícone do cabeçalho */}
       <MapViewer
@@ -607,6 +595,17 @@ export default function ProductCard({
         title={product.product_type}
         subtitle={product.farmer_name}
         onClose={() => setMapVisible(false)}
+        onOpenFullMap={() => {
+          setMapVisible(false);
+          router.push({
+            pathname: "/mapa",
+            params: {
+              lat: String(product.location_lat),
+              lng: String(product.location_lng),
+              productId: product.id,
+            },
+          });
+        }}
       />
     </>
   );

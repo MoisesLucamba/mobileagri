@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { Image, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -10,19 +10,36 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-const LOGO = require('../../assets/images/Agrilink_AppIcon.png');
+const PROCESSING_LOGO = require('../../assets/images/Agrilink_Logo.png');
+
+const ProcessingContext = createContext<(() => () => void) | null>(null);
 
 // Mesma paleta do ProductCard
 const COLORS = {
-  primary: '#2E8B4F',
-  text: '#16231C',
-  muted: '#78877D',
+  primary: '#218B4A',
   line: '#E8ECE6',
   background: '#FFFFFF',
-  white: '#FFFFFF',
+  white: '#FFFEFC',
 };
 
-export default function ProcessingScreen() {
+export function ProcessingScreenProvider({ children }: { children: ReactNode }) {
+  const [activeScreens, setActiveScreens] = useState(0);
+  const registerProcessingScreen = useCallback(() => {
+    setActiveScreens((count) => count + 1);
+    return () => setActiveScreens((count) => Math.max(0, count - 1));
+  }, []);
+
+  return (
+    <ProcessingContext.Provider value={registerProcessingScreen}>
+      <View style={styles.root}>
+        {children}
+        {activeScreens > 0 ? <ProcessingIndicator /> : null}
+      </View>
+    </ProcessingContext.Provider>
+  );
+}
+
+function ProcessingIndicator() {
   const rotation = useSharedValue(0);
   const ringStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
@@ -48,13 +65,25 @@ export default function ProcessingScreen() {
       <View style={styles.loaderRing}>
         <View style={styles.ringTrack} />
         <Animated.View style={[styles.ringArc, ringStyle]} />
-        <Image source={LOGO} resizeMode="contain" style={styles.logo} />
+        <Image source={PROCESSING_LOGO} resizeMode="contain" style={styles.logo} />
       </View>
     </Animated.View>
   );
 }
 
+export default function ProcessingScreen() {
+  const registerProcessingScreen = useContext(ProcessingContext);
+
+  if (!registerProcessingScreen) {
+    throw new Error('ProcessingScreen must be used within ProcessingScreenProvider.');
+  }
+
+  useEffect(() => registerProcessingScreen(), [registerProcessingScreen]);
+  return null;
+}
+
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   overlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 1000,
@@ -64,8 +93,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   loaderRing: {
-    width: 150,
-    height: 150,
+    width: 230,
+    height: 230,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -82,5 +111,5 @@ const styles = StyleSheet.create({
     borderTopColor: COLORS.primary,
     borderRadius: 75,
   },
-  logo: { width: 118, height: 118 },
+  logo: { width: 200, height: 142 },
 });

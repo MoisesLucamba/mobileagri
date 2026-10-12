@@ -6,11 +6,11 @@ import { useUserRole } from "../context/RoleContext";
 import Icon from "./Icon";
 
 const COLORS = {
-  primary: "#2E8B4F",
+  primary: "#218B4A",
   text: "#16231C",
   muted: "#78877D",
   border: "#E8ECE6",
-  white: "#FFFFFF",
+  white: "#FFFEFC",
 };
 
 export default function GuestModeCard() {

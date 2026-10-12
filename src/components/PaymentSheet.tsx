@@ -35,16 +35,16 @@ import {
 
 // Paleta partilhada com Home, ProductCard, Pesquisa e Perfil
 const COLORS = {
-  primary: "#2E8B4F",
-  primaryDark: "#25703F",
+  primary: "#218B4A",
+  primaryDark: "#218B4A",
   primarySoft: "#E9F5EC",
   accent: "#E2932F",
   accentSoft: "#FBF1E1",
   text: "#16231C",
   muted: "#78877D",
   faint: "#AEB8AC",
-  canvas: "#F6F8F5",
-  surface: "#FFFFFF",
+  canvas: "#F3F6F2",
+  surface: "#FFFEFC",
   border: "#E8ECE6",
   red: "#DD5138",
   redSoft: "#FBECE9",
@@ -940,14 +940,14 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
           <View style={{ flex: 1 }}>
             <Text style={styles.productName} numberOfLines={1}>{product.product_type}</Text>
             <Text style={styles.productSub} numberOfLines={1}>
-              {product.farmer_name} · {formatKz(unitPrice)}/kg
+              {product.farmer_name} · {formatKz(unitPrice)}/{product.unit || "kg"}
             </Text>
           </View>
         </View>
       </FadeSlide>
 
       <FadeSlide delay={60}>
-        <Text style={styles.label}>Quantidade (kg)</Text>
+        <Text style={styles.label}>Quantidade ({product.unit || "kg"})</Text>
         <View style={styles.qtyRow}>
           <PressableScale style={styles.qtyBtn} onPress={() => changeQty(-1)} accessibilityLabel="Diminuir">
             <Icon name="minus" size={20} color={COLORS.text} />
@@ -964,7 +964,7 @@ export default function PaymentSheet({ product, visible, onClose, onPaid, onView
               const on = quantity === n;
               return (
                 <PressableScale key={n} onPress={() => setQuantity(n)} style={[styles.chip, on && styles.chipOn]}>
-                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{n === maxQty ? "Máx" : `${n} kg`}</Text>
+                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{n === maxQty ? "Máx" : `${n} ${product.unit || "kg"}`}</Text>
                 </PressableScale>
               );
             })}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
     Alert,
     Dimensions,
@@ -10,11 +10,12 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { AgrilinkAd } from '../lib/agrilinkAds';
 import Icon from './Icon';
 
 const COLORS = {
-  primary: '#1F6B3A',
+  primary: '#218B4A',
   primarySoft: '#EAF3EA',
   text: '#16231C',
   muted: '#78877D',
@@ -22,11 +23,17 @@ const COLORS = {
   border: '#E9E2D3',
   gold: '#D79427',
   goldSoft: '#FBF1E1',
-  surface: '#FFFFFF',
+  surface: '#FFFEFC',
   canvas: '#FFFCF6',
 };
 
 const CARD_WIDTH = Dimensions.get('window').width - 36;
+const FALLBACK_IMAGE_HEIGHT = Math.round(CARD_WIDTH * 0.7);
+
+function heightForImage(width: number, height: number) {
+  if (!width || !height) return FALLBACK_IMAGE_HEIGHT;
+  return Math.round(CARD_WIDTH * height / width);
+}
 
 type Props = {
   ad: AgrilinkAd;
@@ -36,8 +43,12 @@ type Props = {
 };
 
 export default function AgrilinkAdCard({ ad, currentUserId, onRequireLogin, onRate }: Props) {
+  const { t } = useTranslation();
   const [ratingBusy, setRatingBusy] = useState(false);
-  const [imageIndex, setImageIndex] = useState(0);
+  const [imageSelection, setImageSelection] = useState({ adId: ad.id, index: 0 });
+  const [imageHeights, setImageHeights] = useState<Record<string, number>>({});
+  const imageIndex = imageSelection.adId === ad.id ? imageSelection.index : 0;
+  const currentImageHeight = imageHeights[ad.image_urls[imageIndex]] ?? FALLBACK_IMAGE_HEIGHT;
   const currentRating = Number(ad.current_rating || 0);
   const filledStars = currentRating || Math.round(Number(ad.rating_average || 0));
   const targetHost = (() => {
@@ -47,6 +58,23 @@ export default function AgrilinkAdCard({ ad, currentUserId, onRequireLogin, onRa
       return ad.target_url;
     }
   })();
+
+  useEffect(() => {
+    let active = true;
+    ad.image_urls.forEach((url) => {
+      Image.getSize(
+        url,
+        (width, height) => {
+          if (!active) return;
+          setImageHeights((current) => ({ ...current, [url]: heightForImage(width, height) }));
+        },
+        (error) => console.warn('[Ads] Não foi possível obter o formato da imagem:', error),
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [ad.id, ad.image_urls]);
 
   const openAd = () => {
     Linking.openURL(ad.target_url).catch(() => Alert.alert('Link indisponível', 'Não foi possível abrir este anúncio.'));
@@ -74,25 +102,42 @@ export default function AgrilinkAdCard({ ad, currentUserId, onRequireLogin, onRa
           <Icon name="image" size={16} color={COLORS.primary} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.brand}>AgriLink</Text>
+          <Text style={styles.brand}>AgriLink Ads</Text>
           <Text style={styles.sponsored}>PROMOÇÃO PATROCINADA</Text>
+          <Text style={styles.advertiser} numberOfLines={1}>
+            {ad.advertiser_name
+              ? t('ads.advertisedBy', { name: ad.advertiser_name })
+              : t('ads.unknownAdvertiser')}
+          </Text>
         </View>
         <TouchableOpacity onPress={openAd} style={styles.linkIcon} accessibilityLabel="Abrir anúncio">
           <Icon name="arrow-right" size={17} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.imageFrame}>
+      <View style={[styles.imageFrame, { height: currentImageHeight }]}>
         <ScrollView
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
+          style={{ height: currentImageHeight }}
           onMomentumScrollEnd={(event) => {
-            setImageIndex(Math.round(event.nativeEvent.contentOffset.x / CARD_WIDTH));
+            setImageSelection({
+              adId: ad.id,
+              index: Math.round(event.nativeEvent.contentOffset.x / CARD_WIDTH),
+            });
           }}
         >
           {ad.image_urls.map((url, index) => (
-            <Image key={`${ad.id}-${index}`} source={{ uri: url }} style={styles.image} resizeMode="cover" />
+            <Image
+              key={`${ad.id}-${index}`}
+              source={{ uri: url }}
+              style={[
+                styles.image,
+                { height: imageHeights[url] ?? FALLBACK_IMAGE_HEIGHT },
+              ]}
+              resizeMode="contain"
+            />
           ))}
         </ScrollView>
         <View style={styles.promoBadge}>
@@ -158,11 +203,12 @@ const styles = StyleSheet.create({
   },
   header: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 13 },
   brandIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: COLORS.primarySoft },
-  brand: { color: COLORS.text, fontSize: 12.5, fontWeight: '800' },
+  brand: { color: COLORS.text, fontSize: 13, fontWeight: '900' },
   sponsored: { marginTop: 3, color: COLORS.gold, fontSize: 8.5, fontWeight: '900', letterSpacing: 0.65 },
+  advertiser: { marginTop: 3, color: COLORS.muted, fontSize: 10, fontWeight: '700' },
   linkIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: COLORS.goldSoft },
-  imageFrame: { width: CARD_WIDTH, height: 224, backgroundColor: '#F1EFE8' },
-  image: { width: CARD_WIDTH, height: 224 },
+  imageFrame: { width: CARD_WIDTH, backgroundColor: '#F1EFE8' },
+  image: { width: CARD_WIDTH, backgroundColor: '#F1EFE8' },
   promoBadge: { position: 'absolute', left: 11, top: 11, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 7, backgroundColor: COLORS.gold },
   promoBadgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900', letterSpacing: 0.7 },
   imageCount: { position: 'absolute', right: 10, bottom: 10, minWidth: 40, alignItems: 'center', paddingVertical: 4, paddingHorizontal: 7, borderRadius: 10, backgroundColor: 'rgba(22,35,28,0.72)' },

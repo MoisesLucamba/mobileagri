@@ -3,6 +3,7 @@ import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from "react-native-s
 
 export type IconName =
   | "leaf"
+  | "farmer"
   | "check-circle"
   | "map"
   | "image"
@@ -97,6 +98,17 @@ export default function Icon({ name, size = 18, color = "#16231C", filled = fals
         <>
           <Path {...p} d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z" />
           <Path {...p} d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" />
+        </>
+      );
+      break;
+
+    case "farmer":
+      content = (
+        <>
+          <Path {...p} d="M3 9c2.4-1.4 5.5-2 9-2s6.6.6 9 2c-2.6 1.4-5.8 2-9 2S5.6 10.4 3 9Z" />
+          <Path {...p} d="m6.5 8.3.8-3.5A2.3 2.3 0 0 1 9.6 3h4.8a2.3 2.3 0 0 1 2.3 1.8l.8 3.5" />
+          <Circle {...p} cx="12" cy="14" r="3.2" />
+          <Path {...p} d="M5 21c.7-3.2 3.2-5 7-5s6.3 1.8 7 5" />
         </>
       );
       break;

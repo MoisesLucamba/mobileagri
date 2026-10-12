@@ -1,6 +1,9 @@
+import * as Crypto from 'expo-crypto';
 import { useCallback, useEffect, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import {
   Alert,
+  Image,
   InteractionManager,
   Modal,
   RefreshControl,
@@ -15,6 +18,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import MapView, { Marker } from 'react-native-maps';
 import Icon from '../components/Icon';
 import ProcessingScreen from '../components/ProcessingScreen';
 import { isAgrilinkAdmin } from '../lib/agrilinkAds';
@@ -27,6 +31,8 @@ type GreenPoint = {
   municipality: string;
   address: string;
   phone: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
 };
 
 type GreenProduct = {
@@ -38,6 +44,8 @@ type GreenProduct = {
   price: number;
   market_price: number;
   stock_quantity: number;
+  image_url: string | null;
+  is_available: boolean;
 };
 
 type GreenOrder = {
@@ -51,14 +59,41 @@ type GreenOrder = {
 };
 
 const COLORS = {
-  primary: '#25703F',
+  primary: '#218B4A',
   text: '#16231C',
   muted: '#78877D',
   border: '#E8ECE6',
-  canvas: '#F6F8F5',
-  white: '#FFFFFF',
+  canvas: '#F3F6F2',
+  white: '#FFFEFC',
   orange: '#B9741A',
   danger: '#B54747',
+};
+
+const PRODUCT_CATALOG = [
+  { name: 'Milho', unit: 'kg', image: '🌽', color: '#FFF5D7' },
+  { name: 'Feijão', unit: 'kg', image: '🫘', color: '#F7E8DE' },
+  { name: 'Mandioca', unit: 'kg', image: '🍠', color: '#F8EDE1' },
+  { name: 'Batata-doce', unit: 'kg', image: '🍠', color: '#F8EDE1' },
+  { name: 'Batata rena', unit: 'kg', image: '🥔', color: '#F4EBDD' },
+  { name: 'Arroz', unit: 'kg', image: '🍚', color: '#F3F1E8' },
+  { name: 'Tomate', unit: 'kg', image: '🍅', color: '#FCE6E1' },
+  { name: 'Cebola', unit: 'kg', image: '🧅', color: '#F5E8D9' },
+  { name: 'Couve', unit: 'kg', image: '🥬', color: '#E5F2E5' },
+  { name: 'Repolho', unit: 'unidade', image: '🥬', color: '#E5F2E5' },
+  { name: 'Cenoura', unit: 'kg', image: '🥕', color: '#FCEBDD' },
+  { name: 'Banana', unit: 'kg', image: '🍌', color: '#FFF5D7' },
+  { name: 'Laranja', unit: 'kg', image: '🍊', color: '#FCEBDD' },
+  { name: 'Manga', unit: 'kg', image: '🥭', color: '#FFF0D6' },
+  { name: 'Abacate', unit: 'unidade', image: '🥑', color: '#E5F2E5' },
+  { name: 'Amendoim', unit: 'kg', image: '🥜', color: '#F5E8D9' },
+] as const;
+const CUSTOM_PRODUCT = '__custom__';
+const GREEN_PRODUCT_BUCKET = 'green-point-products';
+const ANGOLA_MAP_REGION = {
+  latitude: -8.839,
+  longitude: 13.234,
+  latitudeDelta: 0.12,
+  longitudeDelta: 0.12,
 };
 
 function pickupDateString(dayOffset: 0 | 1) {
@@ -87,17 +122,29 @@ export default function GreenPointsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<GreenProduct | null>(null);
+  const [editingProduct, setEditingProduct] = useState<GreenProduct | null>(null);
+  const [editPrice, setEditPrice] = useState('');
+  const [editMarketPrice, setEditMarketPrice] = useState('');
+  const [editStock, setEditStock] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [pickupDate, setPickupDate] = useState<'today' | 'tomorrow'>('today');
   const [savingOrder, setSavingOrder] = useState(false);
+  const [editingPointLocation, setEditingPointLocation] = useState<GreenPoint | null>(null);
+  const [locationDraft, setLocationDraft] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [savingPointLocation, setSavingPointLocation] = useState(false);
 
   const [pointName, setPointName] = useState('');
   const [province, setProvince] = useState('');
   const [municipality, setMunicipality] = useState('');
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
+  const [pointLocation, setPointLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [itemName, setItemName] = useState('');
   const [itemDescription, setItemDescription] = useState('');
+  const [selectedCatalogProduct, setSelectedCatalogProduct] = useState('');
+  const [selectedInventoryPointId, setSelectedInventoryPointId] = useState('');
+  const [openAdminSelector, setOpenAdminSelector] = useState<'point' | 'product' | null>(null);
+  const [customProductImage, setCustomProductImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [unit, setUnit] = useState('kg');
   const [price, setPrice] = useState('');
   const [marketPrice, setMarketPrice] = useState('');
@@ -117,7 +164,9 @@ export default function GreenPointsScreen() {
 
       const [pointResult, productResult, orderResult] = await Promise.all([
         supabase.from('green_points').select('*').eq('is_active', true).order('name'),
-        supabase.from('green_point_products').select('*').eq('is_available', true).gt('stock_quantity', 0).order('product_name'),
+        allowed
+          ? supabase.from('green_point_products').select('*').order('product_name')
+          : supabase.from('green_point_products').select('*').eq('is_available', true).gt('stock_quantity', 0).order('product_name'),
         activeUserId
           ? supabase.from('green_point_orders').select('*').order('created_at', { ascending: false }).limit(30)
           : Promise.resolve({ data: [], error: null }),
@@ -145,7 +194,7 @@ export default function GreenPointsScreen() {
   }, [refresh]);
 
   const createPoint = async () => {
-    if (!pointName.trim() || !province.trim() || !municipality.trim() || !address.trim()) {
+    if (!pointName.trim() || !province.trim() || !municipality.trim() || !address.trim() || !pointLocation) {
       Alert.alert(t('greenPoints.adminTitle'), t('greenPoints.pointFieldsRequired'));
       return;
     }
@@ -157,6 +206,8 @@ export default function GreenPointsScreen() {
         municipality: municipality.trim(),
         address: address.trim(),
         phone: phone.trim() || null,
+        location_lat: pointLocation.latitude,
+        location_lng: pointLocation.longitude,
       });
       if (insertError) throw insertError;
       setPointName('');
@@ -164,6 +215,7 @@ export default function GreenPointsScreen() {
       setMunicipality('');
       setAddress('');
       setPhone('');
+      setPointLocation(null);
       await refresh();
     } catch (error) {
       Alert.alert(t('greenPoints.errorTitle'), error instanceof Error ? error.message : String(error));
@@ -172,39 +224,202 @@ export default function GreenPointsScreen() {
     }
   };
 
-  const createProduct = async (pointId: string) => {
-    const itemPrice = Number(price);
-    const market = marketPrice.trim() ? Number(marketPrice) : null;
-    const stockAmount = Number(stock);
-    if (!itemName.trim() || !Number.isFinite(itemPrice) || itemPrice <= 0 ||
-        !Number.isFinite(stockAmount) || stockAmount <= 0 ||
-        market === null || !Number.isFinite(market) || market <= itemPrice) {
-      Alert.alert(t('greenPoints.adminTitle'), t('greenPoints.productFieldsRequired'));
+  const savePointLocation = async () => {
+    if (!editingPointLocation || !locationDraft) return;
+    setSavingPointLocation(true);
+    try {
+      const { error: updateError } = await supabase
+        .from('green_points')
+        .update({
+          location_lat: locationDraft.latitude,
+          location_lng: locationDraft.longitude,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingPointLocation.id);
+      if (updateError) throw updateError;
+      setEditingPointLocation(null);
+      setLocationDraft(null);
+      await refresh();
+    } catch (error) {
+      Alert.alert(t('greenPoints.errorTitle'), error instanceof Error ? error.message : String(error));
+    } finally {
+      setSavingPointLocation(false);
+    }
+  };
+
+  const beginEditProduct = (product: GreenProduct) => {
+    setEditingProduct(product);
+    setEditPrice(String(product.price));
+    setEditMarketPrice(String(product.market_price));
+    setEditStock(String(product.stock_quantity));
+  };
+
+  const saveProductEdits = async () => {
+    if (!editingProduct) return;
+    const nextPrice = Number(editPrice);
+    const nextMarketPrice = Number(editMarketPrice);
+    const nextStock = Number(editStock);
+    if (!Number.isFinite(nextPrice) || nextPrice <= 0 ||
+        !Number.isFinite(nextMarketPrice) || nextMarketPrice <= nextPrice ||
+        !Number.isFinite(nextStock) || nextStock < 0) {
+      Alert.alert(t('greenPoints.errorTitle'), t('greenPoints.productFieldsRequired'));
       return;
     }
+
     setSavingAdmin(true);
     try {
-      const { error: insertError } = await supabase.from('green_point_products').insert({
-        point_id: pointId,
-        product_name: itemName.trim(),
-        description: itemDescription.trim() || null,
-        unit: unit.trim() || 'kg',
-        price: itemPrice,
-        market_price: market,
-        stock_quantity: stockAmount,
-      });
-      if (insertError) throw insertError;
-      setItemName('');
-      setItemDescription('');
-      setPrice('');
-      setMarketPrice('');
-      setStock('');
+      const { error: updateError } = await supabase
+        .from('green_point_products')
+        .update({
+          price: nextPrice,
+          market_price: nextMarketPrice,
+          stock_quantity: nextStock,
+          is_available: editingProduct.is_available,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingProduct.id);
+      if (updateError) throw updateError;
+      setEditingProduct(null);
       await refresh();
     } catch (error) {
       Alert.alert(t('greenPoints.errorTitle'), error instanceof Error ? error.message : String(error));
     } finally {
       setSavingAdmin(false);
     }
+  };
+
+  const setProductAvailability = (product: GreenProduct, isAvailable: boolean) => {
+    Alert.alert(
+      isAvailable ? t('greenPoints.restoreProduct') : t('greenPoints.removeProduct'),
+      isAvailable
+        ? t('greenPoints.restoreProductConfirmation', { product: product.product_name })
+        : t('greenPoints.removeProductConfirmation', { product: product.product_name }),
+      [
+        { text: t('greenPoints.cancel'), style: 'cancel' },
+        {
+          text: isAvailable ? t('greenPoints.restoreProduct') : t('greenPoints.removeProduct'),
+          style: isAvailable ? 'default' : 'destructive',
+          onPress: () => {
+            void (async () => {
+              setSavingAdmin(true);
+              try {
+                const { error: updateError } = await supabase
+                  .from('green_point_products')
+                  .update({ is_available: isAvailable, updated_at: new Date().toISOString() })
+                  .eq('id', product.id);
+                if (updateError) throw updateError;
+                await refresh();
+              } catch (error) {
+                Alert.alert(t('greenPoints.errorTitle'), error instanceof Error ? error.message : String(error));
+              } finally {
+                setSavingAdmin(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  const createProduct = async () => {
+    const itemPrice = Number(price);
+    const market = marketPrice.trim() ? Number(marketPrice) : null;
+    const stockAmount = Number(stock);
+    const customProduct = selectedCatalogProduct === CUSTOM_PRODUCT;
+    if (!points.some((point) => point.id === selectedInventoryPointId) ||
+        (!customProduct && !PRODUCT_CATALOG.some((product) => product.name === selectedCatalogProduct)) ||
+        (customProduct && !itemName.trim()) ||
+        !Number.isFinite(itemPrice) || itemPrice <= 0 ||
+        !Number.isFinite(stockAmount) || stockAmount <= 0 ||
+        market === null || !Number.isFinite(market) || market <= itemPrice) {
+      Alert.alert(t('greenPoints.adminTitle'), t('greenPoints.productFieldsRequired'));
+      return;
+    }
+    if (!customProductImage) {
+      Alert.alert(t('greenPoints.adminTitle'), t('greenPoints.uploadProductImageRequired'));
+      return;
+    }
+    setSavingAdmin(true);
+    let uploadedImagePath: string | null = null;
+    try {
+      let imageUrl: string | null = null;
+      if (customProductImage) {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) throw new Error(t('greenPoints.imageUploadError'));
+
+        const mimeType = customProductImage.mimeType ?? 'image/jpeg';
+        const extensionByMimeType: Record<string, string> = {
+          'image/jpeg': 'jpg',
+          'image/png': 'png',
+          'image/webp': 'webp',
+        };
+        const extension = extensionByMimeType[mimeType];
+        if (!extension) throw new Error(t('greenPoints.unsupportedImageFormat'));
+        uploadedImagePath = `${user.id}/${Crypto.randomUUID()}.${extension}`;
+        const response = await fetch(customProductImage.uri);
+        if (!response.ok) throw new Error(t('greenPoints.imageUploadError'));
+        const imageData = await response.arrayBuffer();
+        const { error: uploadError } = await supabase.storage
+          .from(GREEN_PRODUCT_BUCKET)
+          .upload(uploadedImagePath, imageData, {
+            contentType: mimeType,
+          });
+        if (uploadError) throw uploadError;
+        imageUrl = supabase.storage.from(GREEN_PRODUCT_BUCKET).getPublicUrl(uploadedImagePath).data.publicUrl;
+      }
+
+      const catalogProduct = PRODUCT_CATALOG.find((product) => product.name === selectedCatalogProduct);
+      const { error: insertError } = await supabase.from('green_point_products').insert({
+        point_id: selectedInventoryPointId,
+        product_name: customProduct ? itemName.trim() : catalogProduct!.name,
+        description: itemDescription.trim() || null,
+        unit: unit.trim() || catalogProduct?.unit || 'kg',
+        price: itemPrice,
+        market_price: market,
+        stock_quantity: stockAmount,
+        image_url: imageUrl,
+      });
+      if (insertError) throw insertError;
+      uploadedImagePath = null;
+      setItemName('');
+      setItemDescription('');
+      setSelectedCatalogProduct('');
+      setSelectedInventoryPointId('');
+      setCustomProductImage(null);
+      setUnit('kg');
+      setPrice('');
+      setMarketPrice('');
+      setStock('');
+      await refresh();
+    } catch (error) {
+      if (uploadedImagePath) {
+        try {
+          const { error: cleanupError } = await supabase.storage.from(GREEN_PRODUCT_BUCKET).remove([uploadedImagePath]);
+          if (cleanupError) console.warn('[GreenPoints] Não foi possível remover a foto não utilizada:', cleanupError);
+        } catch (cleanupError) {
+          console.warn('[GreenPoints] Não foi possível remover a foto não utilizada:', cleanupError);
+        }
+      }
+      Alert.alert(t('greenPoints.errorTitle'), error instanceof Error ? error.message : String(error));
+    } finally {
+      setSavingAdmin(false);
+    }
+  };
+
+  const pickCustomProductImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(t('greenPoints.adminTitle'), t('greenPoints.imagePermission'));
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+    });
+    if (!result.canceled) setCustomProductImage(result.assets[0]);
   };
 
   const adjustStock = async (product: GreenProduct, increase: boolean) => {
@@ -292,7 +507,10 @@ export default function GreenPointsScreen() {
             <Text style={styles.eyebrow}>{t('greenPoints.eyebrow')}</Text>
             <Text style={styles.title}>{t('greenPoints.title')}</Text>
           </View>
-          <Icon name="sprout" size={25} color={COLORS.primary} />
+          <View style={styles.headerMapIcon}>
+            <Icon name="map" size={24} color={COLORS.primary} />
+            <View style={styles.headerMapPin}><Icon name="pin" size={9} color={COLORS.white} /></View>
+          </View>
         </View>
         <Text style={styles.intro}>{t('greenPoints.description')}</Text>
         <View style={styles.hint}>
@@ -309,39 +527,111 @@ export default function GreenPointsScreen() {
         ) : points.map((point) => (
           <View key={point.id} style={styles.pointCard}>
             <View style={styles.pointHeading}>
-              <View style={styles.pointIcon}><Icon name="pin" size={18} color={COLORS.primary} /></View>
+              <View style={styles.pointIcon}>
+                <Icon name="map" size={20} color={COLORS.primary} />
+                <View style={styles.pointPin}><Icon name="pin" size={7} color={COLORS.white} /></View>
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.pointName}>{point.name}</Text>
                 <Text style={styles.pointAddress}>{point.municipality}, {point.province} · {point.address}</Text>
                 {point.phone ? <Text style={styles.pointAddress}>{point.phone}</Text> : null}
               </View>
+              {admin ? (
+                <TouchableOpacity
+                  style={styles.locationEditButton}
+                  onPress={() => {
+                    setEditingPointLocation(point);
+                    setLocationDraft(
+                      point.location_lat != null && point.location_lng != null
+                        ? { latitude: point.location_lat, longitude: point.location_lng }
+                        : null,
+                    );
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('greenPoints.editPointLocation')}
+                >
+                  <Icon name="map" size={15} color={COLORS.primary} />
+                </TouchableOpacity>
+              ) : null}
             </View>
+            {point.location_lat != null && point.location_lng != null ? (
+              <View style={styles.pointMapFrame}>
+                <MapView
+                  style={styles.pointMap}
+                  initialRegion={{
+                    latitude: point.location_lat,
+                    longitude: point.location_lng,
+                    latitudeDelta: 0.012,
+                    longitudeDelta: 0.012,
+                  }}
+                  scrollEnabled={false}
+                  zoomEnabled={false}
+                  rotateEnabled={false}
+                  pitchEnabled={false}
+                  pointerEvents="none"
+                >
+                  <Marker coordinate={{ latitude: point.location_lat, longitude: point.location_lng }} pinColor={COLORS.primary} />
+                </MapView>
+                <View style={styles.mapCaption}>
+                  <Icon name="pin" size={12} color={COLORS.primary} />
+                  <Text style={styles.mapCaptionText}>Local de levantamento</Text>
+                </View>
+              </View>
+            ) : null}
             {products.filter((product) => product.point_id === point.id).length === 0 ? (
               <Text style={styles.noProducts}>{t('greenPoints.noProducts')}</Text>
             ) : products.filter((product) => product.point_id === point.id).map((product) => (
-              <View key={product.id} style={styles.productRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.productName}>{product.product_name}</Text>
-                  <Text style={styles.productDetails}>
-                    {money(Number(product.price))} / {product.unit} · {t('greenPoints.stock')}: {money(Number(product.stock_quantity))} {product.unit}
-                  </Text>
-                  {product.market_price ? (
-                    <Text style={styles.savings}>{t('greenPoints.belowMarket', { percent: Math.round((1 - Number(product.price) / Number(product.market_price)) * 100) })}</Text>
-                  ) : null}
+              <View key={product.id} style={[styles.productCard, !product.is_available && styles.unavailableProduct]}>
+                <View style={[styles.productArtwork, { backgroundColor: PRODUCT_CATALOG.find((item) => item.name.toLocaleLowerCase() === product.product_name.toLocaleLowerCase())?.color ?? '#E9F5EC' }]}>
+                  {product.image_url ? (
+                    <Image source={{ uri: product.image_url }} style={styles.productImage} />
+                  ) : (
+                    <Text style={styles.productEmoji}>
+                      {PRODUCT_CATALOG.find((item) => item.name.toLocaleLowerCase() === product.product_name.toLocaleLowerCase())?.image ?? '🧺'}
+                    </Text>
+                  )}
                 </View>
-                {admin ? (
-                  <View style={styles.stockActions}>
-                    <TouchableOpacity style={styles.stockButton} onPress={() => void adjustStock(product, false)} accessibilityLabel={t('greenPoints.reduceStock')}>
-                      <Icon name="minus" size={14} color={COLORS.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.stockButton} onPress={() => void adjustStock(product, true)} accessibilityLabel={t('greenPoints.increaseStock')}>
-                      <Icon name="plus" size={14} color={COLORS.primary} />
-                    </TouchableOpacity>
+                <View style={styles.productInfo}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.productName}>{product.product_name}</Text>
+                    {!product.is_available ? <Text style={styles.unavailableLabel}>{t('greenPoints.productUnavailable')}</Text> : null}
+                    <Text style={styles.productDetails}>
+                      {money(Number(product.price))} / {product.unit} · {t('greenPoints.stock')}: {money(Number(product.stock_quantity))} {product.unit}
+                    </Text>
+                    {product.market_price ? (
+                      <Text style={styles.savings}>{t('greenPoints.belowMarket', { percent: Math.round((1 - Number(product.price) / Number(product.market_price)) * 100) })}</Text>
+                    ) : null}
                   </View>
-                ) : null}
-                <TouchableOpacity style={styles.orderButton} onPress={() => { setSelectedProduct(product); setQuantity('1'); }}>
-                  <Text style={styles.orderButtonText}>{t('greenPoints.order')}</Text>
-                </TouchableOpacity>
+                  <View style={styles.productActions}>
+                    {admin ? (
+                      <>
+                        <TouchableOpacity
+                          style={styles.stockButton}
+                          onPress={() => setProductAvailability(product, !product.is_available)}
+                          accessibilityLabel={product.is_available ? t('greenPoints.removeProduct') : t('greenPoints.restoreProduct')}
+                        >
+                          <Icon name={product.is_available ? 'trash' : 'refresh'} size={14} color={product.is_available ? COLORS.danger : COLORS.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.stockButton} onPress={() => beginEditProduct(product)} accessibilityLabel={t('greenPoints.editProduct')}>
+                          <Icon name="edit" size={14} color={COLORS.primary} />
+                        </TouchableOpacity>
+                        <View style={styles.stockActions}>
+                          <TouchableOpacity style={styles.stockButton} onPress={() => void adjustStock(product, false)} accessibilityLabel={t('greenPoints.reduceStock')}>
+                            <Icon name="minus" size={14} color={COLORS.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.stockButton} onPress={() => void adjustStock(product, true)} accessibilityLabel={t('greenPoints.increaseStock')}>
+                            <Icon name="plus" size={14} color={COLORS.primary} />
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : null}
+                    {product.is_available ? (
+                      <TouchableOpacity style={styles.orderButton} onPress={() => { setSelectedProduct(product); setQuantity('1'); }}>
+                        <Text style={styles.orderButtonText}>{t('greenPoints.order')}</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                </View>
               </View>
             ))}
           </View>
@@ -357,27 +647,103 @@ export default function GreenPointsScreen() {
               <TextInput style={[styles.input, styles.halfInput]} value={municipality} onChangeText={setMunicipality} placeholder={t('greenPoints.municipality')} />
             </View>
             <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder={t('greenPoints.address')} />
-            <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder={t('greenPoints.phone')} keyboardType="phone-pad" />
+              <Text style={styles.label}>{t('greenPoints.locationMapTitle')}</Text>
+              <Text style={styles.caption}>{t('greenPoints.locationMapHint')}</Text>
+              <View style={styles.locationPicker}>
+                <MapView
+                  style={styles.locationMap}
+                  initialRegion={ANGOLA_MAP_REGION}
+                  onPress={(event) => setPointLocation(event.nativeEvent.coordinate)}
+                >
+                  {pointLocation ? <Marker coordinate={pointLocation} pinColor={COLORS.primary} /> : null}
+                </MapView>
+                {!pointLocation ? (
+                  <View pointerEvents="none" style={styles.mapPickerHint}>
+                    <Icon name="pin" size={15} color={COLORS.primary} />
+                    <Text style={styles.mapPickerHintText}>Toque para marcar</Text>
+                  </View>
+                ) : (
+                  <View style={styles.mapPickerSelected}>
+                    <Icon name="check" size={13} color={COLORS.white} />
+                    <Text style={styles.mapPickerSelectedText}>
+                      {pointLocation.latitude.toFixed(5)}, {pointLocation.longitude.toFixed(5)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder={t('greenPoints.phone')} keyboardType="phone-pad" />
             <TouchableOpacity style={styles.adminButton} onPress={createPoint} disabled={savingAdmin}>
               <Text style={styles.adminButtonText}>{savingAdmin ? t('greenPoints.saving') : t('greenPoints.createPoint')}</Text>
             </TouchableOpacity>
 
-            {points.map((point) => (
-              <View key={`manage-${point.id}`} style={styles.inventoryCard}>
-                <Text style={styles.pointName}>{t('greenPoints.addInventory', { point: point.name })}</Text>
-                <TextInput style={styles.input} value={itemName} onChangeText={setItemName} placeholder={t('greenPoints.productName')} />
-                <TextInput style={styles.input} value={itemDescription} onChangeText={setItemDescription} placeholder={t('greenPoints.productDescription')} />
-                <View style={styles.inputRow}>
-                  <TextInput style={[styles.input, styles.thirdInput]} value={price} onChangeText={setPrice} placeholder={t('greenPoints.price')} keyboardType="decimal-pad" />
-                  <TextInput style={[styles.input, styles.thirdInput]} value={marketPrice} onChangeText={setMarketPrice} placeholder={t('greenPoints.marketPrice')} keyboardType="decimal-pad" />
-                  <TextInput style={[styles.input, styles.thirdInput]} value={stock} onChangeText={setStock} placeholder={t('greenPoints.stock')} keyboardType="decimal-pad" />
-                </View>
-                <TextInput style={styles.input} value={unit} onChangeText={setUnit} placeholder={t('greenPoints.unit')} />
-                <TouchableOpacity style={styles.adminButton} onPress={() => void createProduct(point.id)} disabled={savingAdmin}>
-                  <Text style={styles.adminButtonText}>{savingAdmin ? t('greenPoints.saving') : t('greenPoints.addProduct')}</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+            <View style={styles.inventoryCard}>
+              <Text style={styles.pointName}>{t('greenPoints.addInventoryTitle')}</Text>
+              {points.length === 0 ? (
+                <Text style={styles.caption}>{t('greenPoints.createPointFirst')}</Text>
+              ) : (
+                <>
+                  <Text style={styles.label}>{t('greenPoints.selectPoint')}</Text>
+                  <TouchableOpacity
+                    style={styles.selectorButton}
+                    onPress={() => setOpenAdminSelector('point')}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.selectorText, !selectedInventoryPointId && styles.selectorPlaceholder]}>
+                      {points.find((point) => point.id === selectedInventoryPointId)?.name ?? t('greenPoints.selectPoint')}
+                    </Text>
+                    <Icon name="chevron-down" size={18} color={COLORS.muted} />
+                  </TouchableOpacity>
+                  <Text style={styles.label}>{t('greenPoints.productName')}</Text>
+                  <TouchableOpacity
+                    style={styles.selectorButton}
+                    onPress={() => setOpenAdminSelector('product')}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.selectorText, !selectedCatalogProduct && styles.selectorPlaceholder]}>
+                      {selectedCatalogProduct === CUSTOM_PRODUCT
+                        ? t('greenPoints.otherProduct')
+                        : PRODUCT_CATALOG.find((product) => product.name === selectedCatalogProduct)?.name ?? t('greenPoints.selectProduct')}
+                    </Text>
+                    <Icon name="chevron-down" size={18} color={COLORS.muted} />
+                  </TouchableOpacity>
+                  {selectedCatalogProduct ? (
+                    <>
+                      {selectedCatalogProduct === CUSTOM_PRODUCT ? (
+                      <TextInput style={styles.input} value={itemName} onChangeText={setItemName} placeholder={t('greenPoints.productName')} />
+                      ) : null}
+                      <TouchableOpacity style={styles.photoButton} onPress={() => void pickCustomProductImage()}>
+                        {customProductImage ? (
+                          <Image source={{ uri: customProductImage.uri }} style={styles.photoPreview} />
+                        ) : (
+                          <View style={styles.photoPlaceholder}>
+                            <Text style={styles.selectedProductEmoji}>
+                              {selectedCatalogProduct === CUSTOM_PRODUCT
+                                ? '🧺'
+                                : PRODUCT_CATALOG.find((product) => product.name === selectedCatalogProduct)?.image}
+                            </Text>
+                            <Text style={styles.photoButtonText}>{t('greenPoints.builtInImage')}</Text>
+                          </View>
+                        )}
+                        <Text style={styles.photoButtonText}>
+                          {customProductImage ? t('greenPoints.changePhoto') : t('greenPoints.addPhoto')}
+                        </Text>
+                      </TouchableOpacity>
+                      <Text style={styles.caption}>{t('greenPoints.uploadProductImageRequired')}</Text>
+                    </>
+                  ) : null}
+                  <TextInput style={styles.input} value={itemDescription} onChangeText={setItemDescription} placeholder={t('greenPoints.productDescription')} />
+                  <View style={styles.inputRow}>
+                    <TextInput style={[styles.input, styles.thirdInput]} value={price} onChangeText={setPrice} placeholder={t('greenPoints.price')} keyboardType="decimal-pad" />
+                    <TextInput style={[styles.input, styles.thirdInput]} value={marketPrice} onChangeText={setMarketPrice} placeholder={t('greenPoints.marketPrice')} keyboardType="decimal-pad" />
+                    <TextInput style={[styles.input, styles.thirdInput]} value={stock} onChangeText={setStock} placeholder={t('greenPoints.stock')} keyboardType="decimal-pad" />
+                  </View>
+                  <TextInput style={styles.input} value={unit} onChangeText={setUnit} placeholder={t('greenPoints.unit')} />
+                  <TouchableOpacity style={styles.adminButton} onPress={() => void createProduct()} disabled={savingAdmin}>
+                    <Text style={styles.adminButtonText}>{savingAdmin ? t('greenPoints.saving') : t('greenPoints.addProduct')}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           </View>
         ) : null}
 
@@ -429,6 +795,147 @@ export default function GreenPointsScreen() {
         ) : null}
       </ScrollView>
 
+      <Modal visible={openAdminSelector !== null} transparent animationType="fade" onRequestClose={() => setOpenAdminSelector(null)}>
+        <View style={styles.selectorBackdrop}>
+          <View style={styles.selectorModal}>
+            <Text style={styles.sectionTitle}>
+              {openAdminSelector === 'point' ? t('greenPoints.selectPoint') : t('greenPoints.selectProduct')}
+            </Text>
+            <ScrollView style={styles.selectorOptions} keyboardShouldPersistTaps="handled">
+              {openAdminSelector === 'point'
+                ? points.map((point) => (
+                  <TouchableOpacity
+                    key={point.id}
+                    style={styles.selectorOption}
+                    onPress={() => {
+                      setSelectedInventoryPointId(point.id);
+                      setOpenAdminSelector(null);
+                    }}
+                  >
+                    <Text style={styles.selectorText}>{point.name}</Text>
+                  </TouchableOpacity>
+                ))
+                : (
+                  <>
+                    {PRODUCT_CATALOG.map((product) => (
+                      <TouchableOpacity
+                        key={product.name}
+                        style={styles.selectorOption}
+                        onPress={() => {
+                          setSelectedCatalogProduct(product.name);
+                          setCustomProductImage(null);
+                          setItemName(product.name);
+                          setUnit(product.unit);
+                          setOpenAdminSelector(null);
+                        }}
+                      >
+                        <Text style={styles.selectorOptionEmoji}>{product.image}</Text>
+                        <Text style={styles.selectorText}>{product.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={styles.selectorOption}
+                      onPress={() => {
+                        setSelectedCatalogProduct(CUSTOM_PRODUCT);
+                        setCustomProductImage(null);
+                        setItemName('');
+                        setUnit('kg');
+                        setOpenAdminSelector(null);
+                      }}
+                    >
+                      <Text style={styles.selectorOptionEmoji}>＋</Text>
+                      <Text style={styles.selectorText}>{t('greenPoints.otherProduct')}</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+            </ScrollView>
+            <TouchableOpacity style={styles.cancelButton} onPress={() => setOpenAdminSelector(null)}>
+              <Text style={styles.cancelText}>{t('greenPoints.cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!editingPointLocation}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditingPointLocation(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { paddingBottom: insets.bottom + 18 }]}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.sectionTitle}>{t('greenPoints.editPointLocation')}</Text>
+            {editingPointLocation ? (
+              <>
+                <Text style={styles.caption}>{editingPointLocation.name} · {t('greenPoints.locationMapHint')}</Text>
+                <View style={styles.editLocationMapFrame}>
+                  <MapView
+                    style={styles.locationMap}
+                    initialRegion={
+                      locationDraft
+                        ? {
+                            ...locationDraft,
+                            latitudeDelta: 0.012,
+                            longitudeDelta: 0.012,
+                          }
+                        : ANGOLA_MAP_REGION
+                    }
+                    onPress={(event) => setLocationDraft(event.nativeEvent.coordinate)}
+                  >
+                    {locationDraft ? <Marker coordinate={locationDraft} pinColor={COLORS.primary} /> : null}
+                  </MapView>
+                </View>
+                <TouchableOpacity
+                  style={[styles.adminButton, !locationDraft && styles.disabledButton]}
+                  onPress={() => void savePointLocation()}
+                  disabled={!locationDraft || savingPointLocation}
+                >
+                  <Text style={styles.adminButtonText}>
+                    {savingPointLocation ? t('greenPoints.saving') : t('greenPoints.savePointLocation')}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => {
+                setEditingPointLocation(null);
+                setLocationDraft(null);
+              }}
+            >
+              <Text style={styles.cancelText}>{t('greenPoints.cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!editingProduct} transparent animationType="slide" onRequestClose={() => setEditingProduct(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { paddingBottom: insets.bottom + 18 }]}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.sectionTitle}>{t('greenPoints.editProduct')}</Text>
+            {editingProduct ? (
+              <>
+                <Text style={styles.productName}>{editingProduct.product_name}</Text>
+                <Text style={styles.label}>{t('greenPoints.price')}</Text>
+                <TextInput style={styles.input} value={editPrice} onChangeText={setEditPrice} keyboardType="decimal-pad" />
+                <Text style={styles.label}>{t('greenPoints.marketPrice')}</Text>
+                <TextInput style={styles.input} value={editMarketPrice} onChangeText={setEditMarketPrice} keyboardType="decimal-pad" />
+                <Text style={styles.label}>{t('greenPoints.stock')}</Text>
+                <TextInput style={styles.input} value={editStock} onChangeText={setEditStock} keyboardType="decimal-pad" />
+                <TouchableOpacity style={styles.adminButton} onPress={() => void saveProductEdits()} disabled={savingAdmin}>
+                  <Text style={styles.adminButtonText}>{savingAdmin ? t('greenPoints.saving') : t('greenPoints.saveProduct')}</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+            <TouchableOpacity style={styles.cancelButton} onPress={() => setEditingProduct(null)}>
+              <Text style={styles.cancelText}>{t('greenPoints.cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={!!selectedProduct} transparent animationType="slide" onRequestClose={() => setSelectedProduct(null)}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, { paddingBottom: insets.bottom + 18 }]}>
@@ -468,6 +975,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 18 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 8 },
+  headerMapIcon: { position: 'relative', width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#E9F5EC' },
+  headerMapPin: { position: 'absolute', top: 1, right: 1, width: 14, height: 14, alignItems: 'center', justifyContent: 'center', borderRadius: 7, backgroundColor: COLORS.primary },
   backButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: COLORS.white },
   eyebrow: { color: COLORS.primary, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   title: { marginTop: 3, color: COLORS.text, fontSize: 23, fontWeight: '800' },
@@ -479,15 +988,28 @@ const styles = StyleSheet.create({
   emptyText: { color: COLORS.muted, fontSize: 12, textAlign: 'center' },
   pointCard: { marginTop: 14, padding: 14, borderWidth: 1, borderColor: COLORS.border, borderRadius: 15, backgroundColor: COLORS.white },
   pointHeading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 12 },
-  pointIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#E9F5EC' },
+  pointIcon: { position: 'relative', width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#E9F5EC' },
+  pointPin: { position: 'absolute', top: 2, right: 2, width: 12, height: 12, alignItems: 'center', justifyContent: 'center', borderRadius: 6, backgroundColor: COLORS.primary },
+  locationEditButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#E9F5EC' },
+  pointMapFrame: { height: 145, marginBottom: 12, borderRadius: 11, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
+  pointMap: { flex: 1 },
+  mapCaption: { position: 'absolute', left: 8, bottom: 8, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, backgroundColor: COLORS.white },
+  mapCaptionText: { color: COLORS.text, fontSize: 10, fontWeight: '700' },
   pointName: { color: COLORS.text, fontSize: 14, fontWeight: '800' },
   pointAddress: { marginTop: 3, color: COLORS.muted, fontSize: 11, lineHeight: 15 },
   noProducts: { paddingVertical: 12, color: COLORS.muted, fontSize: 11 },
-  productRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
-  productName: { color: COLORS.text, fontSize: 13, fontWeight: '800' },
+  productCard: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: COLORS.border },
+  unavailableProduct: { opacity: 0.65 },
+  productArtwork: { width: '100%', height: 190, alignItems: 'center', justifyContent: 'center', borderRadius: 12, overflow: 'hidden' },
+  productImage: { width: '100%', height: '100%' },
+  productEmoji: { fontSize: 76 },
+  productInfo: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 11 },
+  productActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  productName: { color: COLORS.text, fontSize: 15, fontWeight: '800' },
+  unavailableLabel: { marginTop: 3, color: COLORS.danger, fontSize: 10, fontWeight: '700' },
   productDetails: { marginTop: 4, color: COLORS.muted, fontSize: 10.5, lineHeight: 15 },
   savings: { marginTop: 4, color: COLORS.primary, fontSize: 10, fontWeight: '800' },
-  orderButton: { paddingHorizontal: 13, paddingVertical: 9, borderRadius: 10, backgroundColor: COLORS.primary },
+  orderButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, borderRadius: 10, backgroundColor: COLORS.primary },
   orderButtonText: { color: COLORS.white, fontSize: 11, fontWeight: '800' },
   stockActions: { flexDirection: 'row', gap: 5 },
   stockButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#E9F5EC' },
@@ -496,12 +1018,32 @@ const styles = StyleSheet.create({
   sectionTitle: { marginBottom: 8, color: COLORS.text, fontSize: 16, fontWeight: '800' },
   caption: { marginBottom: 8, color: COLORS.muted, fontSize: 11, lineHeight: 16 },
   input: { minHeight: 43, marginTop: 8, paddingHorizontal: 11, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, backgroundColor: COLORS.canvas, color: COLORS.text, fontSize: 12 },
+  locationPicker: { height: 210, marginTop: 7, borderWidth: 1, borderColor: COLORS.border, borderRadius: 11, overflow: 'hidden' },
+  locationMap: { flex: 1 },
+  mapPickerHint: { position: 'absolute', alignSelf: 'center', top: 12, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9, backgroundColor: COLORS.white },
+  mapPickerHintText: { color: COLORS.text, fontSize: 10, fontWeight: '700' },
+  mapPickerSelected: { position: 'absolute', left: 8, right: 8, bottom: 8, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9, backgroundColor: COLORS.primary },
+  mapPickerSelectedText: { color: COLORS.white, fontSize: 10, fontWeight: '700' },
   inputRow: { flexDirection: 'row', gap: 8 },
   halfInput: { flex: 1 },
   thirdInput: { flex: 1, minWidth: 0 },
   adminButton: { minHeight: 42, alignItems: 'center', justifyContent: 'center', marginTop: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: COLORS.primary },
   adminButtonText: { color: COLORS.white, fontSize: 11, fontWeight: '800' },
   inventoryCard: { marginTop: 15, paddingTop: 14, borderTopWidth: 1, borderTopColor: COLORS.border },
+  selectorButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, backgroundColor: COLORS.canvas },
+  selectorText: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
+  selectorPlaceholder: { color: COLORS.muted, fontWeight: '400' },
+  selectedProductEmoji: { fontSize: 28 },
+  photoButton: { minHeight: 120, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, backgroundColor: COLORS.canvas, overflow: 'hidden' },
+  photoPlaceholder: { alignItems: 'center', gap: 6 },
+  photoButtonText: { color: COLORS.primary, fontSize: 11, fontWeight: '700' },
+  customImagePreview: { width: 32, height: 32, borderRadius: 6 },
+  photoPreview: { width: '100%', height: 120, position: 'absolute' },
+  selectorBackdrop: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: 'rgba(15,20,17,0.48)' },
+  selectorModal: { maxHeight: '75%', padding: 18, borderRadius: 16, backgroundColor: COLORS.white },
+  selectorOptions: { flexGrow: 0 },
+  selectorOption: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  selectorOptionEmoji: { width: 30, fontSize: 21, textAlign: 'center' },
   orderRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   smallAction: { padding: 9, borderRadius: 9, backgroundColor: '#E9F5EC' },
   smallActionText: { color: COLORS.primary, fontSize: 10, fontWeight: '800' },
@@ -511,6 +1053,8 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,20,17,0.48)' },
   modalCard: { paddingHorizontal: 20, paddingTop: 12, borderTopLeftRadius: 20, borderTopRightRadius: 20, backgroundColor: COLORS.white },
   modalHandle: { width: 38, height: 4, alignSelf: 'center', marginBottom: 18, borderRadius: 2, backgroundColor: COLORS.border },
+  editLocationMapFrame: { height: 280, marginTop: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, overflow: 'hidden' },
+  disabledButton: { opacity: 0.55 },
   label: { marginTop: 14, color: COLORS.text, fontSize: 11, fontWeight: '700' },
   dateButton: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10 },
   dateButtonActive: { borderColor: COLORS.primary, backgroundColor: '#E9F5EC' },

@@ -61,6 +61,12 @@ export const PRODUCT_CATEGORIES: ProductCategory[] = [
     icon: "water-outline",
   },
   {
+    id: "processados",
+    label: "Processados",
+    color: "#B45309",
+    icon: "cube-outline",
+  },
+  {
     id: "outros",
     label: "Outros",
     color: "#6B7280",

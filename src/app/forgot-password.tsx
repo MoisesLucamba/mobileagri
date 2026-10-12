@@ -18,15 +18,15 @@ import Icon from "../components/Icon";
 import { supabase } from "../lib/supabase";
 
 const COLORS = {
-  primary: "#2E8B4F",
+  primary: "#218B4A",
   dark: "#16231C",
   muted: "#78877D",
   border: "#E8ECE6",
-  background: "#F6F8F5",
-  white: "#FFFFFF",
+  background: "#F3F6F2",
+  white: "#FFFEFC",
   danger: "#B54747",
   dangerSoft: "#FCECEC",
-  soft: "#E9F5EC",
+  soft: "#EAF5ED",
 };
 
 export default function ForgotPasswordScreen() {

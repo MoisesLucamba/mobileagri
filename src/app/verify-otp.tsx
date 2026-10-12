@@ -20,13 +20,13 @@ import { supabase } from '../lib/supabase';
 import { saveVerifiedUserProfile } from '../lib/verifiedProfile';
 
 const COLORS = {
-  primary: '#16834A',
+  primary: '#218B4A',
   dark: '#143529',
   text: '#1C3428',
   muted: '#687A6C',
   faint: '#9AA99D',
   border: '#DCE8DD',
-  background: '#F4F9F2',
+  background: '#F3F6F2',
   soft: '#EAF5E8',
   danger: '#B54747',
   dangerSoft: '#FCECEC',

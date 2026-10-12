@@ -23,8 +23,8 @@ import MapPicker, { Coords, PickedLocation } from '../components/MapPicker';
 
 // Paleta partilhada com Home, ProductCard, Pesquisa, Perfil e Pagamento
 const T = {
-  green: '#2E8B4F',
-  greenDark: '#25703F',
+  green: '#218B4A',
+  greenDark: '#218B4A',
   greenPale: '#E9F5EC',
   charcoal: '#16231C',
   muted: '#78877D',
@@ -32,15 +32,15 @@ const T = {
   border: '#E8ECE6',
   cream: '#F6F8F5',
   field: '#F9FAF8',
-  white: '#FFFFFF',
+  white: '#FFFEFC',
 };
 
 const STEPS = [
-  { id: 0, label: 'Negócio', icon: 'business-outline' },
-  { id: 1, label: 'Produto', icon: 'cube-outline' },
-  { id: 2, label: 'Entrega', icon: 'car-outline' },
-  { id: 3, label: 'Contacto', icon: 'call-outline' },
-  { id: 4, label: 'Resumo', icon: 'document-text-outline' },
+  { id: 0, label: 'O teu negócio', description: 'Identifica o negócio que vai receber os produtos.', icon: 'business-outline' },
+  { id: 1, label: 'Produtos', description: 'Escolhe um ou mais produtos e indica como os pretendes receber.', icon: 'cube-outline' },
+  { id: 2, label: 'Local de entrega', description: 'Indica onde os fornecedores devem entregar.', icon: 'car-outline' },
+  { id: 3, label: 'Contacto', description: 'Deixa um contacto e acrescenta instruções, se necessário.', icon: 'call-outline' },
+  { id: 4, label: 'Confirmar pedido', description: 'Revê os dados antes de enviar o pedido aos fornecedores.', icon: 'document-text-outline' },
 ] as const;
 
 const TIPOS_NEGOCIO = [
@@ -69,40 +69,106 @@ interface LocalEntrega {
   coordenadas: { lat: number; lng: number } | null;
 }
 
+const createEmptyFormData = () => ({
+  nomeFicha: '',
+  tipoNegocio: '',
+  produto: '',
+  qualidade: '',
+  embalagem: '',
+  transporte: '',
+  locaisEntrega: [] as LocalEntrega[],
+  telefone: '',
+  descricaoFinal: '',
+  observacoes: '',
+});
+
+const createEmptyLocal = (): LocalEntrega => ({
+  descricao: '',
+  coordenadas: null,
+});
+
 function FichaRecebimentoScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [expandedProductIndex, setExpandedProductIndex] = useState<number | null>(0);
+  const [fichas, setFichas] = useState([createEmptyFormData()]);
+  const [localTemps, setLocalTemps] = useState([createEmptyLocal()]);
+  const formData = fichas[0];
+  const localTemp = localTemps[0];
+  const sharedFields: (keyof ReturnType<typeof createEmptyFormData>)[] = [
+    'nomeFicha',
+    'tipoNegocio',
+    'locaisEntrega',
+    'telefone',
+    'descricaoFinal',
+    'observacoes',
+  ];
 
-  const [formData, setFormData] = useState({
-    nomeFicha: '',
-    tipoNegocio: '',
-    produto: '',
-    qualidade: '',
-    embalagem: '',
-    transporte: '',
-    locaisEntrega: [] as LocalEntrega[],
-    telefone: '',
-    descricaoFinal: '',
-    observacoes: '',
-  });
+  const set = (key: keyof ReturnType<typeof createEmptyFormData>, value: string) => {
+    setFichas((current) =>
+      current.map((ficha, index) =>
+        sharedFields.includes(key) || index === 0 ? { ...ficha, [key]: value } : ficha,
+      ),
+    );
+  };
 
-  const [localTemp, setLocalTemp] = useState<LocalEntrega>({
-    descricao: '',
-    coordenadas: null,
-  });
+  const setLocalTemp = (update: LocalEntrega | ((current: LocalEntrega) => LocalEntrega)) => {
+    setLocalTemps((current) =>
+      current.map((local, index) => index === 0
+        ? typeof update === 'function' ? update(local) : update
+        : local),
+    );
+  };
 
-  const set = (key: keyof typeof formData, value: any) =>
-    setFormData((prev) => ({ ...prev, [key]: value }));
+  const addFicha = () => {
+    const shared = fichas[0];
+    setFichas((current) => [
+      ...current,
+      {
+        ...createEmptyFormData(),
+        nomeFicha: shared.nomeFicha,
+        tipoNegocio: shared.tipoNegocio,
+        locaisEntrega: [...shared.locaisEntrega],
+        telefone: shared.telefone,
+        descricaoFinal: shared.descricaoFinal,
+        observacoes: shared.observacoes,
+      },
+    ]);
+    setExpandedProductIndex(fichas.length);
+  };
+
+  const updateFicha = (
+    index: number,
+    key: keyof ReturnType<typeof createEmptyFormData>,
+    value: string,
+  ) => {
+    setFichas((current) =>
+      current.map((ficha, fichaIndex) =>
+        fichaIndex === index ? { ...ficha, [key]: value } : ficha,
+      ),
+    );
+  };
+
+  const removeFicha = (index: number) => {
+    if (fichas.length <= 1) return;
+    setFichas((current) => current.filter((_, fichaIndex) => fichaIndex !== index));
+    setExpandedProductIndex((current) => {
+      if (current === null) return null;
+      if (current === index) return index > 0 ? index - 1 : 0;
+      return current > index ? current - 1 : current;
+    });
+  };
 
   const canAdvance = () => {
+    if (!formData) return false;
     switch (step) {
       case 0:
         return formData.nomeFicha.trim() && formData.tipoNegocio;
       case 1:
-        return !!formData.produto;
+        return fichas.every((ficha) => !!ficha.produto);
       default:
         return true;
     }
@@ -119,7 +185,9 @@ function FichaRecebimentoScreen() {
 
   const addLocal = () => {
     if (localTemp.descricao.trim() && localTemp.coordenadas) {
-      set('locaisEntrega', [...formData.locaisEntrega, localTemp]);
+      setFichas((current) =>
+        current.map((ficha) => ({ ...ficha, locaisEntrega: [...ficha.locaisEntrega, localTemp] })),
+      );
       setLocalTemp({ descricao: '', coordenadas: null });
     } else {
       Alert.alert('Faltam dados', 'Preenche a descrição e marca o local no mapa.');
@@ -127,10 +195,27 @@ function FichaRecebimentoScreen() {
   };
 
   const removeLocal = (index: number) => {
-    set('locaisEntrega', formData.locaisEntrega.filter((_, i) => i !== index));
+    setFichas((current) =>
+      current.map((ficha) => ({
+        ...ficha,
+        locaisEntrega: ficha.locaisEntrega.filter((_, i) => i !== index),
+      })),
+    );
   };
 
   const handleSubmit = async () => {
+    const incompleteFicha = fichas.findIndex(
+      (ficha) => !ficha.nomeFicha.trim() || !ficha.tipoNegocio || !ficha.produto,
+    );
+    if (incompleteFicha >= 0) {
+      setStep(!fichas[incompleteFicha].nomeFicha.trim() || !fichas[incompleteFicha].tipoNegocio ? 0 : 1);
+      Alert.alert(
+        'Ficha incompleta',
+        `Preenche o produto ${incompleteFicha + 1} antes de submeter as fichas.`,
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const {
@@ -148,33 +233,39 @@ function FichaRecebimentoScreen() {
 
       const { data: inserted, error } = await supabase
         .from('fichas_recebimento')
-        .insert([
-          {
+        .insert(
+          fichas.map((ficha) => ({
             user_id: user.id,
-            nome_ficha: formData.nomeFicha,
-            tipo_negocio: formData.tipoNegocio,
-            produto: formData.produto,
-            qualidade: formData.qualidade,
-            embalagem: formData.embalagem,
-            transporte: formData.transporte,
-            locais_entrega: formData.locaisEntrega,
-            telefone: formData.telefone,
-            descricao_final: formData.descricaoFinal,
-            observacoes: formData.observacoes,
-          },
-        ])
+            nome_ficha: ficha.nomeFicha,
+            tipo_negocio: ficha.tipoNegocio,
+            produto: ficha.produto,
+            qualidade: ficha.qualidade,
+            embalagem: ficha.embalagem,
+            transporte: ficha.transporte,
+            locais_entrega: ficha.locaisEntrega,
+            telefone: ficha.telefone,
+            descricao_final: ficha.descricaoFinal,
+            observacoes: ficha.observacoes,
+          })),
+        )
         .select('id')
-        .single();
+        ;
 
       if (error) throw error;
 
-      if (inserted?.id) {
-        supabase.functions
-          .invoke('verify-product-ficha', { body: { ficha_id: inserted.id } })
-          .catch((e) => console.warn('verify error', e));
-      }
+      (inserted || []).forEach(({ id }) => {
+        void supabase.functions
+          .invoke('verify-product-ficha', { body: { ficha_id: id } })
+          .then(({ error: verifyError }) => {
+            if (verifyError) console.warn('Não foi possível verificar a ficha:', verifyError);
+          })
+          .catch((verifyError) => console.warn('Não foi possível verificar a ficha:', verifyError));
+      });
 
-      Alert.alert('Ficha criada', 'A ficha de recebimento foi criada com sucesso.');
+      Alert.alert(
+        'Fichas criadas',
+        `${inserted?.length ?? fichas.length} ficha(s) de recebimento criada(s) com sucesso.`,
+      );
       router.back();
     } catch (err: any) {
       console.error(err);
@@ -185,6 +276,7 @@ function FichaRecebimentoScreen() {
   };
 
   const renderStep = () => {
+    if (!formData || !localTemp) return null;
     switch (step) {
       case 0:
         return (
@@ -217,59 +309,122 @@ function FichaRecebimentoScreen() {
       case 1:
         return (
           <View>
-            <Field label="Produto Principal *">
-              <View style={styles.pickerWrapper}>
-                <Picker
-                  selectedValue={formData.produto}
-                  onValueChange={(v) => set('produto', v)}
-                >
-                  <Picker.Item label="Selecionar" value="" />
-                  {PRODUTOS.map((p) => (
-                    <Picker.Item key={p} label={p} value={p.toLowerCase()} />
-                  ))}
-                </Picker>
+            <View style={styles.sectionIntro}>
+              <Text style={styles.sectionTitle}>O que precisas?</Text>
+              <Text style={styles.sectionDescription}>
+                Adiciona cada produto e os respetivos requisitos. O negócio e o local de entrega serão comuns.
+              </Text>
+              <View style={styles.productCountPill}>
+                <Ionicons name="checkmark-circle" size={15} color={T.greenDark} />
+                <Text style={styles.productCountText}>
+                  {fichas.filter((ficha) => ficha.produto).length} de {fichas.length} selecionados
+                </Text>
               </View>
-            </Field>
-
-            <View style={styles.row}>
-              <Field label="Padrões de Qualidade" style={{ flex: 1 }}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ex.: Fresco, sem defeitos"
-                  placeholderTextColor={T.faint}
-                  value={formData.qualidade}
-                  onChangeText={(v) => set('qualidade', v)}
-                />
-              </Field>
-              <Field label="Embalagem" style={{ flex: 1 }}>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={formData.embalagem}
-                    onValueChange={(v) => set('embalagem', v)}
-                  >
-                    <Picker.Item label="Selecionar" value="" />
-                    {EMBALAGENS.map((o) => (
-                      <Picker.Item key={o.v} label={o.l} value={o.v} />
-                    ))}
-                  </Picker>
-                </View>
-              </Field>
             </View>
-
-            <Field label="Transporte Preferido">
-              <View style={styles.pickerWrapper}>
-                <Picker
-                  selectedValue={formData.transporte}
-                  onValueChange={(v) => set('transporte', v)}
-                >
-                  <Picker.Item label="Selecionar" value="" />
-                  <Picker.Item label="Próprio" value="proprio" />
-                  <Picker.Item label="Terceiros" value="terceiros" />
-                  <Picker.Item label="Via AgriLink" value="agrilink" />
-                  <Picker.Item label="A combinar" value="combinar" />
-                </Picker>
+            {fichas.map((ficha, index) => (
+              <View key={`produto-${index}`} style={[styles.productCard, ficha.produto && styles.productCardComplete]}>
+                <View style={styles.productCardHeader}>
+                  <TouchableOpacity
+                    style={styles.productCardHeading}
+                    onPress={() => setExpandedProductIndex(expandedProductIndex === index ? null : index)}
+                    activeOpacity={0.75}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${expandedProductIndex === index ? 'Fechar' : 'Editar'} produto ${index + 1}`}
+                  >
+                    <View style={[styles.productNumber, ficha.produto && styles.productNumberComplete]}>
+                      {ficha.produto
+                        ? <Ionicons name="checkmark" size={15} color={T.white} />
+                        : <Text style={styles.productNumberText}>{index + 1}</Text>}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.productCardTitle}>
+                        {ficha.produto
+                          ? PRODUTOS.find((produto) => produto.toLowerCase() === ficha.produto) || ficha.produto
+                          : `Produto ${index + 1}`}
+                      </Text>
+                      <Text style={styles.productCardSubTitle}>
+                        {ficha.produto
+                          ? [ficha.qualidade, EMBALAGENS.find((opcao) => opcao.v === ficha.embalagem)?.l]
+                              .filter(Boolean).join(' · ') || 'Toque para adicionar detalhes'
+                          : 'Toque para escolher um produto'}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={expandedProductIndex === index ? 'chevron-up' : 'chevron-down'}
+                      size={18}
+                      color={T.muted}
+                    />
+                  </TouchableOpacity>
+                  {fichas.length > 1 ? (
+                    <TouchableOpacity
+                      style={styles.removeProductButton}
+                      onPress={() => removeFicha(index)}
+                      hitSlop={8}
+                      accessibilityLabel={`Remover produto ${index + 1}`}
+                    >
+                      <Ionicons name="trash-outline" size={17} color="#B54747" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                {expandedProductIndex === index ? (
+                  <View style={styles.productFields}>
+                    <Field label="Produto *">
+                      <View style={styles.pickerWrapper}>
+                        <Picker
+                          selectedValue={ficha.produto}
+                          onValueChange={(value) => updateFicha(index, 'produto', value)}
+                        >
+                          <Picker.Item label="Selecionar produto" value="" />
+                          {PRODUTOS.map((produto) => (
+                            <Picker.Item key={produto} label={produto} value={produto.toLowerCase()} />
+                          ))}
+                        </Picker>
+                      </View>
+                    </Field>
+                    <Field label="Qualidade pretendida">
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Ex.: Fresco, sem defeitos"
+                        placeholderTextColor={T.faint}
+                        value={ficha.qualidade}
+                        onChangeText={(value) => updateFicha(index, 'qualidade', value)}
+                      />
+                    </Field>
+                    <Field label="Embalagem">
+                      <View style={styles.pickerWrapper}>
+                        <Picker
+                          selectedValue={ficha.embalagem}
+                          onValueChange={(value) => updateFicha(index, 'embalagem', value)}
+                        >
+                          <Picker.Item label="Selecionar embalagem" value="" />
+                          {EMBALAGENS.map((opcao) => (
+                            <Picker.Item key={opcao.v} label={opcao.l} value={opcao.v} />
+                          ))}
+                        </Picker>
+                      </View>
+                    </Field>
+                    <Field label="Transporte preferido">
+                      <View style={styles.pickerWrapper}>
+                        <Picker
+                          selectedValue={ficha.transporte}
+                          onValueChange={(value) => updateFicha(index, 'transporte', value)}
+                        >
+                          <Picker.Item label="Selecionar transporte" value="" />
+                          <Picker.Item label="Próprio" value="proprio" />
+                          <Picker.Item label="Terceiros" value="terceiros" />
+                          <Picker.Item label="Via AgriLink" value="agrilink" />
+                          <Picker.Item label="A combinar" value="combinar" />
+                        </Picker>
+                      </View>
+                    </Field>
+                  </View>
+                ) : null}
               </View>
-            </Field>
+            ))}
+            <TouchableOpacity style={styles.addProductButton} onPress={addFicha} disabled={loading} activeOpacity={0.85}>
+              <Ionicons name="add-circle-outline" size={20} color={T.greenDark} />
+              <Text style={styles.addProductButtonText}>Adicionar outro produto</Text>
+            </TouchableOpacity>
           </View>
         );
 
@@ -387,10 +542,6 @@ function FichaRecebimentoScreen() {
             {[
               { label: 'Nome da Ficha', value: formData.nomeFicha },
               { label: 'Tipo de Negócio', value: formData.tipoNegocio },
-              { label: 'Produto', value: formData.produto },
-              { label: 'Qualidade', value: formData.qualidade || '—' },
-              { label: 'Embalagem', value: formData.embalagem || '—' },
-              { label: 'Transporte', value: formData.transporte || '—' },
               { label: 'Telefone', value: formData.telefone || '—' },
             ].map((item) => (
               <View key={item.label} style={styles.summaryRow}>
@@ -402,6 +553,27 @@ function FichaRecebimentoScreen() {
                 </Text>
               </View>
             ))}
+
+            <View style={{ marginTop: 14 }}>
+              <Text style={styles.fieldLabel}>Produtos ({fichas.length})</Text>
+              {fichas.map((ficha, index) => (
+                <View key={`resumo-produto-${index}`} style={styles.summaryProductRow}>
+                  <View style={styles.summaryProductNumber}>
+                    <Text style={styles.summaryProductNumberText}>{index + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.summaryProductName}>
+                      {PRODUTOS.find((product) => product.toLowerCase() === ficha.produto) || ficha.produto}
+                    </Text>
+                    <Text style={styles.summaryProductDetails}>
+                      {[ficha.qualidade, EMBALAGENS.find((option) => option.v === ficha.embalagem)?.l, ficha.transporte]
+                        .filter(Boolean)
+                        .join(' · ') || 'Sem requisitos adicionais'}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
 
             {formData.locaisEntrega.length > 0 && (
               <View style={{ marginTop: 14 }}>
@@ -440,67 +612,33 @@ function FichaRecebimentoScreen() {
           <Ionicons name="arrow-back" size={20} color={T.greenDark} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.headerTitle}>Nova Ficha de Recebimento</Text>
+          <Text style={styles.headerTitle}>Novo pedido</Text>
           <Text style={styles.headerSubtitle}>
-            Passo {step + 1} de {STEPS.length}
+            Pedido de compra · {fichas.length} {fichas.length === 1 ? 'produto' : 'produtos'}
           </Text>
         </View>
       </View>
 
-      {/* Step indicators */}
-      <View style={styles.stepsRow}>
-        {STEPS.map((s, i) => {
-          const isActive = i === step;
-          const isDone = i < step;
-          return (
-            <React.Fragment key={s.id}>
-              <TouchableOpacity
-                onPress={() => i <= step && setStep(i)}
-                disabled={i > step}
-                style={styles.stepItem}
-              >
-                <View
-                  style={[
-                    styles.stepCircle,
-                    {
-                      backgroundColor: isDone ? T.green : isActive ? T.greenPale : T.cream,
-                      borderWidth: isActive ? 1.5 : 0,
-                      borderColor: T.green,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={isDone ? 'checkmark' : (s.icon as any)}
-                    size={14}
-                    color={isDone ? '#fff' : isActive ? T.green : T.muted}
-                  />
-                </View>
-                <Text
-                  style={{
-                    fontSize: 9.5,
-                    fontWeight: '700',
-                    marginTop: 4,
-                    color: isActive ? T.greenDark : isDone ? T.charcoal : T.muted,
-                  }}
-                >
-                  {s.label}
-                </Text>
-              </TouchableOpacity>
-              {i < STEPS.length - 1 && (
-                <View
-                  style={{
-                    flex: 1,
-                    height: 2,
-                    marginHorizontal: 2,
-                    marginBottom: 14,
-                    borderRadius: 1,
-                    backgroundColor: i < step ? T.green : T.border,
-                  }}
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
+      <View style={styles.progressCard}>
+        <View style={styles.progressHeading}>
+          <View style={styles.progressIcon}>
+            <Ionicons name={STEPS[step].icon as any} size={19} color={T.greenDark} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.progressEyebrow}>PASSO {step + 1} DE {STEPS.length}</Text>
+            <Text style={styles.progressTitle}>{STEPS[step].label}</Text>
+          </View>
+          <Text style={styles.progressCount}>{Math.round(((step + 1) / STEPS.length) * 100)}%</Text>
+        </View>
+        <Text style={styles.progressDescription}>{STEPS[step].description}</Text>
+        <View style={styles.progressTrack}>
+          {STEPS.map((item, index) => (
+            <View
+              key={item.id}
+              style={[styles.progressSegment, index <= step && styles.progressSegmentDone]}
+            />
+          ))}
+        </View>
       </View>
 
       {/* Content */}
@@ -510,7 +648,7 @@ function FichaRecebimentoScreen() {
       >
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 18, paddingBottom: 40 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -526,7 +664,7 @@ function FichaRecebimentoScreen() {
               activeOpacity={0.85}
             >
               <Ionicons name="arrow-back" size={16} color={T.charcoal} />
-              <Text style={[styles.navBtnText, { color: T.charcoal }]}>Anterior</Text>
+              <Text style={[styles.navBtnText, { color: T.charcoal }]}>Voltar</Text>
             </TouchableOpacity>
           )}
 
@@ -551,7 +689,7 @@ function FichaRecebimentoScreen() {
               activeOpacity={0.85}
             >
               <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-              <Text style={styles.navBtnText}>{loading ? 'A submeter…' : 'Submeter Ficha'}</Text>
+              <Text style={styles.navBtnText}>{loading ? 'A enviar…' : `Enviar ${fichas.length > 1 ? `${fichas.length} fichas` : 'pedido'}`}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -593,59 +731,152 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingBottom: 14,
     backgroundColor: T.white,
     borderBottomWidth: 1,
     borderBottomColor: T.border,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.field,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: T.charcoal, letterSpacing: -0.3 },
+  headerSubtitle: { fontSize: 12, color: T.muted, marginTop: 3 },
+  progressCard: {
+    marginHorizontal: 16,
+    marginTop: 14,
+    padding: 15,
+    borderRadius: 16,
+    backgroundColor: T.white,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  progressHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  progressIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: T.greenPale,
   },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: T.charcoal },
-  headerSubtitle: { fontSize: 11.5, color: T.muted, marginTop: 1 },
-  stepsRow: {
+  progressEyebrow: { color: T.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  progressTitle: { color: T.charcoal, fontSize: 16, fontWeight: '900', marginTop: 2 },
+  progressCount: { color: T.greenDark, fontSize: 13, fontWeight: '900' },
+  progressDescription: { color: T.muted, fontSize: 12, lineHeight: 17, marginTop: 11 },
+  progressTrack: { flexDirection: 'row', gap: 5, marginTop: 14 },
+  progressSegment: { flex: 1, height: 4, borderRadius: 4, backgroundColor: T.border },
+  progressSegmentDone: { backgroundColor: T.green },
+  sectionIntro: { marginBottom: 15 },
+  sectionTitle: { color: T.charcoal, fontSize: 18, fontWeight: '900', marginBottom: 5 },
+  sectionDescription: { color: T.muted, fontSize: 12.5, lineHeight: 18 },
+  productCountPill: {
     flexDirection: 'row',
+    alignSelf: 'flex-start',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: T.white,
-    borderBottomWidth: 1,
-    borderBottomColor: T.border,
+    gap: 5,
+    marginTop: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: T.greenPale,
   },
-  stepItem: { alignItems: 'center' },
-  stepCircle: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  productCountText: { color: T.greenDark, fontSize: 11, fontWeight: '800' },
   card: {
     backgroundColor: T.white,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 18,
+    padding: 18,
     borderWidth: 1,
     borderColor: T.border,
+    shadowColor: '#16231C',
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  fieldLabel: { fontSize: 13, fontWeight: '700', color: T.charcoal, marginBottom: 4 },
-  hint: { fontSize: 11.5, color: T.muted, marginBottom: 8, lineHeight: 16 },
+  fieldLabel: { fontSize: 12, fontWeight: '800', color: T.charcoal, marginBottom: 7 },
+  hint: { fontSize: 12, color: T.muted, marginBottom: 8, lineHeight: 18 },
   input: {
-    height: 48,
+    minHeight: 50,
     borderWidth: 1,
     borderColor: T.border,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 12,
     justifyContent: 'center',
     color: T.charcoal,
-    backgroundColor: T.field,
+    backgroundColor: T.white,
+    fontSize: 14,
   },
   textArea: { height: 96, textAlignVertical: 'top', paddingTop: 12 },
-  row: { flexDirection: 'row', gap: 12 },
+  productCard: {
+    padding: 12,
+    marginBottom: 10,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.white,
+  },
+  productCardComplete: { borderColor: '#D7EBDD' },
+  productCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  productCardHeading: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48 },
+  productNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.field,
+  },
+  productNumberComplete: { backgroundColor: T.green },
+  productNumberText: { color: T.muted, fontSize: 12, fontWeight: '900' },
+  productCardTitle: { color: T.charcoal, fontSize: 14, fontWeight: '900' },
+  productCardSubTitle: { color: T.muted, fontSize: 11, marginTop: 3 },
+  removeProductButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 11,
+    backgroundColor: '#FBEDEC',
+  },
+  productFields: {
+    paddingTop: 15,
+    paddingHorizontal: 2,
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+  },
+  addProductButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 48,
+    marginTop: 2,
+    marginBottom: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: T.green,
+    backgroundColor: T.greenPale,
+  },
+  addProductButtonText: { fontSize: 13, fontWeight: '800', color: T.greenDark },
   pickerWrapper: {
     borderWidth: 1,
     borderColor: T.border,
-    borderRadius: 10,
+    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: T.field,
+    backgroundColor: T.white,
   },
 
   mapBtn: {
@@ -705,11 +936,31 @@ const styles = StyleSheet.create({
     backgroundColor: T.greenPale,
     marginTop: 4,
   },
+  summaryProductRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    marginTop: 6,
+    borderRadius: 10,
+    backgroundColor: T.greenPale,
+  },
+  summaryProductNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.green,
+  },
+  summaryProductNumberText: { color: T.white, fontSize: 12, fontWeight: '800' },
+  summaryProductName: { color: T.charcoal, fontSize: 13, fontWeight: '800', textTransform: 'capitalize' },
+  summaryProductDetails: { color: T.muted, fontSize: 11, marginTop: 2 },
   bottomNav: {
     flexDirection: 'row',
     gap: 10,
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 12,
     backgroundColor: T.white,
     borderTopWidth: 1,
     borderTopColor: T.border,
@@ -719,12 +970,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    height: 50,
-    borderRadius: 12,
+    height: 52,
+    borderRadius: 14,
     paddingHorizontal: 18,
   },
-  navBtnOutline: { borderWidth: 1, borderColor: T.border, backgroundColor: T.white },
-  navBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  navBtnOutline: { borderWidth: 1, borderColor: T.border, backgroundColor: T.field },
+  navBtnText: { color: '#fff', fontWeight: '900', fontSize: 14 },
 });
 
 export default function FichaRecebimentoRoute() {

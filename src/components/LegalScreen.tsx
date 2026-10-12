@@ -19,14 +19,14 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const COLORS = {
-  primary: "#1F6B3A",
+  primary: "#218B4A",
   dark: "#465044",
   text: "#3D403A",
   muted: "#77796F",
   faint: "#A3A398",
   border: "#E8E5DC",
   field: "#F5F3EC",
-  background: "#FBFAF6",
+  background: "#F3F6F2",
   soft: "#EEF0E9",
   gold: "#B7833D",
   goldSoft: "#F5EEDF",

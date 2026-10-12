@@ -42,7 +42,7 @@ export default function AdminOnly({ children }: { children: ReactNode }) {
 }
 
 const COLORS = {
-  primary: '#1F6B3A',
+  primary: '#218B4A',
   text: '#16231C',
   muted: '#78877D',
   danger: '#B54747',

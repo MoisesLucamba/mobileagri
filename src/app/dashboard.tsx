@@ -18,13 +18,13 @@ import { AgrilinkAd, loadAgrilinkAds } from '../lib/agrilinkAds';
 import { supabase } from '../lib/supabase';
 
 const COLORS = {
-  primary: '#1F6B3A',
+  primary: '#218B4A',
   text: '#16231C',
   muted: '#78877D',
   faint: '#AEB8AC',
   border: '#E8ECE6',
-  canvas: '#F6F8F5',
-  surface: '#FFFFFF',
+  canvas: '#F3F6F2',
+  surface: '#FFFEFC',
   gold: '#D79427',
   blue: '#4776A8',
   orange: '#C56B2D',

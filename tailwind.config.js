@@ -6,13 +6,15 @@ module.exports = {
     extend: {
       colors: {
         brand: {
-          primary: '#1F6B3A',
-          secondary: '#79C267',
+          primary: '#218B4A',
+          secondary: '#EAF5ED',
           ink: '#173D24',
           forest: '#0A2814',
-          muted: '#627264',
-          chip: '#34503B',
+          muted: '#6D7B71',
+          chip: '#218B4A',
         },
+        canvas: '#F3F6F2',
+        surface: '#FFFEFC',
       },
     },
   },

@@ -1,7 +1,8 @@
 // app/cargas.tsx
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
     Linking,
@@ -21,19 +22,20 @@ import MapViewer, { MapViewerCoords } from '../components/MapViewer';
 import RoleGuard from '../components/RoleGuard';
 import ProcessingScreen from '../components/ProcessingScreen';
 import { supabase } from '../lib/supabase';
+import { FREIGHT_LOCATION_TASK } from '../lib/freightLocationTask';
 
 // Mesma paleta do ProductCard
 const COLORS = {
-  primary: '#2E8B4F',
-  primaryDark: '#25703F',
+  primary: '#218B4A',
+  primaryDark: '#218B4A',
   tint: '#E9F5EC',
   text: '#16231C',
   muted: '#78877D',
   faint: '#AEB8AC',
   line: '#E8ECE6',
   field: '#F4F6F2',
-  background: '#F9FAF8',
-  white: '#FFFFFF',
+  background: '#F3F6F2',
+  white: '#FFFEFC',
   gold: '#B9741A',
   goldSoft: '#FBEBD3',
   blue: '#2F6DB5',
@@ -62,6 +64,8 @@ interface FreightLoad {
   currency: string;
   status: string;
   driver_id: string | null;
+  supplier_id?: string | null;
+  buyer_id?: string | null;
   notes: string | null;
   origin_lat?: number | null;
   origin_lng?: number | null;
@@ -117,11 +121,22 @@ function CargasScreen() {
   const [routeLoad, setRouteLoad] = useState<FreightLoad | null>(null);
   const [locationStatus, setLocationStatus] = useState<'loading' | 'ready' | 'denied' | 'disabled' | 'unavailable'>('loading');
   const [locationCanAskAgain, setLocationCanAskAgain] = useState(true);
+  const [trackingPublishError, setTrackingPublishError] = useState<string | null>(null);
+  const [backgroundTrackingEnabled, setBackgroundTrackingEnabled] = useState(false);
   const [locationAttempt, setLocationAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [tab, setTab] = useState<'disponiveis' | 'minhas'>('disponiveis');
+  const activeLoad = loads.find(
+    (load) => load.driver_id === userId && load.status === 'in_transit',
+  );
+  const activeTrackingLoadIds = useMemo(
+    () => loads
+      .filter((load) => load.driver_id === userId && load.status === 'in_transit')
+      .map((load) => load.id),
+    [loads, userId],
+  );
 
   const requireAuth = (action: string): boolean => {
     if (userId) return true;
@@ -148,6 +163,25 @@ function CargasScreen() {
     }
   }, []);
 
+  const publishDriverLocation = useCallback(async (coords: MapViewerCoords) => {
+    if (!userId || !activeTrackingLoadIds.length) return;
+
+    const results = await Promise.all(activeTrackingLoadIds.map((loadId) =>
+      supabase.rpc('update_freight_tracking_location', {
+        p_freight_load_id: loadId,
+        p_latitude: coords.lat,
+        p_longitude: coords.lng,
+      })
+    ));
+    const failure = results.find((result) => result.error)?.error;
+    if (failure) {
+      setTrackingPublishError(failure.message);
+      console.warn('Não foi possível partilhar a localização da entrega:', failure);
+      return;
+    }
+    setTrackingPublishError(null);
+  }, [activeTrackingLoadIds, userId]);
+
   const bootstrap = useCallback(async () => {
     const {
       data: { user },
@@ -170,19 +204,22 @@ function CargasScreen() {
   }, [fetchLoads]);
 
   useEffect(() => {
-    bootstrap();
+    void Promise.resolve().then(bootstrap);
   }, [bootstrap]);
 
   useEffect(() => {
     let active = true;
     let subscription: Location.LocationSubscription | null = null;
-    const applyLocation = (position: Location.LocationObject) => {
+    const applyLocation = (position: Location.LocationObject, publish = true) => {
       if (!active) return;
-      setDriverLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+      const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+      setDriverLocation(coords);
       setLocationStatus('ready');
+      if (publish) void publishDriverLocation(coords);
     };
 
     const trackLocation = async () => {
+      if (loading || !userId) return;
       setLocationStatus('loading');
       const permission = await Location.requestForegroundPermissionsAsync();
       if (!active) return;
@@ -196,16 +233,31 @@ function CargasScreen() {
         return;
       }
 
+      const hasActiveLoad = activeTrackingLoadIds.length > 0;
+      const backgroundRegistered = await TaskManager.isTaskRegisteredAsync(FREIGHT_LOCATION_TASK);
+      if (backgroundRegistered && !hasActiveLoad) {
+        await Location.stopLocationUpdatesAsync(FREIGHT_LOCATION_TASK);
+      }
+      let shouldTrackInBackground = backgroundRegistered && hasActiveLoad;
+      if (shouldTrackInBackground && !(await Location.getBackgroundPermissionsAsync()).granted) {
+        await Location.stopLocationUpdatesAsync(FREIGHT_LOCATION_TASK);
+        shouldTrackInBackground = false;
+      }
+      setBackgroundTrackingEnabled(shouldTrackInBackground);
+
       const lastKnown = await Location.getLastKnownPositionAsync();
-      if (lastKnown) applyLocation(lastKnown);
+      if (lastKnown) applyLocation(lastKnown, !shouldTrackInBackground);
 
       try {
-        applyLocation(await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+        applyLocation(
+          await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          !shouldTrackInBackground,
+        );
       } catch {
         // Keep the last known location when a fresh fix is unavailable.
       }
 
-      if (!active) return;
+      if (!active || shouldTrackInBackground) return;
       subscription = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Balanced, distanceInterval: 100, timeInterval: 30000 },
         applyLocation,
@@ -220,7 +272,62 @@ function CargasScreen() {
       active = false;
       subscription?.remove();
     };
-  }, [locationAttempt]);
+  }, [activeTrackingLoadIds, backgroundTrackingEnabled, locationAttempt, publishDriverLocation, loading, userId]);
+
+  const enableBackgroundTracking = async () => {
+    try {
+      const foreground = await Location.getForegroundPermissionsAsync();
+      if (!foreground.granted) {
+        const requested = await Location.requestForegroundPermissionsAsync();
+        if (!requested.granted) {
+          Alert.alert('Permissão necessária', 'Ativa a localização durante a utilização da app para iniciar o rastreio.');
+          return;
+        }
+      }
+
+      if (!(await Location.isBackgroundLocationAvailableAsync())) {
+        Alert.alert('Rastreio em segundo plano indisponível', 'Este dispositivo não permite continuar o rastreio quando a app está minimizada.');
+        return;
+      }
+
+      let background = await Location.getBackgroundPermissionsAsync();
+      if (!background.granted) background = await Location.requestBackgroundPermissionsAsync();
+      if (!background.granted) {
+        Alert.alert(
+          'Permissão de segundo plano necessária',
+          'A posição continuará a ser partilhada enquanto a Central do motorista estiver aberta. Para continuar com a app minimizada, autoriza a localização em segundo plano nas definições.',
+          [
+            { text: 'Agora não', style: 'cancel' },
+            { text: 'Abrir definições', onPress: () => { void Linking.openSettings(); } },
+          ],
+        );
+        return;
+      }
+
+      if (!(await TaskManager.isTaskRegisteredAsync(FREIGHT_LOCATION_TASK))) {
+        await Location.startLocationUpdatesAsync(FREIGHT_LOCATION_TASK, {
+          accuracy: Location.Accuracy.Balanced,
+          distanceInterval: 100,
+          timeInterval: 30000,
+          deferredUpdatesDistance: 100,
+          deferredUpdatesInterval: 30000,
+          pausesUpdatesAutomatically: false,
+          showsBackgroundLocationIndicator: true,
+          foregroundService: {
+            notificationTitle: 'AgriLink — entrega em curso',
+            notificationBody: 'A tua posição está a ser partilhada com os participantes desta carga.',
+            notificationColor: COLORS.primary,
+            killServiceOnDestroy: false,
+          },
+        });
+      }
+      setBackgroundTrackingEnabled(true);
+      Alert.alert('Rastreio ativo', 'A posição continuará a ser atualizada enquanto a entrega estiver em curso.');
+    } catch (error) {
+      console.error('[Cargas] Não foi possível ativar o rastreio em segundo plano:', error);
+      Alert.alert('Erro no rastreio', error instanceof Error ? error.message : 'Não foi possível ativar o rastreio em segundo plano.');
+    }
+  };
 
   useEffect(() => {
     const channel = supabase
@@ -261,23 +368,16 @@ function CargasScreen() {
     }
 
     setBusyId(load.id);
-    const { data, error } = await supabase
-      .from('freight_loads')
-      .update({
-        driver_id: userId,
-        status: 'accepted',
-        accepted_at: new Date().toISOString(),
-      })
-      .eq('id', load.id)
-      .eq('status', 'open')
-      .is('driver_id', null)
-      .lte('weight_kg', capacity)
-      .select('id')
-      .maybeSingle();
+    const { data, error } = await supabase.rpc('accept_freight_load', {
+      p_freight_load_id: load.id,
+    });
     setBusyId(null);
 
     if (error || !data) {
-      Alert.alert('Carga indisponível', 'Esta carga já foi aceite ou não corresponde à capacidade do seu veículo. Atualize a lista e tente outra.');
+      Alert.alert(
+        'Não foi possível aceitar a carga',
+        error?.message || 'A carga pode já ter sido aceite. Atualize a lista e tente outra.',
+      );
       return;
     }
     Alert.alert('Carga aceite', 'Boa viagem!');
@@ -287,13 +387,10 @@ function CargasScreen() {
   const advance = async (load: FreightLoad) => {
     if (!requireAuth('actualizar a carga')) return;
 
-    const next =
-      load.status === 'accepted'
-        ? { status: 'in_transit', in_transit_at: new Date().toISOString() }
-        : { status: 'delivered', delivered_at: new Date().toISOString() };
-
     setBusyId(load.id);
-    const { error } = await supabase.from('freight_loads').update(next).eq('id', load.id);
+    const { error } = await supabase.rpc('advance_freight_load', {
+      p_freight_load_id: load.id,
+    });
     setBusyId(null);
 
     if (error) {
@@ -337,7 +434,7 @@ function CargasScreen() {
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => router.push('/profile')}
             style={styles.backBtn}
             activeOpacity={0.8}
             accessibilityRole="button"
@@ -346,7 +443,7 @@ function CargasScreen() {
             <Icon name="arrow-left" size={19} color={COLORS.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            Próximas cargas
+            Central do motorista
           </Text>
         </View>
 
@@ -367,6 +464,52 @@ function CargasScreen() {
               </Text>
             </View>
           </View>
+
+          {activeLoad && (
+            <View style={styles.activeTripCard}>
+              <View style={styles.activeTripHeading}>
+                <View style={styles.activeTripIcon}>
+                  <Icon name="navigation" size={18} color={COLORS.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.activeTripEyebrow}>TRANSPORTE EM CURSO</Text>
+                  <Text style={styles.activeTripTitle} numberOfLines={1}>{activeLoad.product_name}</Text>
+                </View>
+                <View style={styles.livePill}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveLabel}>
+                    {trackingPublishError ? 'GPS com erro' : backgroundTrackingEnabled ? 'GPS ativo em segundo plano' : locationStatus === 'ready' ? 'GPS ativo' : locationStatus === 'loading' ? 'A ligar GPS' : 'GPS pausado'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.activeTripRoute} numberOfLines={2}>
+                {activeLoad.origin_label} → {activeLoad.destination_label}
+              </Text>
+              {trackingPublishError && (
+                <Text style={styles.trackingError}>
+                  A localização não está a ser partilhada: {trackingPublishError}
+                </Text>
+              )}
+              {!backgroundTrackingEnabled && (
+                <TouchableOpacity
+                  style={styles.backgroundTrackingButton}
+                  onPress={enableBackgroundTracking}
+                  activeOpacity={0.85}
+                >
+                  <Icon name="pin" size={14} color={COLORS.primary} />
+                  <Text style={styles.backgroundTrackingText}>Ativar rastreio com a app minimizada</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.trackButton}
+                onPress={() => router.push({ pathname: '/rastreamento/[id]', params: { id: activeLoad.id } })}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.trackButtonText}>Ver acompanhamento da carga</Text>
+                <Icon name="arrow-right" size={16} color={COLORS.primary} />
+              </TouchableOpacity>
+            </View>
+          )}
 
           {locationStatus !== 'ready' && locationStatus !== 'loading' && (
             <View style={styles.locationNotice}>
@@ -538,21 +681,31 @@ function CargasScreen() {
                       {!tooHeavy && !capacityMissing && <Icon name="arrow-right" size={17} color="#FFFFFF" />}
                     </TouchableOpacity>
                   ) : load.status === 'accepted' || load.status === 'in_transit' ? (
-                    <TouchableOpacity
-                      disabled={busyId === load.id}
-                      onPress={() => advance(load)}
-                      activeOpacity={0.85}
-                      style={[styles.actionBtn, styles.actionBtnOutline]}
-                    >
-                      <Icon
-                        name={load.status === 'accepted' ? 'navigation' : 'check-circle'}
-                        size={17}
-                        color={COLORS.primary}
-                      />
-                      <Text style={[styles.actionText, { color: COLORS.primary }]}>
-                        {busyId === load.id ? 'A atualizar…' : load.status === 'accepted' ? 'Iniciar transporte' : 'Marcar como entregue'}
-                      </Text>
-                    </TouchableOpacity>
+                    <>
+                      <TouchableOpacity
+                        disabled={busyId === load.id}
+                        onPress={() => advance(load)}
+                        activeOpacity={0.85}
+                        style={[styles.actionBtn, styles.actionBtnOutline]}
+                      >
+                        <Icon
+                          name={load.status === 'accepted' ? 'navigation' : 'check-circle'}
+                          size={17}
+                          color={COLORS.primary}
+                        />
+                        <Text style={[styles.actionText, { color: COLORS.primary }]}>
+                          {busyId === load.id ? 'A atualizar…' : load.status === 'accepted' ? 'Confirmar recolha e iniciar' : 'Confirmar entrega ao comprador'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => router.push({ pathname: '/rastreamento/[id]', params: { id: load.id } })}
+                        style={styles.trackButton}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.trackButtonText}>Acompanhamento e confirmações</Text>
+                        <Icon name="arrow-right" size={16} color={COLORS.primary} />
+                      </TouchableOpacity>
+                    </>
                   ) : null}
                 </View>
               );
@@ -616,6 +769,62 @@ const styles = StyleSheet.create({
   },
   heroTitle: { fontSize: 16, fontWeight: '900', color: '#FFFFFF' },
   heroSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  activeTripCard: {
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    backgroundColor: COLORS.white,
+    ...SHADOW_FLAT,
+  },
+  activeTripHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  activeTripIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: COLORS.tint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeTripEyebrow: { color: COLORS.primary, fontSize: 9.5, fontWeight: '900', letterSpacing: 0.7 },
+  activeTripTitle: { color: COLORS.text, fontSize: 14, fontWeight: '900', marginTop: 2 },
+  livePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.tint,
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.primary },
+  liveLabel: { color: COLORS.primary, fontSize: 10, fontWeight: '800' },
+  trackingError: { color: COLORS.danger, fontSize: 11, lineHeight: 16, marginTop: 8 },
+  backgroundTrackingButton: {
+    marginTop: 9,
+    minHeight: 38,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    backgroundColor: COLORS.tint,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  backgroundTrackingText: { color: COLORS.primary, fontSize: 11.5, fontWeight: '800' },
+  activeTripRoute: { marginTop: 12, fontSize: 13, fontWeight: '700', color: COLORS.text, lineHeight: 19 },
+  trackButton: {
+    marginTop: 10,
+    minHeight: 40,
+    paddingHorizontal: 11,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  trackButtonText: { color: COLORS.primary, fontSize: 12.5, fontWeight: '800' },
 
   locationNotice: {
     flexDirection: 'row',

@@ -33,16 +33,16 @@ type HistoryItem = {
 
 // Mesma paleta do ProductCard
 const COLORS = {
-  primary: "#2E8B4F",
-  primaryDark: "#25703F",
-  tint: "#E9F5EC",
+  primary: "#218B4A",
+  primaryDark: "#218B4A",
+  tint: "#EAF5ED",
   text: "#16231C",
   muted: "#78877D",
   faint: "#AEB8AC",
   line: "#E8ECE6",
   field: "#F4F6F2",
-  background: "#F9FAF8",
-  white: "#FFFFFF",
+  background: "#F3F6F2",
+  white: "#FFFEFC",
   gold: "#B9741A",
   goldSoft: "#FBEBD3",
   blue: "#2F6DB5",

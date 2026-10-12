@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import '../../global.css';
-import ProcessingScreen from '../components/ProcessingScreen';
+import ProcessingScreen, { ProcessingScreenProvider } from '../components/ProcessingScreen';
+import '../lib/freightLocationTask';
 import GuestModeCard from '../components/GuestModeCard';
 import { changeAppLanguage, isAppLanguage, i18nReady, LANGUAGE_STORAGE_KEY } from '../constants/i18n';
 import { RoleProvider, useUserRole } from '../context/RoleContext';
@@ -32,7 +33,15 @@ function RootNavigator() {
 
   return (
     <View style={styles.root}>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 220,
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: '#F3F6F2' },
+        }}
+      >
         <Stack.Screen name="index" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="login" />
@@ -50,9 +59,11 @@ function RootNavigator() {
         <Stack.Screen name="home" />
         <Stack.Screen name="search" />
         <Stack.Screen name="entregas" />
+        <Stack.Screen name="rastreamentos" />
+        <Stack.Screen name="rastreamento/[id]" />
         <Stack.Screen name="publicar-produto" />
         <Stack.Screen name="fichas-recebimento" />
-        <Stack.Screen name="mapa" />
+        <Stack.Screen name="mapa"/>
         <Stack.Screen name="conversations" />
         <Stack.Screen name="messages" />
         <Stack.Screen name="seguranca" />
@@ -86,7 +97,9 @@ export default function RootLayout() {
 
   return (
     <RoleProvider>
-      {languageReady ? <RootNavigator /> : <ProcessingScreen />}
+      <ProcessingScreenProvider>
+        {languageReady ? <RootNavigator /> : <ProcessingScreen />}
+      </ProcessingScreenProvider>
     </RoleProvider>
   );
 }

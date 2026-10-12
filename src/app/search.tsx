@@ -27,9 +27,9 @@ import { useUserRole } from '../context/RoleContext';
 
 const T = {
   g900: '#173D24',
-  g700: '#25703F', // texto verde sobre fundos claros
-  g600: '#2E8B4F', // verde principal
-  g500: '#2E8B4F',
+  g700: '#218B4A',
+  g600: '#218B4A',
+  g500: '#218B4A',
   g400: '#79C267',
   g300: '#9ED5AC',
   g100: '#E9F5EC', // fundo suave verde
@@ -40,8 +40,8 @@ const T = {
   muted: '#78877D',
   faint: '#AEB8AC',
 
-  canvas: '#F6F8F5',
-  white: '#FFFFFF',
+  canvas: '#F3F6F2',
+  white: '#FFFEFC',
   rule: '#E8ECE6',
 
   gold: '#B7833D',
@@ -61,6 +61,7 @@ interface Product {
   price: number;
   quantity: number;
   unit?: string;
+  is_processed?: boolean;
   farmer_name?: string;
   contact?: string;
   harvest_date?: string;
@@ -112,6 +113,7 @@ const productCategories: Category[] = [
   { id: 'frutas', name: 'Frutas', icon: 'apple' },
   { id: 'legumes', name: 'Legumes', icon: 'leaf' },
   { id: 'verduras', name: 'Verduras', icon: 'sprout' },
+  { id: 'processados', name: 'Processados', icon: 'package' },
 ];
 
 const SORT_OPTIONS: { value: SortOption; label: string; icon: IconName }[] = [
@@ -226,6 +228,8 @@ export default function SearchPage() {
     product_type: getProductName(item),
     description: item.description ?? null,
     quantity: Number(item.quantity || 0),
+    unit: item.unit || 'kg',
+    is_processed: !!item.is_processed,
     harvest_date: item.harvest_date || '',
     price: Number(item.price || 0),
     province_id: item.province_id || item.province || '',
@@ -303,7 +307,9 @@ export default function SearchPage() {
         }
 
         if (category && category !== 'all') {
-          query = query.ilike('product_type', `%${category}%`);
+          query = category === 'processados'
+            ? query.eq('is_processed', true)
+            : query.ilike('product_type', `%${category}%`);
         }
 
         return query.limit(60);
@@ -579,7 +585,7 @@ export default function SearchPage() {
   };
 
   const handleViewHistory = ({ intentId, orderId }: { intentId?: string; orderId?: string }) => {
-    router.push({ pathname: '/historico', params: { intentId, orderId } } as any);
+    router.push({ pathname: '/historicopagamentos', params: { intentId, orderId } });
   };
 
   const handleProductUpdate = useCallback((updated: CardProduct) => {

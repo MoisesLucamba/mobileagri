@@ -26,7 +26,7 @@ import {
 
 import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
-import { type Href, useRouter } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../lib/supabase";
@@ -43,16 +43,16 @@ const { height: SCREEN_H } = Dimensions.get("window");
    ===================================================================== */
 
 const COLORS = {
-  primary: "#2E8B4F",
-  primaryDark: "#25703F",
-  tint: "#E9F5EC",
+  primary: "#218B4A",
+  primaryDark: "#218B4A",
+  tint: "#EAF5ED",
   text: "#16231C",
   muted: "#78877D",
   faint: "#AEB8AC",
   line: "#E8ECE6",
   field: "#F4F6F2",
-  background: "#F9FAF8",
-  white: "#FFFFFF",
+  background: "#F3F6F2",
+  white: "#FFFEFC",
   gold: "#B9741A",
   goldSoft: "#FBEBD3",
   blue: "#2F6DB5",
@@ -226,7 +226,7 @@ const MAP_HTML = `<!DOCTYPE html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <style>
-  html, body, #map { height: 100%; margin: 0; padding: 0; background: #F9FAF8; }
+  html, body, #map { height: 100%; margin: 0; padding: 0; background: #F3F6F2; }
   .leaflet-control-attribution { font-size: 9px; background: rgba(255,255,255,0.75); }
   .al-pin { background: transparent; border: none; }
   .al-tip {
@@ -431,8 +431,15 @@ const MAP_HTML = `<!DOCTYPE html>
 
 export default function MapaScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ lat?: string; lng?: string; productId?: string }>();
   const insets = useSafeAreaInsets();
   const webRef = useRef<WebView>(null);
+  const initialTarget = useMemo(() => {
+    const lat = Number(params.lat);
+    const lng = Number(params.lng);
+    if (!params.lat || !params.lng || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng, productId: params.productId };
+  }, [params.lat, params.lng, params.productId]);
 
   const [webKey, setWebKey] = useState(0);
   const [mapReady, setMapReady] = useState(false);
@@ -740,6 +747,20 @@ export default function MapaScreen() {
       call("flyTo", userLocation.lat, userLocation.lng, 12);
     }
   }, [mapReady, userLocation, userAccuracy, call]);
+
+  useEffect(() => {
+    if (!mapReady || !initialTarget) return;
+    centeredRef.current = true;
+    call("flyTo", initialTarget.lat, initialTarget.lng, 15);
+  }, [mapReady, initialTarget, call]);
+
+  useEffect(() => {
+    if (!mapReady || !initialTarget?.productId) return;
+    const targetEntity = entities.find(
+      (entity) => entity.id === `produto:${initialTarget.productId}`,
+    );
+    if (targetEntity) setSelectedId(targetEntity.id);
+  }, [mapReady, entities, initialTarget]);
 
   useEffect(() => {
     if (!mapReady) return;

@@ -20,6 +20,7 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ProcessingScreen from "../../components/ProcessingScreen";
+import UserConnectionsSummary from "../../components/UserConnectionsSummary";
 
 // Este ficheiro vive em src/app/profile/[id].tsx — um nível mais fundo
 // do que src/app/profile.tsx — por isso o caminho para lib tem mais "..".
@@ -30,7 +31,7 @@ import { supabase } from "../../lib/supabase";
 /* ------------------------------------------------------------------ */
 
 const COLORS = {
-  primary: "#1F6B3A",
+  primary: "#218B4A",
   primaryDark: "#123C22",
   primarySoft: "#EAF3EA",
   primaryLight: "#D9EEDD",
@@ -42,8 +43,8 @@ const COLORS = {
   muted: "#80897F",
   faint: "#B7BEB3",
 
-  canvas: "#FAF8F3",
-  surface: "#FFFFFF",
+  canvas: "#F3F6F2",
+  surface: "#FFFEFC",
   border: "#EFEBE0",
 
   blue: "#4C7EDB",
@@ -70,6 +71,7 @@ type PublicUser = {
   full_name?: string | null;
   name?: string | null;
   avatar_url?: string | null;
+  cover_url?: string | null;
   user_type?: string | null;
   role?: string | null;
   province_id?: string | null;
@@ -472,7 +474,7 @@ export default function PublicProfileScreen() {
       if (existingError) throw existingError;
 
       if (existing && existing.length > 0) {
-        router.push(`/messages/${existing[0].id}` as any);
+        router.push({ pathname: "/messages", params: { id: existing[0].id } });
         return;
       }
 
@@ -490,7 +492,7 @@ export default function PublicProfileScreen() {
 
       if (createError) throw createError;
 
-      router.push(`/messages/${created.id}` as any);
+      router.push({ pathname: "/messages", params: { id: created.id } });
     } catch (error: any) {
       console.error("[PublicProfile] conversa:", error?.message || error);
       Alert.alert("Mensagem", "Não foi possível abrir a conversa. Tente novamente.");
@@ -567,17 +569,55 @@ export default function PublicProfileScreen() {
       >
         {/* Cartão de identidade */}
         <View style={styles.heroCard}>
-          <View style={styles.heroBanner} />
+          <View style={styles.heroBanner}>
+            {profile?.cover_url ? (
+              <Image source={{ uri: profile.cover_url }} style={styles.heroBannerImage} resizeMode="cover" />
+            ) : (
+              <>
+                <View style={styles.heroCoverBlobA} />
+                <View style={styles.heroCoverBlobB} />
+              </>
+            )}
+          </View>
 
           <View style={styles.heroBody}>
-            <View style={styles.avatarWrapper}>
-              {profile?.avatar_url ? (
-                <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarText}>{getInitials(fullName)}</Text>
-                </View>
-              )}
+            <View style={styles.avatarActionsRow}>
+              <View style={styles.avatarWrapper}>
+                {profile?.avatar_url ? (
+                  <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <Text style={styles.avatarText}>{getInitials(fullName)}</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.heroActions}>
+                <Pressable
+                  onPress={startConversation}
+                  disabled={startingChat}
+                  style={({ pressed }) => [
+                    styles.messageButton,
+                    (pressed || startingChat) && { opacity: 0.85 },
+                  ]}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.messageButtonText} numberOfLines={1}>
+                    {startingChat ? "A abrir…" : "Mensagem"}
+                  </Text>
+                </Pressable>
+
+                {profile?.phone ? (
+                  <Pressable
+                    onPress={callUser}
+                    style={({ pressed }) => [styles.callButton, pressed && styles.pressedSoft]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ligar"
+                  >
+                    <Ionicons name="call-outline" size={17} color={COLORS.primary} />
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
 
             <View style={styles.nameRow}>
@@ -595,33 +635,10 @@ export default function PublicProfileScreen() {
               <Ionicons name="location-outline" size={12} color={COLORS.muted} />
               <Text style={styles.locationText}>{location}</Text>
             </View>
-
-            <View style={styles.heroActions}>
-              <Pressable
-                onPress={startConversation}
-                disabled={startingChat}
-                style={({ pressed }) => [
-                  styles.messageButton,
-                  (pressed || startingChat) && { opacity: 0.85 },
-                ]}
-              >
-                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#FFFFFF" />
-                <Text style={styles.messageButtonText}>
-                  {startingChat ? "A abrir…" : "Enviar mensagem"}
-                </Text>
-              </Pressable>
-
-              {profile?.phone ? (
-                <Pressable
-                  onPress={callUser}
-                  style={({ pressed }) => [styles.callButton, pressed && styles.pressedSoft]}
-                >
-                  <Ionicons name="call-outline" size={17} color={COLORS.primary} />
-                </Pressable>
-              ) : null}
-            </View>
           </View>
         </View>
+
+        <UserConnectionsSummary userId={id ?? null} enabled={!!currentUser} />
 
         {/* Estatísticas */}
         <View style={styles.statsRow}>
@@ -769,31 +786,64 @@ const styles = StyleSheet.create({
 
   heroCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: COLORS.border,
     overflow: "hidden",
-    marginTop: 14,
+    marginHorizontal: -16,
+    marginTop: 0,
     marginBottom: 12,
   },
   heroBanner: {
-    height: 74,
-    backgroundColor: COLORS.primaryDark,
+    height: 112,
+    backgroundColor: COLORS.primarySoft,
+    overflow: "hidden",
   },
-  heroBody: { paddingHorizontal: 20, paddingBottom: 20, alignItems: "center" },
-  avatarWrapper: { marginTop: -42 },
+  heroBannerImage: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
+  heroCoverBlobA: {
+    position: "absolute",
+    width: 190,
+    height: 190,
+    right: -50,
+    top: -80,
+    borderRadius: 95,
+    backgroundColor: COLORS.primary,
+    opacity: 0.12,
+  },
+  heroCoverBlobB: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    left: -30,
+    bottom: -60,
+    borderRadius: 60,
+    backgroundColor: COLORS.primary,
+    opacity: 0.08,
+  },
+  heroBody: { paddingHorizontal: 16, paddingBottom: 18, alignItems: "stretch" },
+  avatarActionsRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    marginTop: -46,
+  },
+  avatarWrapper: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: COLORS.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   avatar: {
-    width: 84,
-    height: 84,
-    borderRadius: 28,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     borderWidth: 4,
     borderColor: COLORS.surface,
     backgroundColor: COLORS.primarySoft,
   },
   avatarFallback: {
-    width: 84,
-    height: 84,
-    borderRadius: 28,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     borderWidth: 4,
     borderColor: COLORS.surface,
     backgroundColor: COLORS.primarySoft,
@@ -803,7 +853,7 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 26, fontWeight: "800", color: COLORS.primary },
 
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12 },
-  profileName: { fontSize: 18, fontWeight: "800", color: COLORS.text, textAlign: "center" },
+  profileName: { flexShrink: 1, fontSize: 20, fontWeight: "800", color: COLORS.text },
 
   roleBadge: {
     flexDirection: "row",
@@ -813,28 +863,30 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 9,
     marginTop: 8,
+    alignSelf: "flex-start",
   },
   roleBadgeText: { fontSize: 11, fontWeight: "700" },
 
   locationRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 9 },
   locationText: { fontSize: 11.5, color: COLORS.muted },
 
-  heroActions: { flexDirection: "row", gap: 9, marginTop: 18, width: "100%" },
+  heroActions: { flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 4, maxWidth: "68%" },
   messageButton: {
-    flex: 1,
-    height: 44,
-    borderRadius: RADIUS.md,
+    flexShrink: 1,
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.pill,
     backgroundColor: COLORS.primary,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
   },
-  messageButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  messageButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700", flexShrink: 1 },
   callButton: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.md,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: COLORS.primarySoft,
     alignItems: "center",
     justifyContent: "center",

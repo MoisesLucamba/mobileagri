@@ -32,6 +32,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon, { IconName } from '../components/Icon';
+import GoogleLogo from '../components/GoogleLogo';
 import { getMunicipalityLabel, getProvinceLabel, getProvincesForCountry } from '../data/country-locations';
 import { normalizeAngolaAuthPhone } from '../lib/authPhone';
 import { signInWithGoogle } from '../lib/googleAuth';
@@ -40,17 +41,17 @@ import { useUserRole } from '../context/RoleContext';
 
 // Mesma paleta do ProductCard
 const COLORS = {
-  primary: '#2E8B4F',
-  primaryDark: '#25703F',
-  tint: '#E9F5EC',
+  primary: '#218B4A',
+  primaryDark: '#218B4A',
+  tint: '#EAF5ED',
   text: '#16231C',
   mid: '#5B7A66',
   muted: '#78877D',
   faint: '#AEB8AC',
   line: '#E8ECE6',
   field: '#F4F6F2',
-  background: '#F9FAF8',
-  white: '#FFFFFF',
+  background: '#F3F6F2',
+  white: '#FFFEFC',
   gold: '#B9741A',
   goldSoft: '#FBEBD3',
   danger: '#DD5138',
@@ -61,7 +62,7 @@ const MIN_PASSWORD = 8;
 type VerificationChannel = 'email' | 'phone' | 'both';
 
 const enter = (delay: number) => FadeInDown.delay(delay).springify().damping(18).stiffness(140);
-const LOGO = require('../../assets/images/Agrilink_SD.png');
+const LOGO = require('../../assets/images/Agrilink_Logo.png');
 
 // Gera um NIF aleatório (13 dígitos, nunca começa por 0)
 // para quem não preencher o campo no registo.
@@ -72,7 +73,7 @@ const generateRandomNif = () => {
 };
 
 const userTypeOptions: { id: string; label: string; icon: IconName }[] = [
-  { id: 'agricultor', label: 'Fornecedor', icon: 'leaf' },
+  { id: 'agricultor', label: 'Fornecedor', icon: 'farmer' },
   { id: 'agente', label: 'Agente', icon: 'users' },
   { id: 'comprador', label: 'Comprador', icon: 'cart' },
   { id: 'motorista', label: 'Motorista', icon: 'truck' },
@@ -491,15 +492,14 @@ export default function Register() {
                 </View>
               </View>
 
-              <TouchableOpacity
-                activeOpacity={0.8}
+              <PressScale
                 onPress={handleGoogleRegister}
                 disabled={busy}
                 style={[styles.googleButton, busy && styles.disabled]}
               >
-                <Text style={styles.googleMark}>G</Text>
+                <GoogleLogo size={18} />
                 <Text style={styles.googleButtonText}>{googleLoading ? 'A ligar ao Google…' : t('register.continueGoogle')}</Text>
-              </TouchableOpacity>
+              </PressScale>
 
               <View>
                 <Text style={styles.label}>{t('register.fullName')}</Text>
@@ -887,7 +887,7 @@ const styles = StyleSheet.create({
   },
 
   header: { alignItems: 'center', marginTop: 8, marginBottom: 22 },
-  logo: { width: 80, height: 80, borderRadius: 12, backgroundColor: COLORS.white },
+  logo: { width: 150, height: 106 },
   title: {
     marginTop: 12,
     fontSize: 23,
@@ -1005,7 +1005,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
   },
-  googleMark: { fontSize: 18, fontWeight: '800', color: '#4285F4' },
   googleButtonText: { fontSize: 14, fontWeight: '800', color: COLORS.text },
 
   radioGroup: { flexDirection: 'row', gap: 10, marginTop: 2 },

@@ -22,6 +22,9 @@ type ProductDetails = {
   product_type: string;
   description: string | null;
   quantity: number;
+  unit?: string | null;
+  is_processed?: boolean;
+  harvest_date?: string | null;
   price: number;
   province_id: string;
   municipality_id: string;
@@ -31,9 +34,9 @@ type ProductDetails = {
 };
 
 const COLORS = {
-  background: '#F6F8F5',
-  surface: '#FFFFFF',
-  primary: '#2E8B4F',
+  background: '#F3F6F2',
+  surface: '#FFFEFC',
+  primary: '#218B4A',
   text: '#16231C',
   muted: '#78877D',
   border: '#E8ECE6',
@@ -124,10 +127,18 @@ export default function ProductDetailsScreen() {
             <View style={styles.card}>
               <Text style={styles.title}>{product.product_type}</Text>
               <Text style={styles.price}>{Number(product.price || 0).toLocaleString('pt-AO')} Kz</Text>
+              <Text style={styles.unitPrice}>por {product.unit || 'kg'}</Text>
+              {product.is_processed ? <Text style={styles.productKind}>Produto processado</Text> : null}
               {!!product.description && <Text style={styles.description}>{product.description}</Text>}
               <View style={styles.divider} />
               <Text style={styles.label}>Quantidade disponível</Text>
-              <Text style={styles.value}>{Number(product.quantity || 0).toLocaleString('pt-AO')}</Text>
+              <Text style={styles.value}>{Number(product.quantity || 0).toLocaleString('pt-AO')} {product.unit || 'kg'}</Text>
+              {!!product.harvest_date && !product.is_processed && (
+                <>
+                  <Text style={styles.label}>Colheita prevista</Text>
+                  <Text style={styles.value}>{new Date(`${product.harvest_date}T00:00:00`).toLocaleDateString('pt-AO')}</Text>
+                </>
+              )}
               {!!location && (
                 <>
                   <Text style={styles.label}>Localização</Text>
@@ -176,6 +187,8 @@ const styles = StyleSheet.create({
   card: { padding: 20, borderRadius: 16, backgroundColor: COLORS.surface },
   title: { color: COLORS.text, fontSize: 24, fontWeight: '800' },
   price: { marginTop: 8, color: COLORS.primary, fontSize: 21, fontWeight: '800' },
+  unitPrice: { marginTop: 1, color: COLORS.muted, fontSize: 12, fontWeight: '600' },
+  productKind: { alignSelf: 'flex-start', marginTop: 9, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: '#EAF5ED', color: COLORS.primary, fontSize: 11, fontWeight: '800' },
   description: { marginTop: 12, color: COLORS.muted, fontSize: 15, lineHeight: 22 },
   divider: { height: 1, marginVertical: 18, backgroundColor: COLORS.border },
   label: { marginTop: 12, color: COLORS.muted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },

@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Alert,
     Animated,
-    Linking,
     Modal,
     Platform,
     Pressable,
@@ -18,14 +16,14 @@ import Icon from "./Icon";
 
 // Paleta partilhada com o resto da app
 const COLORS = {
-  primary: "#2E8B4F",
-  primaryDark: "#25703F",
+  primary: "#218B4A",
+  primaryDark: "#218B4A",
   primarySoft: "#E9F5EC",
   text: "#16231C",
   muted: "#78877D",
   faint: "#AEB8AC",
-  canvas: "#F6F8F5",
-  surface: "#FFFFFF",
+  canvas: "#F3F6F2",
+  surface: "#FFFEFC",
   border: "#E8ECE6",
 };
 
@@ -36,12 +34,15 @@ type Props = {
   visible: boolean;
   coords: MapViewerCoords | null;
   route?: MapViewerRoute;
+  trackingPath?: MapViewerCoords[];
   title?: string;
   subtitle?: string;
   onClose: () => void;
+  onOpenFullMap?: () => void;
 };
 
-function buildMapHtml(lat: number, lng: number) {
+function buildMapHtml(lat: number, lng: number, trackingPath: MapViewerCoords[] = []) {
+  const trackingGeometry = JSON.stringify(trackingPath.map(({ lat: pointLat, lng: pointLng }) => [pointLat, pointLng]));
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -49,7 +50,7 @@ function buildMapHtml(lat: number, lng: number) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; background: #F6F8F5; }
+    html, body, #map { height: 100%; margin: 0; padding: 0; background: #F3F6F2; }
     .leaflet-control-attribution { font-size: 9px; }
   </style>
 </head>
@@ -63,16 +64,26 @@ function buildMapHtml(lat: number, lng: number) {
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
     L.marker([${lat}, ${lng}]).addTo(map);
+    var tracking = ${trackingGeometry};
+    if (tracking.length > 1) {
+      L.polyline(tracking, { color: '#2F6DB5', weight: 5, opacity: 0.9 }).addTo(map);
+      map.fitBounds(L.latLngBounds(tracking), { padding: [42, 42] });
+    }
     setTimeout(function () { map.invalidateSize(); }, 300);
   </script>
 </body>
 </html>`;
 }
 
-function buildRouteHtml({ origin, destination }: MapViewerRoute, roadCoords: [number, number][] | null) {
+function buildRouteHtml(
+  { origin, destination }: MapViewerRoute,
+  roadCoords: [number, number][] | null,
+  trackingPath: MapViewerCoords[] = [],
+) {
   const originPair = JSON.stringify([origin.lat, origin.lng]);
   const destinationPair = JSON.stringify([destination.lat, destination.lng]);
   const roadGeometry = JSON.stringify(roadCoords);
+  const trackingGeometry = JSON.stringify(trackingPath.map(({ lat, lng }) => [lat, lng]));
 
   return `<!DOCTYPE html>
 <html>
@@ -81,7 +92,7 @@ function buildRouteHtml({ origin, destination }: MapViewerRoute, roadCoords: [nu
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; background: #F6F8F5; }
+    html, body, #map { height: 100%; margin: 0; padding: 0; background: #F3F6F2; }
     .leaflet-control-attribution { font-size: 9px; }
   </style>
 </head>
@@ -105,16 +116,28 @@ function buildRouteHtml({ origin, destination }: MapViewerRoute, roadCoords: [nu
       });
       L.marker(point, { icon: icon, zIndexOffset: 1000 }).addTo(map);
     }
-    endpoint(origin, 'A', '#2E8B4F');
+    endpoint(origin, 'A', '#218B4A');
     endpoint(destination, 'B', '#E2932F');
-    var fallback = L.polyline([origin, destination], { color: '#2E8B4F', weight: 5, dashArray: '8 9', opacity: 0.8 }).addTo(map);
+    var fallback = L.polyline([origin, destination], { color: '#218B4A', weight: 5, dashArray: '8 9', opacity: 0.8 }).addTo(map);
     map.fitBounds(L.latLngBounds([origin, destination]), { padding: [42, 42] });
     var road = ${roadGeometry};
     if (road && road.length > 1) {
       map.removeLayer(fallback);
       L.polyline(road, { color: '#FFFFFF', weight: 10, opacity: 0.9 }).addTo(map);
-      L.polyline(road, { color: '#2E8B4F', weight: 5, opacity: 0.95 }).addTo(map);
+      L.polyline(road, { color: '#218B4A', weight: 5, opacity: 0.95 }).addTo(map);
       map.fitBounds(L.latLngBounds(road), { padding: [42, 42] });
+    }
+    var tracking = ${trackingGeometry};
+    if (tracking.length > 1) {
+      L.polyline(tracking, { color: '#2F6DB5', weight: 5, opacity: 0.95 }).addTo(map);
+      L.circleMarker(tracking[tracking.length - 1], {
+        radius: 8,
+        color: '#FFFFFF',
+        weight: 3,
+        fillColor: '#2F6DB5',
+        fillOpacity: 1
+      }).addTo(map);
+      map.fitBounds(L.latLngBounds([origin, destination].concat(tracking)), { padding: [42, 42] });
     }
     setTimeout(function () { map.invalidateSize(); }, 300);
   </script>
@@ -122,14 +145,16 @@ function buildRouteHtml({ origin, destination }: MapViewerRoute, roadCoords: [nu
 </html>`;
 }
 
-export default function MapViewer({ visible, coords, route, title, subtitle, onClose }: Props) {
+export default function MapViewer({ visible, coords, route, trackingPath, title, subtitle, onClose, onOpenFullMap }: Props) {
   const insets = useSafeAreaInsets();
   const { height: screenH } = useWindowDimensions();
   const enter = useRef(new Animated.Value(0)).current;
   const [roadCoords, setRoadCoords] = useState<[number, number][] | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
-  // O cartão nunca passa por baixo da barra de navegação / gestos do dispositivo
-  const cardHeight = Math.min(560, screenH - insets.top - insets.bottom - 56);
+  const cardHeight = expanded
+    ? screenH - insets.top - insets.bottom - 32
+    : Math.min(560, screenH - insets.top - insets.bottom - 56);
 
   useEffect(() => {
     if (visible) {
@@ -171,19 +196,9 @@ export default function MapViewer({ visible, coords, route, title, subtitle, onC
   }, [route?.origin.lat, route?.origin.lng, route?.destination.lat, route?.destination.lng]);
 
   const html = useMemo(() => {
-    if (route) return buildRouteHtml(route, roadCoords);
-    return coords ? buildMapHtml(coords.lat, coords.lng) : "";
-  }, [coords?.lat, coords?.lng, route?.origin.lat, route?.origin.lng, route?.destination.lat, route?.destination.lng, roadCoords]);
-
-  const openExternalMaps = () => {
-    const url = route
-      ? `https://www.google.com/maps/dir/?api=1&origin=${route.origin.lat},${route.origin.lng}&destination=${route.destination.lat},${route.destination.lng}&travelmode=driving`
-      : coords
-        ? `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`
-        : null;
-    if (!url) return;
-    Linking.openURL(url).catch(() => Alert.alert("Erro", "Não foi possível abrir o mapa."));
-  };
+    if (route) return buildRouteHtml(route, roadCoords, trackingPath);
+    return coords ? buildMapHtml(coords.lat, coords.lng, trackingPath) : "";
+  }, [coords?.lat, coords?.lng, route?.origin.lat, route?.origin.lng, route?.destination.lat, route?.destination.lng, roadCoords, trackingPath]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
@@ -191,12 +206,14 @@ export default function MapViewer({ visible, coords, route, title, subtitle, onC
         style={[
           styles.overlay,
           { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 },
+          expanded && styles.expandedOverlay,
         ]}
       >
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <Animated.View
           style={[
             styles.card,
+            expanded && styles.expandedCard,
             {
               height: cardHeight,
               opacity: enter,
@@ -250,12 +267,20 @@ export default function MapViewer({ visible, coords, route, title, subtitle, onC
             <View style={styles.footer}>
               <TouchableOpacity
                 style={styles.openBtn}
-                onPress={openExternalMaps}
+                onPress={() => {
+                  if (onOpenFullMap) {
+                    onOpenFullMap();
+                    return;
+                  }
+                  setExpanded((current) => !current);
+                }}
                 disabled={!coords && !route}
                 activeOpacity={0.85}
               >
-                <Icon name="navigation" size={16} color="#FFFFFF" />
-                <Text style={styles.openText}>Abrir no Maps</Text>
+                <Icon name={onOpenFullMap || !expanded ? "maximize" : "minus"} size={16} color="#FFFFFF" />
+                <Text style={styles.openText}>
+                  {onOpenFullMap ? "Ver mapa completo" : expanded ? "Reduzir mapa" : "Ver mapa completo"}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.closeTextBtn} onPress={onClose} activeOpacity={0.85}>
                 <Text style={styles.closeText}>Fechar</Text>
@@ -276,6 +301,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(22,35,28,0.5)",
     paddingHorizontal: 18,
   },
+  expandedOverlay: { paddingHorizontal: 0 },
   card: {
     width: "100%",
     maxWidth: 440,
@@ -289,6 +315,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
   },
+  expandedCard: { maxWidth: "100%", borderRadius: 0 },
   inner: { flex: 1, overflow: "hidden", borderRadius: 16, backgroundColor: COLORS.surface },
   header: {
     flexDirection: "row",

@@ -14,7 +14,7 @@ import { type Href, useRouter } from "expo-router";
 import { useUserRole } from "../context/RoleContext";
 import RoleActionButton from "./ui/RoleActionButton";
 
-const Logo = require("../assets/images/logo.jpeg");
+const Logo = require("../assets/images/logo-transparent.png");
 
 interface ToolbarProps {
   title?: string;
@@ -112,7 +112,7 @@ export default function Toolbar({
           <Ionicons
             name="person-circle-outline"
             size={29}
-            color="#2E7D32"
+            color="#218B4A"
           />
 
           {!loading && role && (
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     left: -8,
     right: -8,
 
-    backgroundColor: "#2E7D32",
+    backgroundColor: "#218B4A",
     borderRadius: 6,
 
     paddingHorizontal: 4,

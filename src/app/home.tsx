@@ -29,6 +29,7 @@ import AgrilinkAdCard from "../components/AgrilinkAdCard";
 import BottomToolbar from "../components/BottomToolbar";
 import Icon, { IconName } from "../components/Icon";
 import ProcessingScreen from "../components/ProcessingScreen";
+import UserConnections from "../components/UserConnections";
 import { COLORS, PressableScale, SHADOW } from "../components/ui";
 import { useUserRole } from "../context/RoleContext";
 import { AgrilinkAd, isAgrilinkAdmin, loadAgrilinkAds, rateAgrilinkAd } from "../lib/agrilinkAds";
@@ -39,7 +40,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const Logo = require("../assets/images/logo.jpeg");
+const Logo = require("../assets/images/logo-transparent.png");
 
 const COUNTRY_STORAGE_KEY = "agrilink-country";
 const COUNTRIES: { code: string; flag: string; currency: string; language: AppLanguage }[] = [
@@ -64,6 +65,7 @@ const CATEGORIES: { id: string; name: string; icon: IconName }[] = [
   { id: "paes", name: "Pães", icon: "coffee" },
   { id: "lacteos", name: "Lácteos", icon: "droplet" },
   { id: "bebidas", name: "Bebidas", icon: "wine" },
+  { id: "processados", name: "Processados", icon: "package" },
 ];
 
 const CATEGORY_TRANSLATION_KEYS: Record<string, string> = {
@@ -80,6 +82,7 @@ const CATEGORY_TRANSLATION_KEYS: Record<string, string> = {
   paes: "home.bread",
   lacteos: "home.dairy",
   bebidas: "home.drinks",
+  processados: "home.processedFoods",
 };
 
 const CATEGORY_MAP: Record<string, string[]> = {
@@ -95,6 +98,7 @@ const CATEGORY_MAP: Record<string, string[]> = {
   paes: ["pão", "pao"],
   lacteos: ["leite", "queijo", "iogurte"],
   bebidas: ["sumo", "suco", "água", "agua", "bebida"],
+  processados: ["farinha", "pão", "pao", "massa", "óleo", "oleo", "enlatado", "embalado"],
 };
 
 // Os mocks só aparecem quando NÃO existem produtos reais no Supabase.
@@ -196,7 +200,8 @@ function CategoryPill({
 
 type HomeFeedItem =
   | { key: string; type: "product"; product: Product }
-  | { key: string; type: "ad"; ad: AgrilinkAd };
+  | { key: string; type: "ad"; ad: AgrilinkAd }
+  | { key: string; type: "connections"; viewerId: string };
 
 export default function HomeScreen() {
   const { role, loading: roleLoading } = useUserRole();
@@ -221,6 +226,7 @@ function HomeFeed() {
   const [countryModalVisible, setCountryModalVisible] = useState(false);
   const [search, setSearch] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [connectedUserIds, setConnectedUserIds] = useState<string[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
@@ -316,6 +322,20 @@ function HomeFeed() {
       ]);
       setIsAdmin(adminAllowed);
       setAds(activeAds);
+      if (userId && !isGuest) {
+        const { data: connections, error: connectionsError } = await supabase
+          .from("user_connections")
+          .select("connected_user_id")
+          .eq("viewer_id", userId);
+        if (connectionsError) {
+          console.warn("[Home] Não foi possível ordenar publicações pelas ligações:", connectionsError);
+          setConnectedUserIds([]);
+        } else {
+          setConnectedUserIds((connections ?? []).map((connection) => connection.connected_user_id));
+        }
+      } else {
+        setConnectedUserIds([]);
+      }
 
       const { data, error } = await supabase
         .from("products")
@@ -374,12 +394,19 @@ function HomeFeed() {
         .in("product_id", productIds);
 
       if (likes) {
+        const likesByProduct = new Map<string, { count: number; likedByCurrentUser: boolean }>();
+        likes.forEach((like: any) => {
+          const aggregate = likesByProduct.get(like.product_id) ?? { count: 0, likedByCurrentUser: false };
+          aggregate.count += 1;
+          aggregate.likedByCurrentUser ||= !!userId && like.user_id === userId;
+          likesByProduct.set(like.product_id, aggregate);
+        });
         loadedProducts = loadedProducts.map((product) => {
-          const productLikes = likes.filter((l: any) => l.product_id === product.id);
+          const productLikes = likesByProduct.get(product.id);
           return {
             ...product,
-            likes_count: productLikes.length,
-            is_liked: !!userId && productLikes.some((l: any) => l.user_id === userId),
+            likes_count: productLikes?.count ?? 0,
+            is_liked: productLikes?.likedByCurrentUser ?? false,
           };
         });
       }
@@ -409,6 +436,10 @@ function HomeFeed() {
 
   const handleProductUpdate = useCallback((updated: Product) => {
     setProducts((current) => current.map((p) => (p.id === updated.id ? updated : p)));
+  }, []);
+
+  const handleConnectionsChange = useCallback((userIds: string[]) => {
+    setConnectedUserIds(userIds);
   }, []);
 
   const handleAdRating = useCallback(async (adId: string, rating: number) => {
@@ -443,6 +474,7 @@ function HomeFeed() {
 
     if (selectedCategory !== "all") {
       result = result.filter((p) => {
+        if (selectedCategory === "processados") return p.is_processed === true;
         const type = p.product_type?.toLowerCase().trim() || "";
         const words = CATEGORY_MAP[selectedCategory];
         if (!words) return type.includes(selectedCategory);
@@ -452,6 +484,16 @@ function HomeFeed() {
 
     return result;
   }, [products, search, selectedCategory]);
+
+  const prioritizedProducts = useMemo(
+    () =>
+      [...filteredProducts].sort(
+        (first, second) =>
+          Number(connectedUserIds.includes(second.user_id)) -
+          Number(connectedUserIds.includes(first.user_id)),
+      ),
+    [connectedUserIds, filteredProducts],
+  );
 
   const feedItems = useMemo<HomeFeedItem[]>(() => {
     const includeAds = selectedCategory === "all" && !search.trim();
@@ -467,19 +509,24 @@ function HomeFeed() {
     const rotatedAds = rankedAds.slice(rotation).concat(rankedAds.slice(0, rotation));
     const items: HomeFeedItem[] = [];
     let adIndex = 0;
+    const showConnectionSuggestions = !!currentUserId && !isGuest && selectedCategory === "all" && !search.trim();
 
-    filteredProducts.forEach((product, index) => {
+    prioritizedProducts.forEach((product, index) => {
       items.push({ key: `product:${product.id}`, type: "product", product });
       const isSlot =
-        (index + 1) % 4 === 0 || (index === filteredProducts.length - 1 && filteredProducts.length < 4);
+        (index + 1) % 4 === 0 || (index === prioritizedProducts.length - 1 && prioritizedProducts.length < 4);
       if (isSlot && adIndex < rotatedAds.length) {
         const ad = rotatedAds[adIndex++];
         items.push({ key: `ad:${ad.id}`, type: "ad", ad });
       }
+      const connectionSlot = Math.min(7, prioritizedProducts.length - 1);
+      if (showConnectionSuggestions && currentUserId && index === connectionSlot) {
+        items.push({ key: "connections:suggestions", type: "connections", viewerId: currentUserId });
+      }
     });
 
     return items;
-  }, [ads, filteredProducts, search, selectedCategory]);
+  }, [ads, currentUserId, isGuest, prioritizedProducts, search, selectedCategory]);
 
   const adsCount = useMemo(() => feedItems.filter((item) => item.type === "ad").length, [feedItems]);
 
@@ -512,7 +559,7 @@ function HomeFeed() {
   };
 
   const handleViewHistory = ({ intentId, orderId }: { intentId?: string; orderId?: string }) => {
-    router.push({ pathname: "/historico", params: { intentId, orderId } } as any);
+    router.push({ pathname: "/historicopagamentos", params: { intentId, orderId } });
   };
 
   /* --------------------------------- loading --------------------------------- */
@@ -526,13 +573,13 @@ function HomeFeed() {
   const headerHeight = 78 + insets.top;
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F5F8F4]">
-      <StatusBar barStyle="dark-content" backgroundColor="#F5F8F4" />
+    <SafeAreaView className="flex-1 bg-canvas">
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
-      <View className="flex-1 bg-[#F5F8F4]">
+      <View className="flex-1 bg-canvas">
         {/* HEADER */}
         <View
-          className="z-10 flex-row items-center justify-between bg-white px-[18px] pb-3"
+          className="z-10 flex-row items-center justify-between bg-surface px-[18px] pb-3"
           style={{ paddingTop: insets.top + 14, height: headerHeight }}
         >
           <Image source={Logo} style={{ width: 138, height: 48 }} resizeMode="contain" />
@@ -540,7 +587,7 @@ function HomeFeed() {
           <View className="flex-row items-center gap-[10px]">
             <PressableScale
               onPress={openCountryModal}
-              className="flex-row items-center gap-2 rounded-[10px] bg-[#E9F5EC] py-[6px] pl-[10px] pr-[12px]"
+              className="flex-row items-center gap-2 rounded-[10px] bg-[#EAF5ED] py-[6px] pl-[10px] pr-[12px]"
             >
               <Text className="text-[20px]">{selectedCountry.flag}</Text>
               <View>
@@ -556,7 +603,7 @@ function HomeFeed() {
               <PressableScale
                 onPress={() => router.push("/notifications")}
                 scale={0.9}
-                className="h-10 w-10 items-center justify-center rounded-[10px] bg-[#E9F5EC]"
+                className="h-10 w-10 items-center justify-center rounded-[10px] bg-[#EAF5ED]"
               >
                 <Icon name="bell" size={20} color={COLORS.text} />
                 {unreadNotifications > 0 ? (
@@ -592,21 +639,23 @@ function HomeFeed() {
                 onOpenPreOrder={openPayment}
                 onRequireLogin={requireLogin}
               />
-            ) : (
+            ) : item.type === "ad" ? (
               <AgrilinkAdCard
                 ad={item.ad}
                 currentUserId={currentUserId}
                 onRequireLogin={requireLogin}
                 onRate={handleAdRating}
               />
+            ) : (
+              <UserConnections viewerId={item.viewerId} onConnectionsChange={handleConnectionsChange} />
             )
           }
           contentContainerStyle={{ paddingTop: 4, paddingBottom: 120 + insets.bottom }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
-          initialNumToRender={3}
-          maxToRenderPerBatch={4}
-          windowSize={7}
+          initialNumToRender={2}
+          maxToRenderPerBatch={3}
+          windowSize={5}
           removeClippedSubviews={Platform.OS === "android"}
           onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
             useNativeDriver: true,
@@ -623,39 +672,24 @@ function HomeFeed() {
               >
                 <Icon name="search" size={18} color={COLORS.muted} />
                 <Text className="flex-1 text-[15px] text-[#78877D]">{t("home.search")}</Text>
-                <LinearGradient
-                  colors={[COLORS.primaryLight, COLORS.primaryDark]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={{ width: 38, height: 38, borderRadius: 9, alignItems: "center", justifyContent: "center" }}
+                <View
+                  style={{ width: 38, height: 38, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primary }}
                 >
                   <Icon name="search" size={16} color={COLORS.white} />
-                </LinearGradient>
+                </View>
               </PressableScale>
 
               {/* Duas entradas principais */}
               <View className="mx-4 mb-5 flex-row gap-3">
-                <View style={[{ flex: 1, borderRadius: 12 }, SHADOW.glow]}>
-                  <LinearGradient
-                    colors={[COLORS.primaryLight, COLORS.primaryDark]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{ borderRadius: 12, padding: 14, minHeight: 84, justifyContent: "space-between", overflow: "hidden" }}
-                  >
-                    {/* círculos de luz decorativos */}
-                    <View
-                      pointerEvents="none"
-                      style={{ position: "absolute", right: -22, top: -22, width: 84, height: 84, borderRadius: 42, backgroundColor: "rgba(255,255,255,0.14)" }}
-                    />
-                    <View
-                      pointerEvents="none"
-                      style={{ position: "absolute", right: 18, bottom: -30, width: 60, height: 60, borderRadius: 30, backgroundColor: "rgba(255,255,255,0.08)" }}
-                    />
-                    <View className="h-8 w-8 items-center justify-center rounded-full bg-[rgba(255,255,255,0.22)]">
-                      <Icon name="cart" size={16} color={COLORS.white} />
-                    </View>
-                    <Text className="mt-2 text-[13px] font-extrabold text-white">{t("home.buyPlatform")}</Text>
-                  </LinearGradient>
+                <View
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: true }}
+                  style={[{ flex: 1, borderRadius: 12, backgroundColor: COLORS.primary, padding: 14, minHeight: 84, justifyContent: "space-between" }, SHADOW.soft]}
+                >
+                  <View className="h-8 w-8 items-center justify-center rounded-full bg-white/20">
+                    <Icon name="cart" size={16} color={COLORS.white} />
+                  </View>
+                  <Text className="mt-2 text-[13px] font-extrabold text-white">{t("home.buyPlatform")}</Text>
                 </View>
 
                 <PressableScale fill onPress={() => router.push("/green-points")} scale={0.96}>
@@ -665,10 +699,13 @@ function HomeFeed() {
                       SHADOW.soft,
                     ]}
                   >
-                    <View className="h-8 w-8 items-center justify-center rounded-full bg-[#E9F5EC]">
-                      <Icon name="pin" size={16} color={COLORS.primary} />
+                    <View className="h-8 w-8 items-center justify-center rounded-full bg-[#EAF5ED]">
+                      <Icon name="map" size={17} color={COLORS.primary} />
+                      <View style={{ position: "absolute", top: 2, right: 3, width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center" }}>
+                        <Icon name="pin" size={7} color={COLORS.white} />
+                      </View>
                     </View>
-                    <Text className="mt-2 text-[13px] font-extrabold text-[#237040]">{t("home.buyGreenPoints")}</Text>
+                    <Text className="mt-2 text-[13px] font-extrabold text-[#218B4A]">{t("home.buyGreenPoints")}</Text>
                   </View>
                 </PressableScale>
               </View>
@@ -681,7 +718,7 @@ function HomeFeed() {
                 >
                   <View className="flex-row items-center gap-2">
                     <Icon name="bar-chart" size={16} color={COLORS.primary} />
-                    <Text className="text-[12.5px] font-extrabold text-[#237040]">{t("home.admin")}</Text>
+                    <Text className="text-[12.5px] font-extrabold text-[#218B4A]">{t("home.admin")}</Text>
                   </View>
                   <Icon name="arrow-right" size={15} color={COLORS.primary} />
                 </PressableScale>
@@ -728,8 +765,8 @@ function HomeFeed() {
                   </Text>
                 </View>
 
-                <View className="min-h-[28px] items-center justify-center rounded-[8px] bg-[#E9F5EC] px-[11px] py-1">
-                  <Text className="text-[10.5px] font-extrabold text-[#237040]">
+                <View className="min-h-[28px] items-center justify-center rounded-[8px] bg-[#EAF5ED] px-[11px] py-1">
+                  <Text className="text-[10.5px] font-extrabold text-[#218B4A]">
                     {t("home.productsAndAds", { products: filteredProducts.length, ads: adsCount })}
                   </Text>
                 </View>
@@ -738,7 +775,7 @@ function HomeFeed() {
           }
           ListEmptyComponent={
             <View className="items-center px-[30px] pb-10 pt-[45px]">
-              <View className="h-[80px] w-[80px] items-center justify-center rounded-[16px] bg-[#E9F5EC]">
+              <View className="h-[80px] w-[80px] items-center justify-center rounded-[16px] bg-[#EAF5ED]">
                 <Icon name="sprout" size={40} color={COLORS.primary} />
               </View>
               <Text className="mt-[16px] text-center text-[17px] font-extrabold text-[#16231C]">
@@ -752,9 +789,9 @@ function HomeFeed() {
                   selectCategory("all");
                   setSearch("");
                 }}
-                className="mt-[18px] rounded-[10px] bg-[#E9F5EC] px-6 py-[12px]"
+                className="mt-[18px] rounded-[10px] bg-[#EAF5ED] px-6 py-[12px]"
               >
-                <Text className="text-[13px] font-extrabold text-[#237040]">{t("home.clearFilters")}</Text>
+                <Text className="text-[13px] font-extrabold text-[#218B4A]">{t("home.clearFilters")}</Text>
               </PressableScale>
             </View>
           }
@@ -809,8 +846,8 @@ function HomeFeed() {
                       Alert.alert(t("settings.languageSaveError"));
                     }
                   }}
-                  className="mb-[10px] min-h-[66px] flex-row items-center rounded-[12px] px-3"
-                  style={{ backgroundColor: selected ? COLORS.tint : "#F7F9F6" }}
+                  className="mb-[10px] min-h-[66px] flex-row items-center rounded-[12px] border border-[#E6EBE6] bg-white px-3"
+                  style={selected ? { backgroundColor: COLORS.tint, borderColor: COLORS.tint } : undefined}
                 >
                   <View className="h-[44px] w-[44px] items-center justify-center rounded-[10px] bg-white">
                     <Text className="text-[26px]">{country.flag}</Text>
@@ -824,7 +861,7 @@ function HomeFeed() {
                     </Text>
                   </View>
                   {selected ? (
-                    <View className="h-7 w-7 items-center justify-center rounded-full bg-[#2E8B4F]">
+                    <View className="h-7 w-7 items-center justify-center rounded-full bg-[#218B4A]">
                       <Icon name="check" size={16} color={COLORS.white} strokeWidth={3} />
                     </View>
                   ) : null}

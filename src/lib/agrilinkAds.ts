@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 
 export type AgrilinkAd = {
   id: string;
+  advertiser_name: string | null;
   title: string;
   description: string;
   target_url: string;
@@ -46,7 +47,8 @@ export function getAgrilinkAdErrorCode(error: unknown) {
   const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
   if (
     message.includes('bucket not found') ||
-    message.includes('agrilink_ads') && (message.includes('does not exist') || message.includes('schema cache'))
+    message.includes('agrilink_ads') && (message.includes('does not exist') || message.includes('schema cache')) ||
+    message.includes('advertiser_name') && (message.includes('does not exist') || message.includes('schema cache'))
   ) {
     return 'migrationRequired';
   }
@@ -137,11 +139,16 @@ async function uploadAdImages(userId: string, adId: string, images: ImagePickerA
 }
 
 export async function publishAgrilinkAd(input: {
+  advertiserName: string;
   title: string;
   description: string;
   targetUrl: string;
   images: ImagePickerAsset[];
 }) {
+  const advertiserName = input.advertiserName.trim();
+  if (advertiserName.length < 2 || advertiserName.length > 100) {
+    throw new Error('O nome do anunciante deve ter entre 2 e 100 caracteres.');
+  }
   if (input.images.length < 3) throw new Error('Cada anúncio precisa de pelo menos 3 imagens.');
 
   const user = await requireAdminUser();
@@ -151,6 +158,7 @@ export async function publishAgrilinkAd(input: {
     .from('agrilink_ads')
     .insert({
       id: adId,
+      advertiser_name: advertiserName,
       title: input.title.trim(),
       description: input.description.trim(),
       target_url: input.targetUrl.trim(),

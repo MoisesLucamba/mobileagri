@@ -21,7 +21,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabase } from '../lib/supabase';
-import { useUserRole } from '../context/RoleContext';
 import RoleGuard from '../components/RoleGuard';
 import Icon from '../components/Icon';
 import { PRODUCT_CATEGORIES } from '../constants/productCategories';
@@ -29,15 +28,15 @@ import { angolaProvinces } from '../constants/angolaLocations';
 
 // Mesma paleta do ProductCard
 const T = {
-  primary: '#2E8B4F',
-  primaryDark: '#25703F',
-  tint: '#E9F5EC',
+  primary: '#218B4A',
+  primaryDark: '#218B4A',
+  tint: '#EAF5ED',
   text: '#16231C',
   muted: '#78877D',
   faint: '#AEB8AC',
   line: '#E8ECE6',
-  background: '#F9FAF8',
-  white: '#FFFFFF',
+  background: '#F3F6F2',
+  white: '#FFFEFC',
   danger: '#DD5138',
 };
 
@@ -45,6 +44,7 @@ interface FormData {
   product_type: string;
   category: string;
   quantity: string;
+  unit: string;
   harvest_date: Date | null;
   price: string;
   province_id: string;
@@ -55,15 +55,45 @@ interface FormData {
   logistics_access: 'sim' | 'parcial' | 'nao';
 }
 
+const PRODUCT_UNITS = ['kg', 'unidade', 'dúzia', 'bandeja', 'caixa', 'pacote', 'saco', 'litro', 'garrafa'] as const;
+
+const PRODUCT_SUGGESTIONS = {
+  fresh: [
+    { label: 'Ovos', category: 'aves', unit: 'dúzia' },
+    { label: 'Trigo', category: 'cereais', unit: 'kg' },
+    { label: 'Milho', category: 'cereais', unit: 'kg' },
+    { label: 'Arroz', category: 'cereais', unit: 'kg' },
+    { label: 'Tomate', category: 'horticolas', unit: 'kg' },
+    { label: 'Batata', category: 'tuberculos', unit: 'kg' },
+    { label: 'Frango', category: 'aves', unit: 'kg' },
+    { label: 'Leite fresco', category: 'lacteos', unit: 'litro' },
+  ],
+  processed: [
+    { label: 'Farinha de trigo', category: 'processados', unit: 'kg' },
+    { label: 'Farinha de milho', category: 'processados', unit: 'kg' },
+    { label: 'Pão', category: 'processados', unit: 'unidade' },
+    { label: 'Massa', category: 'processados', unit: 'kg' },
+    { label: 'Óleo alimentar', category: 'processados', unit: 'litro' },
+    { label: 'Arroz embalado', category: 'processados', unit: 'saco' },
+    { label: 'Leite pasteurizado', category: 'lacteos', unit: 'litro' },
+    { label: 'Iogurte', category: 'lacteos', unit: 'unidade' },
+    { label: 'Queijo', category: 'lacteos', unit: 'kg' },
+    { label: 'Fuba', category: 'processados', unit: 'kg' },
+    { label: 'Açúcar', category: 'processados', unit: 'kg' },
+    { label: 'Conserva de peixe', category: 'processados', unit: 'caixa' },
+    { label: 'Feijão enlatado', category: 'processados', unit: 'caixa' },
+  ],
+};
+
 function PublicarProdutoScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { role } = useUserRole();
 
   const [formData, setFormData] = useState<FormData>({
     product_type: '',
     category: '',
     quantity: '',
+    unit: 'kg',
     harvest_date: null,
     price: '',
     province_id: '',
@@ -78,6 +108,13 @@ function PublicarProdutoScreen() {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isProcessed, setIsProcessed] = useState<boolean | null>(null);
+  const [minimumHarvestDate] = useState(() => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + 30);
+    return date;
+  });
 
   const availableMunicipalities =
     angolaProvinces.find((p) => p.id === formData.province_id)?.municipalities || [];
@@ -122,11 +159,13 @@ function PublicarProdutoScreen() {
       const path = `${userId}/${Date.now()}-${i}.${ext}`;
 
       const response = await fetch(asset.uri);
-      const blob = await response.blob();
+      const arrayBuffer = await response.arrayBuffer();
 
       const { error: uploadError } = await supabase.storage
         .from('product-photos')
-        .upload(path, blob, { contentType: asset.mimeType ?? `image/${ext}` });
+        .upload(path, arrayBuffer, {
+          contentType: asset.mimeType ?? 'image/jpeg',
+        });
 
       if (uploadError) throw uploadError;
 
@@ -142,13 +181,17 @@ function PublicarProdutoScreen() {
     if (!formData.category) return 'Seleciona uma categoria.';
     if (!formData.quantity) return 'Indica a quantidade.';
     if (!formData.price) return 'Indica o preço.';
-    if (!formData.harvest_date) return 'Seleciona a data de colheita prevista.';
+    if (isProcessed === null) return 'Indica se o produto é processado ou não processado.';
+    if (!isProcessed && !formData.harvest_date) return 'Seleciona a data de colheita prevista.';
     if (images.length < 3) return 'Adiciona pelo menos 3 imagens do produto.';
 
-    const minDate = new Date();
-    minDate.setDate(minDate.getDate() + 30);
-    if (formData.harvest_date < minDate) {
-      return 'A colheita deve ser prevista para pelo menos 30 dias a partir de hoje.';
+    if (!isProcessed && formData.harvest_date) {
+      const minDate = new Date();
+      minDate.setHours(0, 0, 0, 0);
+      minDate.setDate(minDate.getDate() + 30);
+      if (formData.harvest_date < minDate) {
+        return 'A colheita deve ser prevista para pelo menos 30 dias a partir de hoje.';
+      }
     }
 
     return null;
@@ -184,8 +227,10 @@ function PublicarProdutoScreen() {
           user_id: user.id,
           product_type: formData.product_type,
           category: formData.category,
+          is_processed: isProcessed,
           quantity: parseFloat(formData.quantity),
-          harvest_date: formData.harvest_date!.toISOString().split('T')[0],
+          unit: formData.unit,
+          harvest_date: formData.harvest_date?.toISOString().split('T')[0] ?? null,
           price: parseFloat(formData.price),
           province_id: formData.province_id,
           municipality_id: formData.municipality_id,
@@ -210,7 +255,7 @@ function PublicarProdutoScreen() {
       }
 
       Alert.alert('Enviado', 'O produto foi enviado para aprovação e aparecerá no feed em breve.');
-      router.back();
+      router.replace('/home');
     } catch (err: any) {
       console.error(err);
       Alert.alert('Erro ao publicar', err.message ?? 'Tenta novamente.');
@@ -243,16 +288,109 @@ function PublicarProdutoScreen() {
         </View>
 
         <View style={styles.card}>
+          {isProcessed === null ? (
+            <View style={styles.processingQuestion}>
+              <View style={styles.questionIcon}>
+                <Ionicons name="nutrition-outline" size={22} color={T.primary} />
+              </View>
+              <Text style={styles.questionTitle}>Que tipo de produto vais publicar?</Text>
+              <Text style={styles.questionDescription}>
+                Esta escolha adapta os campos e ajuda os compradores a encontrar o produto certo.
+              </Text>
+              <TouchableOpacity
+                style={styles.processingOption}
+                onPress={() => {
+                  setIsProcessed(false);
+                  set('product_type', '');
+                  set('category', '');
+                  set('unit', 'kg');
+                  set('harvest_date', null);
+                }}
+                activeOpacity={0.82}
+              >
+                <View style={styles.optionIcon}>
+                  <Ionicons name="leaf-outline" size={20} color={T.primary} />
+                </View>
+                <View style={styles.optionCopy}>
+                  <Text style={styles.optionTitle}>Não processado</Text>
+                  <Text style={styles.optionDescription}>
+                    Produtos frescos ou colhidos, como ovos, trigo e hortícolas.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={T.muted} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.processingOption}
+                onPress={() => {
+                  setIsProcessed(true);
+                  set('product_type', '');
+                  set('category', 'processados');
+                  set('unit', 'kg');
+                  set('harvest_date', null);
+                }}
+                activeOpacity={0.82}
+              >
+                <View style={styles.optionIcon}>
+                  <Ionicons name="cube-outline" size={20} color={T.primary} />
+                </View>
+                <View style={styles.optionCopy}>
+                  <Text style={styles.optionTitle}>Processado</Text>
+                  <Text style={styles.optionDescription}>
+                    Alimentos preparados ou embalados, como farinha, pão e óleo.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={T.muted} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+          <>
+          <TouchableOpacity
+            style={styles.changeTypeButton}
+            onPress={() => setIsProcessed(null)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="chevron-back" size={15} color={T.primary} />
+            <Text style={styles.changeTypeText}>
+              {isProcessed ? 'Produto processado' : 'Produto não processado'} · Alterar
+            </Text>
+          </TouchableOpacity>
+
           {/* Tipo de produto */}
           <Field label="Tipo de produto">
             <TextInput
               style={styles.input}
-              placeholder="Ex: Milho, Feijão, Tomate..."
+              placeholder={isProcessed ? 'Ex: Farinha, pão, óleo alimentar...' : 'Ex: Ovos, trigo, tomate...'}
               placeholderTextColor={T.faint}
               value={formData.product_type}
               onChangeText={(v) => set('product_type', v)}
             />
           </Field>
+          <View style={styles.suggestionWrap}>
+            {(isProcessed ? PRODUCT_SUGGESTIONS.processed : PRODUCT_SUGGESTIONS.fresh).map((suggestion) => (
+              <TouchableOpacity
+                key={suggestion.label}
+                style={[
+                  styles.suggestionChip,
+                  formData.product_type === suggestion.label && styles.suggestionChipActive,
+                ]}
+                onPress={() => {
+                  set('product_type', suggestion.label);
+                  set('category', suggestion.category);
+                  set('unit', suggestion.unit);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.suggestionText,
+                    formData.product_type === suggestion.label && styles.suggestionTextActive,
+                  ]}
+                >
+                  {suggestion.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
           {/* Categoria */}
           <Field label="Categoria" hint="Define em que filtro o produto aparece no feed.">
@@ -282,7 +420,7 @@ function PublicarProdutoScreen() {
 
           {/* Quantidade e preço */}
           <View style={styles.row}>
-            <Field label="Quantidade (kg)" style={{ flex: 1 }}>
+            <Field label={`Quantidade (${formData.unit})`} style={{ flex: 1 }}>
               <TextInput
                 style={styles.input}
                 keyboardType="numeric"
@@ -304,7 +442,26 @@ function PublicarProdutoScreen() {
             </Field>
           </View>
 
+          <Field label="Unidade de venda">
+            <View style={styles.unitOptions}>
+              {PRODUCT_UNITS.map((unit) => {
+                const active = formData.unit === unit;
+                return (
+                  <TouchableOpacity
+                    key={unit}
+                    onPress={() => set('unit', unit)}
+                    style={[styles.unitChip, active && styles.unitChipActive]}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.unitChipText, active && styles.unitChipTextActive]}>{unit}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Field>
+
           {/* Data de colheita */}
+          {!isProcessed ? (
           <Field label="Data de colheita prevista" hint="Mínimo 30 dias a partir de hoje.">
             <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
               <Text style={{ fontSize: 14.5, color: formData.harvest_date ? T.text : T.faint }}>
@@ -317,7 +474,7 @@ function PublicarProdutoScreen() {
               <DateTimePicker
                 value={formData.harvest_date ?? new Date()}
                 mode="date"
-                minimumDate={new Date()}
+                minimumDate={minimumHarvestDate}
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={(_, date) => {
                   setShowDatePicker(Platform.OS === 'ios');
@@ -326,6 +483,7 @@ function PublicarProdutoScreen() {
               />
             )}
           </Field>
+          ) : null}
 
           {/* Descrição */}
           <Field label="Descrição do produto">
@@ -482,6 +640,8 @@ function PublicarProdutoScreen() {
           >
             <Text style={styles.submitBtnText}>{loading ? 'A publicar…' : 'Publicar produto'}</Text>
           </TouchableOpacity>
+          </>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -543,6 +703,86 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     elevation: 1,
   },
+
+  processingQuestion: { alignItems: 'center', paddingVertical: 12 },
+  questionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.tint,
+    marginBottom: 12,
+  },
+  questionTitle: { fontSize: 18, fontWeight: '900', color: T.text, textAlign: 'center' },
+  questionDescription: {
+    marginTop: 7,
+    marginBottom: 18,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: T.muted,
+    textAlign: 'center',
+  },
+  processingOption: {
+    width: '100%',
+    minHeight: 82,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: T.line,
+    borderRadius: 12,
+    backgroundColor: T.white,
+  },
+  optionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.tint,
+  },
+  optionCopy: { flex: 1 },
+  optionTitle: { fontSize: 13.5, fontWeight: '800', color: T.text },
+  optionDescription: { marginTop: 3, fontSize: 11.5, lineHeight: 16, color: T.muted },
+  changeTypeButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingVertical: 5,
+    paddingRight: 8,
+  },
+  changeTypeText: { fontSize: 11.5, fontWeight: '800', color: T.primary },
+  suggestionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: -7, marginBottom: 16 },
+  suggestionChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: T.line,
+    borderRadius: 999,
+    backgroundColor: T.white,
+  },
+  suggestionChipActive: { borderColor: T.primary, backgroundColor: T.tint },
+  suggestionText: { color: T.muted, fontSize: 11.5, fontWeight: '700' },
+  suggestionTextActive: { color: T.primary, fontWeight: '800' },
+  unitOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  unitChip: {
+    minHeight: 36,
+    minWidth: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: T.line,
+    borderRadius: 999,
+    backgroundColor: T.white,
+  },
+  unitChipActive: { borderColor: T.primary, backgroundColor: T.tint },
+  unitChipText: { color: T.muted, fontSize: 12, fontWeight: '700' },
+  unitChipTextActive: { color: T.primary, fontWeight: '800' },
 
   fieldLabel: { fontSize: 12.5, fontWeight: '800', color: T.text, marginBottom: 6 },
   fieldHint: { fontSize: 11.5, color: T.muted, marginBottom: 6, marginTop: -2 },

@@ -30,24 +30,31 @@ import {
 } from '../lib/agrilinkAds';
 
 const COLORS = {
-  primary: '#1F6B3A',
+  primary: '#218B4A',
   text: '#16231C',
   muted: '#78877D',
   faint: '#AEB8AC',
   border: '#EAE4D6',
-  canvas: '#FAF8F3',
-  surface: '#FFFFFF',
+  canvas: '#F3F6F2',
+  surface: '#FFFEFC',
   gold: '#D79427',
   danger: '#B54747',
   dangerSoft: '#FCECEC',
 };
 
 const MAX_IMAGES = 8;
+const IMAGE_PREVIEW_WIDTH = 82;
+
+function getPreviewHeight(width: number, height: number) {
+  if (!width || !height) return IMAGE_PREVIEW_WIDTH;
+  return Math.max(52, Math.min(112, Math.round(IMAGE_PREVIEW_WIDTH * height / width)));
+}
 
 function AdsManagerContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
+  const [advertiserName, setAdvertiserName] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [targetUrl, setTargetUrl] = useState('');
@@ -107,8 +114,10 @@ function AdsManagerContent() {
 
   const publish = async () => {
     const cleanTitle = title.trim();
+    const cleanAdvertiserName = advertiserName.trim();
     const cleanDescription = description.trim();
     const cleanUrl = targetUrl.trim();
+    if (cleanAdvertiserName.length < 2 || cleanAdvertiserName.length > 100) return setError(t('ads.invalidAdvertiserName'));
     if (cleanTitle.length < 3) return setError(t('ads.invalidTitle'));
     if (cleanDescription.length < 10) return setError(t('ads.invalidDescription'));
     if (images.length < 3) return setError(t('ads.missingImages'));
@@ -129,7 +138,14 @@ function AdsManagerContent() {
     setSaving(true);
     setError('');
     try {
-      await publishAgrilinkAd({ title: cleanTitle, description: cleanDescription, targetUrl: parsedUrl.toString(), images });
+      await publishAgrilinkAd({
+        advertiserName: cleanAdvertiserName,
+        title: cleanTitle,
+        description: cleanDescription,
+        targetUrl: parsedUrl.toString(),
+        images,
+      });
+      setAdvertiserName('');
       setTitle('');
       setDescription('');
       setTargetUrl('');
@@ -188,6 +204,17 @@ function AdsManagerContent() {
           <Text style={styles.sectionTitle}>{t('ads.newAd')}</Text>
           <Text style={styles.sectionCaption}>{t('ads.formCaption')}</Text>
 
+          <Text style={styles.label}>{t('ads.advertiserName')}</Text>
+          <TextInput
+            value={advertiserName}
+            onChangeText={setAdvertiserName}
+            maxLength={100}
+            placeholder={t('ads.advertiserNamePlaceholder')}
+            placeholderTextColor={COLORS.faint}
+            autoCapitalize="words"
+            style={styles.input}
+          />
+
           <Text style={styles.label}>{t('ads.adTitle')}</Text>
           <TextInput
             value={title}
@@ -238,7 +265,14 @@ function AdsManagerContent() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.imageStrip}>
               {images.map((image, index) => (
                 <View key={`${image.uri}-${index}`} style={styles.imagePreviewWrap}>
-                  <Image source={{ uri: image.uri }} style={styles.imagePreview} />
+                  <Image
+                    source={{ uri: image.uri }}
+                    style={[
+                      styles.imagePreview,
+                      { height: getPreviewHeight(image.width, image.height) },
+                    ]}
+                    resizeMode="contain"
+                  />
                   <TouchableOpacity
                     style={styles.removeImage}
                     onPress={() => setImages((current) => current.filter((_, imageIndex) => imageIndex !== index))}
@@ -268,9 +302,14 @@ function AdsManagerContent() {
         ) : null}
         {ads.map((ad) => (
           <View key={ad.id} style={styles.campaignRow}>
-            {ad.image_urls[0] ? <Image source={{ uri: ad.image_urls[0] }} style={styles.campaignImage} /> : null}
+            {ad.image_urls[0] ? (
+              <Image source={{ uri: ad.image_urls[0] }} style={styles.campaignImage} resizeMode="contain" />
+            ) : null}
             <View style={styles.campaignCopy}>
               <Text style={styles.campaignTitle} numberOfLines={1}>{ad.title}</Text>
+              <Text style={styles.campaignAdvertiser} numberOfLines={1}>
+                {t('ads.advertiserName')}: {ad.advertiser_name || t('ads.unknownAdvertiser')}
+              </Text>
               <Text style={styles.campaignDescription} numberOfLines={1}>{ad.description}</Text>
               <Text style={styles.campaignMeta} numberOfLines={1}>
                 {ad.status === 'active' ? t('ads.active') : ad.status === 'paused' ? t('ads.paused') : t('ads.draft')} · {ad.image_urls.length} {t('ads.images').toLowerCase()} · {Number(ad.rating_average || 0).toFixed(1)} ★ ({ad.rating_count})
@@ -332,6 +371,7 @@ const styles = StyleSheet.create({
   campaignImage: { width: 58, height: 68, borderRadius: 10, backgroundColor: COLORS.border },
   campaignCopy: { flex: 1 },
   campaignTitle: { color: COLORS.text, fontSize: 12.5, fontWeight: '800' },
+  campaignAdvertiser: { marginTop: 3, color: COLORS.primary, fontSize: 10, fontWeight: '700' },
   campaignDescription: { marginTop: 3, color: COLORS.muted, fontSize: 10.5 },
   campaignMeta: { marginTop: 3, color: COLORS.muted, fontSize: 9.5 },
   campaignLink: { marginTop: 3, color: COLORS.primary, fontSize: 9.5, fontWeight: '600' },

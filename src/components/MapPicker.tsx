@@ -18,14 +18,14 @@ import Icon from "./Icon";
 import i18n from "../constants/i18n";
 
 const COLORS = {
-  primary: "#1F6B3A",
+  primary: "#218B4A",
   primarySoft: "#EAF3EA",
   accent: "#E2932F",
   text: "#16231C",
   muted: "#78877D",
   faint: "#AEB8AC",
-  canvas: "#FAF8F3",
-  surface: "#FFFFFF",
+  canvas: "#F3F6F2",
+  surface: "#FFFEFC",
   border: "#EAE4D6",
 };
 
@@ -73,7 +73,7 @@ function buildHtml(lat: number, lng: number, zoom: number) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; background: #FAF8F3; }
+    html, body, #map { height: 100%; margin: 0; padding: 0; background: #F3F6F2; }
     .leaflet-control-attribution { font-size: 9px; }
     #pin { position: absolute; left: 50%; top: 50%; width: 40px; height: 52px; margin-left: -20px; margin-top: -52px;
            z-index: 1000; pointer-events: none; transition: transform .18s ease; }
@@ -89,7 +89,7 @@ function buildHtml(lat: number, lng: number, zoom: number) {
   <div id="dot"></div>
   <div id="pin">
     <svg viewBox="0 0 40 52" width="40" height="52">
-      <path d="M20 0C9 0 0 8.7 0 19.5 0 34 20 52 20 52s20-18 20-32.5C40 8.7 31 0 20 0z" fill="#1F6B3A"/>
+      <path d="M20 0C9 0 0 8.7 0 19.5 0 34 20 52 20 52s20-18 20-32.5C40 8.7 31 0 20 0z" fill="#218B4A"/>
       <circle cx="20" cy="19" r="7" fill="#ffffff"/>
     </svg>
   </div>
